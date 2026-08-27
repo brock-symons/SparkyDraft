@@ -512,6 +512,7 @@ html.force-desktop{
   <button class="dtb-btn" id="dtbPriceList">🏷 Device library</button>
   <button class="dtb-btn" id="dtbQuote">💲 Quote</button>
   <button class="dtb-btn" id="dtbVersions">🕐 History</button>
+  <button class="dtb-btn" id="dtbDuplicates">🧹 Find duplicates</button>
   <div class="dtb-sep"></div>
   <button class="dtb-btn" id="dtbUndo2" title="Undo (Ctrl+Z)">↶</button>
   <button class="dtb-btn" id="dtbRedo2" title="Redo (Ctrl+Shift+Z)">↷</button>
@@ -667,7 +668,17 @@ html.force-desktop{
     </div>
     <div class="tool-row">
       <div class="tool-card hidden-feature" id="moreWall"><span class="icon">▬</span><span class="lbl">Mark wall</span></div>
+      <div class="tool-card" id="moreDuplicates"><span class="icon">🧹</span><span class="lbl">Find duplicates</span></div>
     </div>
+  </div>
+</div>
+
+<div class="sheet" id="sheetDuplicates">
+  <div class="sheet-handle"></div>
+  <div class="sheet-header"><div class="sheet-title">Duplicate devices</div><div class="sheet-close" data-close>✕</div></div>
+  <div class="sheet-body">
+    <div id="duplicatesIntro" style="font-size:11.5px; color:var(--text-dim); margin-bottom:10px; line-height:1.5;"></div>
+    <div id="duplicatesList"></div>
   </div>
 </div>
 
@@ -2113,7 +2124,7 @@ document.getElementById('multiAssignSwitch').addEventListener('click', () => {
 // BOTTOM TOOLBAR + SHEETS
 // ===================================================================
 const backdrop = document.getElementById('backdrop');
-const sheets = ['sheetSymbols','sheetLayers','sheetProps','sheetQuote','sheetMore','sheetCableSize','sheetCircuits','sheetElevation','sheetLoad','sheetFloors','sheetExport','sheetGrid','sheetAssignSwitch','sheetPriceList','sheetVersions','sheetRooms'].map(id=>document.getElementById(id));
+const sheets = ['sheetSymbols','sheetLayers','sheetProps','sheetQuote','sheetMore','sheetCableSize','sheetCircuits','sheetElevation','sheetLoad','sheetFloors','sheetExport','sheetGrid','sheetAssignSwitch','sheetPriceList','sheetVersions','sheetRooms','sheetDuplicates'].map(id=>document.getElementById(id));
 function closeSheets(){ sheets.forEach(s=>s.classList.remove('open')); backdrop.classList.remove('open'); }
 // Layers/Symbols/Properties are permanently docked side panels on desktop
 // (not floating dialogs), so the backdrop shouldn't cover the canvas for
@@ -2241,6 +2252,63 @@ document.getElementById('moreGrid').addEventListener('click', () => { openGridSh
 document.getElementById('morePriceList').addEventListener('click', () => { renderPriceList(); openSheet('sheetPriceList'); });
 document.getElementById('moreVersions').addEventListener('click', () => { renderVersionHistory(); openSheet('sheetVersions'); });
 document.getElementById('moreRooms').addEventListener('click', () => { renderRooms(); openSheet('sheetRooms'); });
+document.getElementById('moreDuplicates').addEventListener('click', () => { renderDuplicatesReport(); openSheet('sheetDuplicates'); });
+
+// ===================================================================
+// DUPLICATE DEVICE FINDER
+// A project saved by an older, buggy build could have devices stacked
+// exactly on top of each other (same symbol, same position) — this scans
+// every floor for that specific, unambiguous signal only. It deliberately
+// does NOT flag same-type devices that are merely nearby, since two
+// legitimately separate devices installed close together is completely
+// normal and must never be silently removed.
+// ===================================================================
+function findDuplicateDevices(){
+  const results = [];
+  state.floors.forEach(floor => {
+    const groups = {};
+    floor.objects.forEach(o => {
+      const key = o.symbolId + '@' + Math.round(o.x) + ',' + Math.round(o.y);
+      (groups[key] = groups[key] || []).push(o);
+    });
+    Object.values(groups).filter(g => g.length > 1).forEach(objs => results.push({ floor, objs }));
+  });
+  return results;
+}
+function renderDuplicatesReport(){
+  const groups = findDuplicateDevices();
+  const intro = document.getElementById('duplicatesIntro');
+  const list = document.getElementById('duplicatesList');
+  if(!groups.length){
+    intro.textContent = 'No stacked duplicates found — every device on every floor sits at its own position.';
+    list.innerHTML = '';
+    return;
+  }
+  const totalExtras = groups.reduce((s,g) => s+g.objs.length-1, 0);
+  intro.textContent = `Found ${groups.length} spot${groups.length===1?'':'s'} with devices stacked exactly on top of each other (${totalExtras} extra device${totalExtras===1?'':'s'} total) — usually leftover from a project saved by an older version. Review each below; the first one found in each spot is kept, the rest are removed.`;
+  list.innerHTML = groups.map((g, gi) => {
+    const sym = SYMBOL_LIBRARY.find(s=>s.id===g.objs[0].symbolId);
+    return `<div class="circuit-row" style="align-items:flex-start; flex-direction:column; gap:8px;">
+      <div style="display:flex; align-items:center; gap:10px; width:100%;">
+        <div style="width:26px; height:26px; border-radius:50%; background:${sym?sym.color:'#888'}; display:flex; align-items:center; justify-content:center; font-family:var(--mono); font-weight:700; font-size:10px; color:#0c1116; flex-shrink:0;">${sym?sym.abbr:'?'}</div>
+        <div style="flex:1; font-size:12.5px;">${sym?sym.label:g.objs[0].symbolId} × ${g.objs.length} — "${g.floor.name}"</div>
+      </div>
+      <button class="danger-btn" style="margin-top:0; width:auto; padding:9px 14px;" data-dedupe-group="${gi}">Keep 1, delete ${g.objs.length-1} extra${g.objs.length-1===1?'':'s'}</button>
+    </div>`;
+  }).join('');
+  list.querySelectorAll('[data-dedupe-group]').forEach(btn => btn.addEventListener('click', () => {
+    const group = groups[parseInt(btn.dataset.dedupeGroup, 10)];
+    const removeIds = new Set(group.objs.slice(1).map(o=>o.id));
+    group.floor.objects = group.floor.objects.filter(o => !removeIds.has(o.id));
+    group.floor.switchLinks = group.floor.switchLinks.filter(l => !removeIds.has(l.switchId) && !removeIds.has(l.lightId));
+    if(state.selectedObjectId && removeIds.has(state.selectedObjectId)){
+      state.selectedObjectId = null; setDeviceEditorActive(false);
+    }
+    pushHistory(); render(); renderSchedule(); updateQuote();
+    showToast('Removed ' + removeIds.size + ' duplicate' + (removeIds.size===1?'':'s'));
+    renderDuplicatesReport();
+  }));
+}
 
 // ===================================================================
 // PRODUCT PRICE DEFAULTS (section 16-17: global default + per-object override)
@@ -3924,6 +3992,7 @@ document.getElementById('dtbGrid').addEventListener('click', () => { openGridShe
 document.getElementById('dtbPriceList').addEventListener('click', () => { renderPriceList(); openSheet('sheetPriceList'); });
 document.getElementById('dtbCommsRacks').addEventListener('click', () => { renderCircuits(); openSheet('sheetCircuits'); });
 document.getElementById('dtbVersions').addEventListener('click', () => { renderVersionHistory(); openSheet('sheetVersions'); });
+document.getElementById('dtbDuplicates').addEventListener('click', () => { renderDuplicatesReport(); openSheet('sheetDuplicates'); });
 document.getElementById('dtbQuote').addEventListener('click', () => { updateQuote(); renderSchedule(); openSheet('sheetQuote'); });
 document.getElementById('dtbUndo2').addEventListener('click', () => document.getElementById('btnUndo').click());
 document.getElementById('dtbRedo2').addEventListener('click', () => document.getElementById('btnRedo').click());
