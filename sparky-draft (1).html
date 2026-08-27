@@ -598,6 +598,7 @@ html.force-desktop{
       <div class="toggle" id="switchRunsToggle"><div class="knob"></div></div>
     </div>
     <div id="layerListMobile"></div>
+    <div id="legendList"></div>
   </div>
 </div>
 
@@ -1184,9 +1185,16 @@ function render(){
       ctx.fillStyle=col; ctx.fillText(label, mx, my+3);
     }
   });
+  // Isolating a circuit hides every OTHER device too, not just their cable
+  // runs — except the switchboard/comms rack that feeds this circuit, kept
+  // visible so the feed line drawn to it still has a visible endpoint.
+  const isolatedBoardId = state.isolatedCircuitId
+    ? (state.circuits.find(c => c.id === state.isolatedCircuitId) || {}).switchboardObjectId || null
+    : null;
   currentFloor().objects.forEach(obj => {
     const layer = state.layers.find(l=>l.id===obj.layer);
     if(!layer || !layer.visible) return;
+    if(state.isolatedCircuitId && obj.circuit !== state.isolatedCircuitId && obj.id !== isolatedBoardId) return;
     const sym = SYMBOL_LIBRARY.find(s=>s.id===obj.symbolId);
     const p = worldToScreen(obj.x,obj.y);
     const r = state.symbolSize;
@@ -1352,8 +1360,15 @@ function render(){
     ctx.beginPath(); ctx.arc(p.x,p.y,7,0,Math.PI*2); ctx.fillStyle='#f2a93b'; ctx.fill();
   });
   // ghost preview of the device about to be placed, following the cursor —
-  // gives a sense of where it'll land before the user taps/clicks to drop it
-  if(state.activeSymbol && hoverScreen){
+  // gives a sense of where it'll land before the user taps/clicks to drop it.
+  // Only while genuinely idle and about to place: activeSymbol stays set
+  // after a placement (so you can drop several of the same device in a
+  // row) and stays set while the just-placed device is selected/dragged —
+  // without these guards the ghost kept following the cursor over the
+  // freshly-placed (snapped) device and during drags of ANY device, which
+  // visibly separates from the snapped real device and reads as a second,
+  // duplicate device.
+  if(state.activeSymbol && hoverScreen && !dragObjectId && !state.selectedObjectId){
     const sym = SYMBOL_LIBRARY.find(s=>s.id===state.activeSymbol);
     if(sym){
       const r = state.symbolSize;
@@ -1745,6 +1760,14 @@ canvas.addEventListener('pointerdown', (e) => {
       props
     };
     currentFloor().objects.push(obj); state.snapGuides = []; state.snapTarget = null; pushHistory(); render(); renderSchedule(); updateQuote();
+    // Exit placement mode once the device lands: activeSymbol staying set
+    // meant the very next canvas click — most naturally a click/drag on the
+    // device just placed — re-entered this branch and placed ANOTHER
+    // device on top instead of selecting/moving the first one, which is
+    // what looked like devices "duplicating" when clicked or dragged.
+    // openProps() below now owns "select this device for editing"; picking
+    // another device card resumes placement for the next one.
+    state.activeSymbol = null; state.activeTool = 'select';
     openProps(obj.id);
     return;
   }
@@ -2092,7 +2115,20 @@ document.getElementById('multiAssignSwitch').addEventListener('click', () => {
 const backdrop = document.getElementById('backdrop');
 const sheets = ['sheetSymbols','sheetLayers','sheetProps','sheetQuote','sheetMore','sheetCableSize','sheetCircuits','sheetElevation','sheetLoad','sheetFloors','sheetExport','sheetGrid','sheetAssignSwitch','sheetPriceList','sheetVersions','sheetRooms'].map(id=>document.getElementById(id));
 function closeSheets(){ sheets.forEach(s=>s.classList.remove('open')); backdrop.classList.remove('open'); }
-function openSheet(id){ closeSheets(); document.getElementById(id).classList.add('open'); backdrop.classList.add('open'); }
+// Layers/Symbols/Properties are permanently docked side panels on desktop
+// (not floating dialogs), so the backdrop shouldn't cover the canvas for
+// them there — it sat right over the canvas and silently absorbed the
+// very first click/drag after placing or selecting a device, since the
+// backdrop element, not the canvas, was what actually received the event.
+const DOCKED_SHEET_IDS = ['sheetLayers','sheetSymbols','sheetProps'];
+function isDesktopDocked(){
+  return document.documentElement.classList.contains('force-desktop') || window.matchMedia('(min-width:1400px)').matches;
+}
+function openSheet(id){
+  closeSheets();
+  document.getElementById(id).classList.add('open');
+  if(!(isDesktopDocked() && DOCKED_SHEET_IDS.includes(id))) backdrop.classList.add('open');
+}
 // Desktop docked layout only: Properties ("Device settings") overlays the
 // Symbols ("Place a device") panel in the same right-hand slot while a
 // device/cable is selected, and hands back to Symbols once the user is
@@ -3127,6 +3163,35 @@ document.getElementById('switchRunsToggle').addEventListener('click', () => {
   document.getElementById('switchRunsToggle').classList.toggle('on', state.showSwitchRuns);
   render(); markDirty();
 });
+// Legend + tally of everything placed on the current floor — grouped by
+// device type with a live count, so it reads as a plan legend rather than
+// a raw object list. Lives in the Layers panel (renderSchedule() already
+// runs after every add/delete/duplicate/floor-switch/undo, so hooking in
+// there keeps this in sync everywhere without touching each call site).
+function renderLegend(){
+  const el = document.getElementById('legendList');
+  if(!el) return;
+  const sectionHeaderStyle = 'font-family:var(--mono); font-size:10px; letter-spacing:1px; text-transform:uppercase; color:var(--text-dim); margin:14px 0 6px; padding-bottom:4px; border-bottom:1px solid var(--line-soft);';
+  const counts = {};
+  currentFloor().objects.forEach(o => { counts[o.symbolId] = (counts[o.symbolId]||0) + (o.props.quantity||1); });
+  const entries = Object.keys(counts)
+    .map(id => ({ sym: SYMBOL_LIBRARY.find(s=>s.id===id), count: counts[id] }))
+    .filter(e => e.sym)
+    .sort((a,b) => a.sym.category===b.sym.category ? a.sym.label.localeCompare(b.sym.label) : a.sym.category.localeCompare(b.sym.category));
+  if(!entries.length){
+    el.innerHTML = `<div style="${sectionHeaderStyle}">Legend</div><div style="color:var(--text-dim); font-size:12px; padding:2px 0 6px;">Nothing placed on this floor yet.</div>`;
+    return;
+  }
+  const total = entries.reduce((s,e) => s+e.count, 0);
+  el.innerHTML = `<div style="${sectionHeaderStyle}">Legend — ${total} device${total===1?'':'s'} on this floor</div>` +
+    entries.map(e => `
+      <div class="circuit-row" style="padding:8px 10px;">
+        <div style="width:26px; height:26px; border-radius:50%; background:${e.sym.color}; display:flex; align-items:center; justify-content:center; font-family:var(--mono); font-weight:700; font-size:10px; color:#0c1116; flex-shrink:0;">${e.sym.abbr}</div>
+        <div style="flex:1; font-size:12.5px;">${e.sym.label}</div>
+        <div class="circuit-count">× ${e.count}</div>
+      </div>
+    `).join('');
+}
 
 // ===================================================================
 // PROPERTIES SHEET
@@ -3441,6 +3506,7 @@ function fmt(n){ return '$'+n.toLocaleString('en-AU',{minimumFractionDigits:2,ma
 });
 
 function renderSchedule(){
+  renderLegend();
   const body = document.getElementById('scheduleBody');
   body.innerHTML = '';
   const labourRate = parseFloat(document.getElementById('rateLabour').value)||0;
@@ -3877,6 +3943,7 @@ refreshHistoryButtons();
 updateQuote();
 updateSaveStatusUI();
 renderLayersMobile(); // populates the always-visible desktop Layers panel too, not just the mobile sheet
+renderLegend();
 document.getElementById('projName').addEventListener('input', () => markDirty());
 checkForRecovery();
 </script>
