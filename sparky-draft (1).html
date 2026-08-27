@@ -3853,12 +3853,35 @@ function applyLoadedProject(d){
   Promise.all(floorPromises).then(floors => {
     state.floors = floors;
     state.activeFloorIndex = Math.min(d.activeFloorIndex || 0, state.floors.length - 1);
+    resyncNextId();
     updateFloorBadge(); fitToScreen(); renderSchedule(); updateQuote(); updateScaleBadge();
     history = []; historyIndex = -1; pushHistory();
     clearTimeout(autosaveTimer);
     state.saveStatus = 'saved'; updateSaveStatusUI();
     render();
   });
+}
+// state.nextId starts at 1 on every page load and was never resynced when a
+// project loads — every ID (devices, cables, dimensions, walls, rooms,
+// elevations) is generated from this ONE shared counter regardless of
+// type, so the first new thing created after loading any existing project
+// collided with whatever already held that low number (almost always the
+// switchboard, since it's typically the first device ever placed). Since
+// lots of code looks objects up by id, the new device then silently
+// inherited the switchboard's identity for relevance checks — e.g. every
+// circuit fed by that switchboard appearing "connected" to a brand-new,
+// unassigned device. Rescanning every id-bearing collection for the
+// highest number in use, on every load, prevents any new id from
+// colliding with one already in the file.
+function resyncNextId(){
+  let maxId = 0;
+  const scan = (arr) => (arr||[]).forEach(o => {
+    const m = /-(\d+)$/.exec(o.id || '');
+    if(m) maxId = Math.max(maxId, parseInt(m[1], 10));
+  });
+  state.floors.forEach(f => { scan(f.objects); scan(f.cables); scan(f.dimensions); scan(f.walls); scan(f.rooms); });
+  scan(state.elevations);
+  state.nextId = maxId + 1;
 }
 
 async function refreshLoadList(){
