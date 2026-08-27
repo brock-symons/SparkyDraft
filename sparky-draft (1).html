@@ -352,23 +352,25 @@ td{padding:6px; border-bottom:1px solid var(--line-soft);}
   #bottombar{ display:none; }
   #hud-topright, #multiActionBar{ top:10px; }
 
-  /* dock Layers + Symbols as a permanent left sidebar */
-  #sheetLayers, #sheetSymbols{
-    position:fixed; left:0; right:auto; bottom:auto; width:280px;
+  /* dock Layers as a permanent left sidebar — full column height now that
+     Symbols has moved to the right, so it no longer needs to share space
+     with (or squeeze out) another panel */
+  #sheetLayers{
+    position:fixed; left:0; right:auto; bottom:0; width:280px;
+    top:calc(48px + var(--safe-t) + var(--dtb-h, 49px));
     transform:none; border-radius:0; max-height:none; box-shadow:2px 0 8px rgba(0,0,0,0.04);
     border-right:1px solid var(--line); z-index:8;
   }
-  /* tall enough to show all layer rows (circuit labels + cable runs toggles,
-     plus Architectural/Power/Lighting/Data/Safety/Boards) without scrolling —
-     230px only fit the first row, burying the per-type visibility toggles */
-  #sheetLayers{ top:calc(48px + var(--safe-t) + var(--dtb-h, 49px)); height:520px; }
-  #sheetSymbols{ top:calc(48px + var(--safe-t) + var(--dtb-h, 49px) + 520px); bottom:0; }
-  #sheetLayers .sheet-handle, #sheetSymbols .sheet-handle,
-  #sheetLayers .sheet-close, #sheetSymbols .sheet-close{ display:none; }
-  #sheetLayers .sheet-header, #sheetSymbols .sheet-header{ border-bottom:1px solid var(--line-soft); }
+  #sheetLayers .sheet-body{ overflow-y:auto; }
+  #sheetLayers .sheet-handle, #sheetLayers .sheet-close{ display:none; }
+  #sheetLayers .sheet-header{ border-bottom:1px solid var(--line-soft); }
 
-  /* dock Properties as a permanent right sidebar */
-  #sheetProps{
+  /* dock Symbols ("Place a device") and Properties ("Device settings") in
+     the SAME right-hand slot. Properties overlays Symbols (covers it
+     completely) while a device/cable is selected — toggled by the
+     props-active class on <html>, see setDeviceEditorActive() — and hands
+     back to Symbols on Save/Delete/deselect. */
+  #sheetSymbols, #sheetProps{
     position:fixed; right:0; left:auto; bottom:0; width:320px;
     /* --dtb-h tracks the desktop toolbar's real (possibly wrapped) height —
        see syncDesktopToolbarHeight() — so this panel starts right below it
@@ -377,9 +379,13 @@ td{padding:6px; border-bottom:1px solid var(--line-soft);}
     transform:none; border-radius:0; box-shadow:-2px 0 8px rgba(0,0,0,0.04);
     border-left:1px solid var(--line); z-index:8; display:flex; flex-direction:column;
   }
-  #sheetProps .sheet-body{ flex:1; overflow-y:auto; }
-  #sheetProps .sheet-handle, #sheetProps .sheet-close{ display:none; }
-  #sheetProps .sheet-header{ border-bottom:1px solid var(--line-soft); }
+  #sheetSymbols .sheet-body, #sheetProps .sheet-body{ flex:1; overflow-y:auto; }
+  #sheetSymbols .sheet-handle, #sheetProps .sheet-handle,
+  #sheetSymbols .sheet-close, #sheetProps .sheet-close{ display:none; }
+  #sheetSymbols .sheet-header, #sheetProps .sheet-header{ border-bottom:1px solid var(--line-soft); }
+  #sheetProps{ display:none; }
+  html.props-active #sheetProps{ display:flex; }
+  html.props-active #sheetSymbols{ display:none; }
 
   #canvas-wrap{
     left:280px; right:320px; top:calc(48px + var(--safe-t) + var(--dtb-h, 49px)); bottom:0;
@@ -430,26 +436,32 @@ html.force-desktop{
   html.force-desktop #bottombar, html.force-desktop #multiActionBar ~ #hud #tool-hint{ }
   html.force-desktop #bottombar{ display:none; }
   html.force-desktop #hud-topright, html.force-desktop #multiActionBar{ top:10px; }
-  /* dock Layers + Symbols as a permanent left sidebar */
-  html.force-desktop #sheetLayers, html.force-desktop #sheetSymbols{
-    position:fixed; left:0; right:auto; bottom:auto; width:280px;
+  /* dock Layers as a permanent left sidebar — full column height */
+  html.force-desktop #sheetLayers{
+    position:fixed; left:0; right:auto; bottom:0; width:280px;
+    top:calc(48px + var(--safe-t) + var(--dtb-h, 49px));
     transform:none; border-radius:0; max-height:none; box-shadow:2px 0 8px rgba(0,0,0,0.04);
     border-right:1px solid var(--line); z-index:8;
   }
-  html.force-desktop #sheetLayers{ top:calc(48px + var(--safe-t) + var(--dtb-h, 49px)); height:520px; }
-  html.force-desktop #sheetSymbols{ top:calc(48px + var(--safe-t) + var(--dtb-h, 49px) + 520px); bottom:0; }
-  html.force-desktop #sheetLayers .sheet-handle, html.force-desktop #sheetSymbols .sheet-handle, html.force-desktop #sheetLayers .sheet-close, html.force-desktop #sheetSymbols .sheet-close{ display:none; }
-  html.force-desktop #sheetLayers .sheet-header, html.force-desktop #sheetSymbols .sheet-header{ border-bottom:1px solid var(--line-soft); }
-  /* dock Properties as a permanent right sidebar */
-  html.force-desktop #sheetProps{
+  html.force-desktop #sheetLayers .sheet-body{ overflow-y:auto; }
+  html.force-desktop #sheetLayers .sheet-handle, html.force-desktop #sheetLayers .sheet-close{ display:none; }
+  html.force-desktop #sheetLayers .sheet-header{ border-bottom:1px solid var(--line-soft); }
+  /* dock Symbols ("Place a device") and Properties ("Device settings") in
+     the same right-hand slot — Properties overlays Symbols while a
+     device/cable is selected, see setDeviceEditorActive() */
+  html.force-desktop #sheetSymbols, html.force-desktop #sheetProps{
     position:fixed; right:0; left:auto; bottom:0; width:320px;
     top:calc(48px + var(--safe-t) + var(--dtb-h, 49px)); max-height:none;
     transform:none; border-radius:0; box-shadow:-2px 0 8px rgba(0,0,0,0.04);
     border-left:1px solid var(--line); z-index:8; display:flex; flex-direction:column;
   }
-  html.force-desktop #sheetProps .sheet-body{ flex:1; overflow-y:auto; }
-  html.force-desktop #sheetProps .sheet-handle, html.force-desktop #sheetProps .sheet-close{ display:none; }
-  html.force-desktop #sheetProps .sheet-header{ border-bottom:1px solid var(--line-soft); }
+  html.force-desktop #sheetSymbols .sheet-body, html.force-desktop #sheetProps .sheet-body{ flex:1; overflow-y:auto; }
+  html.force-desktop #sheetSymbols .sheet-handle, html.force-desktop #sheetProps .sheet-handle,
+  html.force-desktop #sheetSymbols .sheet-close, html.force-desktop #sheetProps .sheet-close{ display:none; }
+  html.force-desktop #sheetSymbols .sheet-header, html.force-desktop #sheetProps .sheet-header{ border-bottom:1px solid var(--line-soft); }
+  html.force-desktop #sheetProps{ display:none; }
+  html.force-desktop.props-active #sheetProps{ display:flex; }
+  html.force-desktop.props-active #sheetSymbols{ display:none; }
   html.force-desktop #canvas-wrap{
     left:280px; right:320px; top:calc(48px + var(--safe-t) + var(--dtb-h, 49px)); bottom:0;
   }
@@ -1075,14 +1087,17 @@ function computeBankAttachPoints(floor, bank, order){
     return { switchObj: swObj, attachTo: nearest };
   }).filter(Boolean);
 }
-// GPO circuit daisy-chains — same physical-routing idea as lighting banks, but
-// grouped by *circuit assignment* (not switch links). Each electrical circuit
-// that has GPOs gets: one feed from its switchboard to the first GPO, then
-// GPO → GPO → GPO. Different circuits never share a chain.
+// Power circuit daisy-chains — same physical-routing idea as lighting banks,
+// but grouped by *circuit assignment* (not switch links). Each electrical
+// circuit gets: one feed from its switchboard to the first device, then
+// device → device → device. Different circuits never share a chain.
+// Covers every device on the Power layer (GPOs, isolators, HWS, ovens,
+// etc.) — not just GPO-shaped symbols — so a circuit that mixes device
+// types still shows a complete run, which matters for "isolate circuit".
 function computeGpoChains(floor){
   const byCircuit = {};
   floor.objects.forEach(o => {
-    if(!o.circuit || !isGpoSymbol(o.symbolId)) return;
+    if(!o.circuit || o.layer !== 'power') return;
     (byCircuit[o.circuit] = byCircuit[o.circuit] || []).push(o.id);
   });
   return Object.keys(byCircuit).map(circuitId => {
@@ -1856,6 +1871,7 @@ canvas.addEventListener('pointermove', (e) => {
       } else {
         isPanningCanvas = true;
         state.selectedObjectId = null; state.selectedCableId = null;
+        setDeviceEditorActive(false);
       }
       pendingTap = null;
       render();
@@ -1907,7 +1923,7 @@ function endPointer(e){
   if(pendingTap && state.activeTool==='select'){
     if(pendingTap.hitObjId){ openProps(pendingTap.hitObjId); }
     else if(pendingTap.hitCableId){ openCableProps(pendingTap.hitCableId); }
-    else { state.selectedObjectId = null; state.selectedCableId = null; render(); document.getElementById('propsBody').innerHTML = '<div class="empty-state">Select a device or cable on the plan to see and edit its properties here.</div>'; document.getElementById('propsTitle').textContent = 'Properties'; }
+    else { state.selectedObjectId = null; state.selectedCableId = null; setDeviceEditorActive(false); render(); document.getElementById('propsBody').innerHTML = '<div class="empty-state">Select a device or cable on the plan to see and edit its properties here.</div>'; document.getElementById('propsTitle').textContent = 'Properties'; }
   }
   pendingTap = null;
   dragObjectId = null; isPanningCanvas = false; panLast = null;
@@ -2077,6 +2093,14 @@ const backdrop = document.getElementById('backdrop');
 const sheets = ['sheetSymbols','sheetLayers','sheetProps','sheetQuote','sheetMore','sheetCableSize','sheetCircuits','sheetElevation','sheetLoad','sheetFloors','sheetExport','sheetGrid','sheetAssignSwitch','sheetPriceList','sheetVersions','sheetRooms'].map(id=>document.getElementById(id));
 function closeSheets(){ sheets.forEach(s=>s.classList.remove('open')); backdrop.classList.remove('open'); }
 function openSheet(id){ closeSheets(); document.getElementById(id).classList.add('open'); backdrop.classList.add('open'); }
+// Desktop docked layout only: Properties ("Device settings") overlays the
+// Symbols ("Place a device") panel in the same right-hand slot while a
+// device/cable is selected, and hands back to Symbols once the user is
+// done (Save, Delete, or deselecting). No-op on mobile, where Symbols and
+// Properties are independent bottom sheets.
+function setDeviceEditorActive(active){
+  document.documentElement.classList.toggle('props-active', active);
+}
 backdrop.addEventListener('click', closeSheets);
 document.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', closeSheets));
 
@@ -2539,6 +2563,7 @@ function renderFloors(){
     row.querySelector('.fname').addEventListener('click', () => {
       state.activeFloorIndex = idx;
       state.selectedObjectId = null; state.selectedCableId = null;
+      setDeviceEditorActive(false);
       updateFloorBadge(); renderSchedule(); updateQuote(); updateScaleBadge(); render();
       closeSheets();
     });
@@ -2598,6 +2623,7 @@ function restoreSnapshot(entry){
   });
   state.layers = d.layers; state.circuits = d.circuits;
   state.selectedObjectId = null; state.selectedCableId = null;
+  setDeviceEditorActive(false);
   render(); renderSchedule(); updateQuote(); updateScaleBadge();
 }
 document.getElementById('btnUndo').addEventListener('click', () => {
@@ -3107,6 +3133,7 @@ document.getElementById('switchRunsToggle').addEventListener('click', () => {
 // ===================================================================
 function openProps(id){
   state.selectedObjectId = id; render();
+  setDeviceEditorActive(true);
   const obj = currentFloor().objects.find(o=>o.id===id);
   const sym = SYMBOL_LIBRARY.find(s=>s.id===obj.symbolId);
   const lockedLayer = isLayerLocked(obj.layer);
@@ -3331,6 +3358,9 @@ function openProps(id){
     // the sheet's close button, which desktop hides since the panel is
     // permanently docked there.
     document.getElementById('btnSave').click();
+    // on the desktop docked layout, Device settings overlays Place-a-device
+    // until the user is done editing — Save is the primary "done" signal
+    state.selectedObjectId = null; setDeviceEditorActive(false); render();
   });
   document.getElementById('btnDeleteObj').addEventListener('click', () => {
     if(lockedLayer){ showToast('Unlock this layer in Layers to delete'); return; }
@@ -3338,7 +3368,7 @@ function openProps(id){
     currentFloor().objects = currentFloor().objects.filter(o=>o.id!==id);
     currentFloor().switchLinks = currentFloor().switchLinks.filter(l=>l.switchId!==id && l.lightId!==id);
     affectedSwitches.forEach(swId => { if(swId!==id) recomputeSwitchGang(swId); });
-    state.selectedObjectId = null; closeSheets(); pushHistory(); render(); renderSchedule(); updateQuote();
+    state.selectedObjectId = null; setDeviceEditorActive(false); closeSheets(); pushHistory(); render(); renderSchedule(); updateQuote();
   });
   if(lockedLayer){
     const del = document.getElementById('btnDeleteObj');
@@ -3351,6 +3381,7 @@ function openCableProps(id){
   const c = currentFloor().cables.find(x=>x.id===id);
   if(!c) return;
   state.selectedCableId = id; state.selectedObjectId = null; render();
+  setDeviceEditorActive(true);
   document.getElementById('propsTitle').textContent = 'Cable route — ' + c.id;
   const lengthLabel = currentFloor().scale
     ? (Math.hypot(c.x2-c.x1,c.y2-c.y1)/currentFloor().scale).toFixed(1)+' m'
@@ -3368,7 +3399,7 @@ function openCableProps(id){
   });
   document.getElementById('btnDeleteCable').addEventListener('click', () => {
     currentFloor().cables = currentFloor().cables.filter(x=>x.id!==id);
-    state.selectedCableId = null; closeSheets(); pushHistory(); render(); renderSchedule();
+    state.selectedCableId = null; setDeviceEditorActive(false); closeSheets(); pushHistory(); render(); renderSchedule();
   });
   openSheet('sheetProps');
 }
@@ -3651,6 +3682,7 @@ function applyLoadedProject(d){
   state.gridOverlay = !!d.gridOverlay;
   state.selectedObjectId = null;
   state.selectedCableId = null;
+  setDeviceEditorActive(false);
   state.multiSelectedIds = new Set();
   state.multiSelectMode = false;
   state.calibratePoints = [];
@@ -3758,6 +3790,7 @@ function clearCurrentProject(name){
   state.layers = LAYER_DEFS.map(l => ({ ...l, visible: true }));
   state.selectedObjectId = null;
   state.selectedCableId = null;
+  setDeviceEditorActive(false);
   state.multiSelectedIds = new Set();
   state.multiSelectMode = false;
   state.calibratePoints = [];
