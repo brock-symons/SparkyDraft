@@ -4008,8 +4008,12 @@ async function initCloudAuth(){
   if(cloudConfigured){
     const { data } = await supabaseClient.auth.getSession();
     cloudUser = data && data.session ? data.session.user : null;
-    supabaseClient.auth.onAuthStateChange((_event, session) => {
+    supabaseClient.auth.onAuthStateChange((event, session) => {
       cloudUser = session ? session.user : null;
+      // Clicking a password-reset email link lands back here with a
+      // temporary recovery session — route to the "set new password" form
+      // instead of treating it as a normal login.
+      if(event === 'PASSWORD_RECOVERY') gateMode = 'newpassword';
       if(document.getElementById('sheetAccount').classList.contains('open')) renderAccountSheet();
       renderAuthGate();
     });
@@ -4021,11 +4025,27 @@ async function initCloudAuth(){
 // cloudUser is set. This just overlays/blocks — it doesn't touch the app's
 // own init sequence, so whatever runs in the background (canvas render,
 // recovery banner, etc.) is harmless either way once the gate lifts.
-let gateMode = 'signin'; // 'signin' | 'signup'
+let gateMode = 'signin'; // 'signin' | 'signup' | 'reset' | 'newpassword'
 
 function renderAuthGate(){
   const gate = document.getElementById('authGate');
   const body = document.getElementById('authGateBody');
+  // Supabase's password-recovery link signs the user into a temporary
+  // recovery session (cloudUser gets set) purely so updateUser() can change
+  // the password — it's not a real login. Gate stays up until they've
+  // actually set a new password, regardless of cloudUser being set.
+  if(gateMode === 'newpassword'){
+    gate.classList.add('open');
+    body.innerHTML = `
+      <div class="auth-msg" style="text-align:left; padding:0 0 14px;">Set a new password for your account.</div>
+      <div class="prop-row"><label>New password</label><input id="gate_newpw" type="password" placeholder="At least 6 characters" autocomplete="new-password"></div>
+      <div class="prop-row"><label>Repeat new password</label><input id="gate_newpw2" type="password" placeholder="Re-enter your new password" autocomplete="new-password"></div>
+      <div id="gateError" class="auth-error"></div>
+      <button class="add-btn" id="gateSubmit" style="margin-top:0;">Set new password</button>
+    `;
+    document.getElementById('gateSubmit').addEventListener('click', () => submitNewPassword());
+    return;
+  }
   if(cloudUser){ gate.classList.remove('open'); return; }
   gate.classList.add('open');
   if(!cloudCredentialsSet){
@@ -4034,6 +4054,18 @@ function renderAuthGate(){
   }
   if(!cloudLibraryLoaded){
     body.innerHTML = `<div class="auth-msg">Couldn't reach the login service. Check your internet connection and reload the page.</div>`;
+    return;
+  }
+  if(gateMode === 'reset'){
+    body.innerHTML = `
+      <div class="auth-msg" style="text-align:left; padding:0 0 14px;">Enter your email and we'll send you a link to reset your password.</div>
+      <div class="prop-row"><label>Email</label><input id="gate_email" type="email" placeholder="you@example.com" autocomplete="email"></div>
+      <div id="gateError" class="auth-error"></div>
+      <button class="add-btn" id="gateSubmit" style="margin-top:0;">Send reset link</button>
+      <div class="auth-toggle">Remembered it? <a href="#" id="gateToggle">Log in</a></div>
+    `;
+    document.getElementById('gateSubmit').addEventListener('click', () => sendPasswordReset());
+    document.getElementById('gateToggle').addEventListener('click', (e) => { e.preventDefault(); gateMode = 'signin'; renderAuthGate(); });
     return;
   }
   body.innerHTML = gateMode === 'signup' ? `
@@ -4051,6 +4083,7 @@ function renderAuthGate(){
     <div id="gateError" class="auth-error"></div>
     <button class="add-btn" id="gateSubmit" style="margin-top:0;">Log in</button>
     <div class="auth-toggle">Don't have an account? <a href="#" id="gateToggle">Create one</a></div>
+    <div class="auth-toggle"><a href="#" id="gateForgot">Forgot your password?</a></div>
   `;
   document.getElementById('gateSubmit').addEventListener('click', () => gateAuth(gateMode));
   document.getElementById('gateToggle').addEventListener('click', (e) => {
@@ -4058,7 +4091,60 @@ function renderAuthGate(){
     gateMode = gateMode === 'signin' ? 'signup' : 'signin';
     renderAuthGate();
   });
+  const forgotLink = document.getElementById('gateForgot');
+  if(forgotLink) forgotLink.addEventListener('click', (e) => { e.preventDefault(); gateMode = 'reset'; renderAuthGate(); });
   document.getElementById('gate_password').addEventListener('keydown', e => { if(e.key === 'Enter' && gateMode === 'signin') gateAuth('signin'); });
+}
+
+async function sendPasswordReset(){
+  const email = document.getElementById('gate_email').value.trim();
+  const errEl = document.getElementById('gateError');
+  const submitBtn = document.getElementById('gateSubmit');
+  errEl.style.color = 'var(--red)'; errEl.textContent = '';
+  if(!email){ errEl.textContent = 'Enter your email.'; return; }
+  submitBtn.disabled = true;
+  const prevLabel = submitBtn.textContent;
+  submitBtn.textContent = 'Sending…';
+  try{
+    const { error } = await supabaseClient.auth.resetPasswordForEmail(email, {
+      redirectTo: window.location.origin + window.location.pathname,
+    });
+    if(error) throw error;
+    errEl.style.color = 'var(--green)';
+    errEl.textContent = 'Check your email for a reset link.';
+  } catch(err){
+    console.error('SparkyDraft auth error:', err);
+    errEl.textContent = err.message || 'Something went wrong — try again.';
+  } finally {
+    submitBtn.disabled = false;
+    submitBtn.textContent = prevLabel;
+  }
+}
+
+async function submitNewPassword(){
+  const pw = document.getElementById('gate_newpw').value;
+  const pw2 = document.getElementById('gate_newpw2').value;
+  const errEl = document.getElementById('gateError');
+  const submitBtn = document.getElementById('gateSubmit');
+  errEl.style.color = 'var(--red)'; errEl.textContent = '';
+  if(pw.length < 6){ errEl.textContent = 'Password must be at least 6 characters.'; return; }
+  if(pw !== pw2){ errEl.textContent = "Passwords don't match."; return; }
+  submitBtn.disabled = true;
+  const prevLabel = submitBtn.textContent;
+  submitBtn.textContent = 'Please wait…';
+  try{
+    const { error } = await supabaseClient.auth.updateUser({ password: pw });
+    if(error) throw error;
+    gateMode = 'signin';
+    renderAuthGate();
+    showToast("Password updated — you're logged in.");
+  } catch(err){
+    console.error('SparkyDraft auth error:', err);
+    errEl.textContent = err.message || 'Something went wrong — try again.';
+  } finally {
+    submitBtn.disabled = false;
+    submitBtn.textContent = prevLabel;
+  }
 }
 
 async function gateAuth(mode){
