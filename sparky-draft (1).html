@@ -3976,9 +3976,15 @@ document.getElementById('btnLoad').addEventListener('click', async () => {
 // placeholders, the app behaves exactly as before: fully offline, local
 // storage only, no account required — this whole feature is additive.
 // ===================================================================
-const SUPABASE_URL = 'YOUR_SUPABASE_URL';
-const SUPABASE_ANON_KEY = 'YOUR_SUPABASE_ANON_KEY';
-const cloudConfigured = /^https:\/\//.test(SUPABASE_URL) && !!SUPABASE_ANON_KEY && SUPABASE_ANON_KEY !== 'YOUR_SUPABASE_ANON_KEY';
+const SUPABASE_URL = 'https://bqknltkzxjxkylxqakau.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_WLC6h8BtnUPbLb77pVOrhA_th3CT1BR';
+const cloudCredentialsSet = /^https:\/\//.test(SUPABASE_URL) && !!SUPABASE_ANON_KEY && SUPABASE_ANON_KEY !== 'YOUR_SUPABASE_ANON_KEY';
+// window.supabase comes from the jsdelivr CDN <script> tag in <head>. If that
+// fails to load for any reason (ad blocker, offline, flaky connection), this
+// stays undefined — cloudConfigured guards every use so the rest of the app
+// (which lives in this same script block) still runs normally either way.
+const cloudLibraryLoaded = typeof window.supabase !== 'undefined';
+const cloudConfigured = cloudCredentialsSet && cloudLibraryLoaded;
 const supabaseClient = cloudConfigured ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 let cloudUser = null;
 
@@ -3994,10 +4000,16 @@ async function initCloudAuth(){
 
 function renderAccountSheet(){
   const body = document.getElementById('accountBody');
-  if(!cloudConfigured){
+  if(!cloudCredentialsSet){
     body.innerHTML = `<div style="color:var(--text-dim); font-size:12.5px; line-height:1.6; padding:8px 0;">
       Cloud sync isn't set up yet. Everything still saves locally on this device by default.
       To turn on account login and cloud save, add a Supabase project URL and anon key near the top of the app's code.
+    </div>`;
+    return;
+  }
+  if(!cloudLibraryLoaded){
+    body.innerHTML = `<div style="color:var(--text-dim); font-size:12.5px; line-height:1.6; padding:8px 0;">
+      Couldn't reach the cloud sync service just now (this needs an internet connection). Everything still saves locally on this device — check your connection and reload the page to try cloud login again.
     </div>`;
     return;
   }
