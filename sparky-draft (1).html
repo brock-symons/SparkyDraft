@@ -2735,6 +2735,12 @@ function restoreSnapshot(entry){
     state.activeFloorIndex = Math.max(0, state.floors.length - 1);
   }
   state.layers = d.layers; state.circuits = d.circuits;
+  // an isolate filter pointed at a circuit that existed later than this
+  // snapshot would otherwise hide every device after undoing past its
+  // creation, with no visible circuit left to explain why
+  if(state.isolatedCircuitId && !state.circuits.some(c => c.id === state.isolatedCircuitId)){
+    state.isolatedCircuitId = null;
+  }
   state.selectedObjectId = null; state.selectedCableId = null;
   setDeviceEditorActive(false);
   updateFloorBadge();
@@ -3829,6 +3835,10 @@ function applyLoadedProject(d){
   state.gridOverlay = !!d.gridOverlay;
   state.selectedObjectId = null;
   state.selectedCableId = null;
+  // a circuit isolate filter left over from the previous project would
+  // otherwise silently hide every device here, since none of them match
+  // an id that doesn't exist in this project's circuits
+  state.isolatedCircuitId = null;
   setDeviceEditorActive(false);
   state.multiSelectedIds = new Set();
   state.multiSelectMode = false;
@@ -3960,6 +3970,9 @@ function clearCurrentProject(name){
   state.layers = LAYER_DEFS.map(l => ({ ...l, visible: true }));
   state.selectedObjectId = null;
   state.selectedCableId = null;
+  // see applyLoadedProject() — a leftover isolate filter would otherwise
+  // hide every device placed in the fresh project
+  state.isolatedCircuitId = null;
   setDeviceEditorActive(false);
   state.multiSelectedIds = new Set();
   state.multiSelectMode = false;
