@@ -298,6 +298,15 @@ td{padding:6px; border-bottom:1px solid var(--line-soft);}
 .modal-ok.danger{background:rgba(248,113,113,0.15); border:1px solid #5c2626; color:var(--red);}
 
 /* toast (replaces alert) */
+/* ===== AUTH GATE — full-screen, blocks the app until logged in ===== */
+#authGate{ position:fixed; inset:0; z-index:100; background:var(--bg); display:none; align-items:center; justify-content:center; padding:20px; }
+#authGate.open{ display:flex; }
+.auth-card{ width:100%; max-width:340px; background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:26px 22px; }
+.auth-msg{ color:var(--text-dim); font-size:13px; line-height:1.6; text-align:center; padding:12px 0; }
+.auth-error{ color:var(--red); font-size:11.5px; min-height:16px; margin:2px 0 12px; line-height:1.5; }
+.auth-toggle{ text-align:center; font-size:11.5px; color:var(--text-dim); margin-top:14px; }
+.auth-toggle a{ color:var(--blue); text-decoration:none; }
+
 #toastHost{position:fixed; left:0; right:0; bottom:calc(76px + var(--safe-b)); z-index:70; display:flex; flex-direction:column; align-items:center; gap:8px; pointer-events:none;}
 .toast{
   background:var(--panel); border:1px solid var(--line); color:var(--text); font-size:12.5px;
@@ -489,6 +498,12 @@ html.force-desktop{
 </style>
 </head>
 <body>
+<div id="authGate">
+  <div class="auth-card">
+    <div class="brand" style="margin-bottom:18px; justify-content:center;"><div class="dot"></div>SPARKY DRAFT</div>
+    <div id="authGateBody"></div>
+  </div>
+</div>
 <div id="toastHost"></div>
 
 <div id="topbar">
@@ -3989,13 +4004,83 @@ const supabaseClient = cloudConfigured ? window.supabase.createClient(SUPABASE_U
 let cloudUser = null;
 
 async function initCloudAuth(){
-  if(!cloudConfigured) return;
-  const { data } = await supabaseClient.auth.getSession();
-  cloudUser = data && data.session ? data.session.user : null;
-  supabaseClient.auth.onAuthStateChange((_event, session) => {
-    cloudUser = session ? session.user : null;
-    if(document.getElementById('sheetAccount').classList.contains('open')) renderAccountSheet();
-  });
+  if(cloudConfigured){
+    const { data } = await supabaseClient.auth.getSession();
+    cloudUser = data && data.session ? data.session.user : null;
+    supabaseClient.auth.onAuthStateChange((_event, session) => {
+      cloudUser = session ? session.user : null;
+      if(document.getElementById('sheetAccount').classList.contains('open')) renderAccountSheet();
+      renderAuthGate();
+    });
+  }
+  renderAuthGate();
+}
+
+// The app is gated behind login: nothing on the canvas is reachable until
+// cloudUser is set. This just overlays/blocks — it doesn't touch the app's
+// own init sequence, so whatever runs in the background (canvas render,
+// recovery banner, etc.) is harmless either way once the gate lifts.
+function renderAuthGate(){
+  const gate = document.getElementById('authGate');
+  const body = document.getElementById('authGateBody');
+  if(cloudUser){ gate.classList.remove('open'); return; }
+  gate.classList.add('open');
+  if(!cloudCredentialsSet){
+    body.innerHTML = `<div class="auth-msg">Cloud login isn't configured for this build.</div>`;
+    return;
+  }
+  if(!cloudLibraryLoaded){
+    body.innerHTML = `<div class="auth-msg">Couldn't reach the login service. Check your internet connection and reload the page.</div>`;
+    return;
+  }
+  body.innerHTML = `
+    <div class="prop-row"><label>Email</label><input id="gate_email" type="email" placeholder="you@example.com" autocomplete="email"></div>
+    <div class="prop-row"><label>Password</label><input id="gate_password" type="password" placeholder="At least 6 characters" autocomplete="current-password"></div>
+    <div id="gateError" class="auth-error"></div>
+    <button class="add-btn" id="gateLogin" style="margin-top:0;">Log in</button>
+    <button class="add-btn" id="gateSignup" style="background:transparent;">Create account</button>
+  `;
+  document.getElementById('gateLogin').addEventListener('click', () => gateAuth('signin'));
+  document.getElementById('gateSignup').addEventListener('click', () => gateAuth('signup'));
+  document.getElementById('gate_password').addEventListener('keydown', e => { if(e.key === 'Enter') gateAuth('signin'); });
+}
+
+async function gateAuth(mode){
+  const email = document.getElementById('gate_email').value.trim();
+  const password = document.getElementById('gate_password').value;
+  const errEl = document.getElementById('gateError');
+  const loginBtn = document.getElementById('gateLogin');
+  const signupBtn = document.getElementById('gateSignup');
+  errEl.style.color = 'var(--red)'; errEl.textContent = '';
+  if(!email || password.length < 6){ errEl.textContent = 'Enter a valid email and a password of at least 6 characters.'; return; }
+  loginBtn.disabled = true; signupBtn.disabled = true;
+  const activeBtn = mode === 'signin' ? loginBtn : signupBtn;
+  const prevLabel = activeBtn.textContent;
+  activeBtn.textContent = 'Please wait…';
+  try{
+    if(mode === 'signup'){
+      const { data, error } = await supabaseClient.auth.signUp({ email, password });
+      if(error) throw error;
+      if(data.user && !data.session){
+        errEl.style.color = 'var(--green)';
+        errEl.textContent = 'Account created — check your email to confirm, then log in.';
+        return;
+      }
+      cloudUser = data.user;
+    } else {
+      const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
+      if(error) throw error;
+      cloudUser = data.user;
+    }
+    renderAuthGate();
+    showToast(mode === 'signup' ? 'Account created' : 'Logged in');
+  } catch(err){
+    console.error('SparkyDraft auth error:', err);
+    errEl.textContent = err.message || 'Something went wrong — try again.';
+  } finally {
+    loginBtn.disabled = false; signupBtn.disabled = false;
+    activeBtn.textContent = prevLabel;
+  }
 }
 
 function renderAccountSheet(){
@@ -4070,6 +4155,8 @@ async function cloudSignOut(){
   await supabaseClient.auth.signOut();
   cloudUser = null;
   renderAccountSheet();
+  closeSheets();
+  renderAuthGate();
   showToast('Signed out');
 }
 
