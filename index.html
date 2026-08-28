@@ -517,6 +517,7 @@ html.force-desktop{
   <button class="icon-btn" id="btnSave" title="Save now" style="position:relative;">💾<span id="saveStatusDot"></span></button>
   <button class="icon-btn" id="btnLoad">📂</button>
   <button class="icon-btn" id="btnLayoutToggle" title="Switch between bright desktop layout and dark mobile layout">🖥</button>
+  <button class="icon-btn" id="btnLogout" title="Log out">🚪</button>
 </div>
 
 <div id="desktopToolbar">
@@ -4037,7 +4038,7 @@ function renderAuthGate(){
   }
   body.innerHTML = gateMode === 'signup' ? `
     <div class="prop-row"><label>Full name</label><input id="gate_name" type="text" placeholder="Jane Smith" autocomplete="name"></div>
-    <div class="prop-row"><label>Phone number</label><input id="gate_phone" type="tel" placeholder="04xx xxx xxx" autocomplete="tel"></div>
+    <div class="prop-row"><label>Organisation <span style="text-transform:none; opacity:0.7;">(optional)</span></label><input id="gate_org" type="text" placeholder="Company or trading name" autocomplete="organization"></div>
     <div class="prop-row"><label>Email</label><input id="gate_email" type="email" placeholder="you@example.com" autocomplete="email"></div>
     <div class="prop-row"><label>Password</label><input id="gate_password" type="password" placeholder="At least 6 characters" autocomplete="new-password"></div>
     <div class="prop-row"><label>Repeat password</label><input id="gate_password2" type="password" placeholder="Re-enter your password" autocomplete="new-password"></div>
@@ -4067,13 +4068,12 @@ async function gateAuth(mode){
   const submitBtn = document.getElementById('gateSubmit');
   errEl.style.color = 'var(--red)'; errEl.textContent = '';
 
-  let name = '', phone = '';
+  let name = '', org = '';
   if(mode === 'signup'){
     name = document.getElementById('gate_name').value.trim();
-    phone = document.getElementById('gate_phone').value.trim();
+    org = document.getElementById('gate_org').value.trim();
     const password2 = document.getElementById('gate_password2').value;
     if(!name){ errEl.textContent = 'Enter your name.'; return; }
-    if(!phone){ errEl.textContent = 'Enter your phone number.'; return; }
     if(!email || password.length < 6){ errEl.textContent = 'Enter a valid email and a password of at least 6 characters.'; return; }
     if(password !== password2){ errEl.textContent = "Passwords don't match."; return; }
   } else if(!email || !password){
@@ -4087,7 +4087,7 @@ async function gateAuth(mode){
     if(mode === 'signup'){
       const { data, error } = await supabaseClient.auth.signUp({
         email, password,
-        options: { data: { full_name: name, phone: phone } },
+        options: { data: { full_name: name, organization: org } },
       });
       if(error) throw error;
       if(data.user && !data.session){
@@ -4193,6 +4193,10 @@ async function cloudSignOut(){
   renderAuthGate();
   showToast('Signed out');
 }
+document.getElementById('btnLogout').addEventListener('click', () => {
+  if(!cloudUser){ showToast('Not signed in'); return; }
+  openConfirmModal('Log out?', 'You\'ll need to log back in to keep using SparkyDraft. Any unsaved changes are autosaved locally first.', () => cloudSignOut(), 'Log out');
+});
 
 async function cloudSaveCurrentProject(){
   if(!cloudUser) return;
