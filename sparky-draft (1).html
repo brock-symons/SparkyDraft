@@ -518,6 +518,7 @@ html.force-desktop{
   <button class="dtb-btn" id="dtbQuote">💲 Quote</button>
   <button class="dtb-btn" id="dtbVersions">🕐 History</button>
   <button class="dtb-btn" id="dtbDuplicates">🧹 Find duplicates</button>
+  <button class="dtb-btn" id="dtbAccount">☁ Account</button>
   <div class="dtb-sep"></div>
   <button class="dtb-btn" id="dtbUndo2" title="Undo (Ctrl+Z)">↶</button>
   <button class="dtb-btn" id="dtbRedo2" title="Redo (Ctrl+Shift+Z)">↷</button>
@@ -675,6 +676,9 @@ html.force-desktop{
       <div class="tool-card hidden-feature" id="moreWall"><span class="icon">▬</span><span class="lbl">Mark wall</span></div>
       <div class="tool-card" id="moreDuplicates"><span class="icon">🧹</span><span class="lbl">Find duplicates</span></div>
     </div>
+    <div class="tool-row">
+      <div class="tool-card" id="moreAccount"><span class="icon">☁</span><span class="lbl">Account &amp; cloud</span></div>
+    </div>
   </div>
 </div>
 
@@ -797,6 +801,12 @@ html.force-desktop{
   </div>
 </div>
 
+<div class="sheet" id="sheetAccount">
+  <div class="sheet-handle"></div>
+  <div class="sheet-header"><div class="sheet-title">Account &amp; cloud sync</div><div class="sheet-close" data-close>✕</div></div>
+  <div class="sheet-body" id="accountBody"></div>
+</div>
+
 <div class="modal-backdrop" id="modalBackdrop"></div>
 <div class="modal-card" id="modalCard">
   <div class="modal-title" id="modalTitle"></div>
@@ -808,6 +818,7 @@ html.force-desktop{
   </div>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
 // ===================================================================
 // SYMBOL LIBRARY
@@ -2129,7 +2140,7 @@ document.getElementById('multiAssignSwitch').addEventListener('click', () => {
 // BOTTOM TOOLBAR + SHEETS
 // ===================================================================
 const backdrop = document.getElementById('backdrop');
-const sheets = ['sheetSymbols','sheetLayers','sheetProps','sheetQuote','sheetMore','sheetCableSize','sheetCircuits','sheetElevation','sheetLoad','sheetFloors','sheetExport','sheetGrid','sheetAssignSwitch','sheetPriceList','sheetVersions','sheetRooms','sheetDuplicates'].map(id=>document.getElementById(id));
+const sheets = ['sheetSymbols','sheetLayers','sheetProps','sheetQuote','sheetMore','sheetCableSize','sheetCircuits','sheetElevation','sheetLoad','sheetFloors','sheetExport','sheetGrid','sheetAssignSwitch','sheetPriceList','sheetVersions','sheetRooms','sheetDuplicates','sheetAccount'].map(id=>document.getElementById(id));
 function closeSheets(){ sheets.forEach(s=>s.classList.remove('open')); backdrop.classList.remove('open'); }
 // Layers/Symbols/Properties are permanently docked side panels on desktop
 // (not floating dialogs), so the backdrop shouldn't cover the canvas for
@@ -2258,6 +2269,7 @@ document.getElementById('morePriceList').addEventListener('click', () => { rende
 document.getElementById('moreVersions').addEventListener('click', () => { renderVersionHistory(); openSheet('sheetVersions'); });
 document.getElementById('moreRooms').addEventListener('click', () => { renderRooms(); openSheet('sheetRooms'); });
 document.getElementById('moreDuplicates').addEventListener('click', () => { renderDuplicatesReport(); openSheet('sheetDuplicates'); });
+document.getElementById('moreAccount').addEventListener('click', () => { renderAccountSheet(); openSheet('sheetAccount'); });
 
 // ===================================================================
 // DUPLICATE DEVICE FINDER
@@ -3957,6 +3969,156 @@ document.getElementById('btnLoad').addEventListener('click', async () => {
   openSheet('sheetLoad');
 });
 
+// ===================================================================
+// CLOUD ACCOUNT (Supabase) — optional login + cloud save/sync, separate
+// from the local-storage save/load above. Paste your Supabase project's
+// URL and anon (public) API key below to turn this on. Left as the
+// placeholders, the app behaves exactly as before: fully offline, local
+// storage only, no account required — this whole feature is additive.
+// ===================================================================
+const SUPABASE_URL = 'YOUR_SUPABASE_URL';
+const SUPABASE_ANON_KEY = 'YOUR_SUPABASE_ANON_KEY';
+const cloudConfigured = /^https:\/\//.test(SUPABASE_URL) && !!SUPABASE_ANON_KEY && SUPABASE_ANON_KEY !== 'YOUR_SUPABASE_ANON_KEY';
+const supabaseClient = cloudConfigured ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
+let cloudUser = null;
+
+async function initCloudAuth(){
+  if(!cloudConfigured) return;
+  const { data } = await supabaseClient.auth.getSession();
+  cloudUser = data && data.session ? data.session.user : null;
+  supabaseClient.auth.onAuthStateChange((_event, session) => {
+    cloudUser = session ? session.user : null;
+    if(document.getElementById('sheetAccount').classList.contains('open')) renderAccountSheet();
+  });
+}
+
+function renderAccountSheet(){
+  const body = document.getElementById('accountBody');
+  if(!cloudConfigured){
+    body.innerHTML = `<div style="color:var(--text-dim); font-size:12.5px; line-height:1.6; padding:8px 0;">
+      Cloud sync isn't set up yet. Everything still saves locally on this device by default.
+      To turn on account login and cloud save, add a Supabase project URL and anon key near the top of the app's code.
+    </div>`;
+    return;
+  }
+  if(!cloudUser){
+    body.innerHTML = `
+      <div style="font-size:11px; color:var(--text-dim); margin-bottom:10px; line-height:1.5;">Log in or create an account to save projects to the cloud and open them on any device.</div>
+      <div class="prop-row"><label>Email</label><input id="acc_email" type="email" placeholder="you@example.com"></div>
+      <div class="prop-row"><label>Password</label><input id="acc_password" type="password" placeholder="At least 6 characters"></div>
+      <div id="accountError" style="color:var(--red); font-size:11.5px; min-height:16px; margin:4px 0;"></div>
+      <button class="add-btn" id="btnAccLogin" style="margin-top:0;">Log in</button>
+      <button class="add-btn" id="btnAccSignup" style="background:transparent;">Create account</button>
+    `;
+    document.getElementById('btnAccLogin').addEventListener('click', () => cloudSignIn());
+    document.getElementById('btnAccSignup').addEventListener('click', () => cloudSignUp());
+  } else {
+    body.innerHTML = `
+      <div style="font-size:12px; color:var(--text); margin-bottom:4px;">Signed in as <b>${cloudUser.email}</b></div>
+      <button class="add-btn" id="btnAccLogout" style="background:transparent; margin-bottom:14px;">Sign out</button>
+      <button class="add-btn" id="btnAccSaveCloud" style="margin-top:0;">☁ Save current project to cloud</button>
+      <div style="font-family:var(--mono); font-size:10px; letter-spacing:1px; text-transform:uppercase; color:var(--text-dim); margin:14px 0 6px; padding-bottom:4px; border-bottom:1px solid var(--line-soft);">Cloud projects</div>
+      <div id="cloudListBody">Loading…</div>
+    `;
+    document.getElementById('btnAccLogout').addEventListener('click', () => cloudSignOut());
+    document.getElementById('btnAccSaveCloud').addEventListener('click', () => cloudSaveCurrentProject());
+    refreshCloudList();
+  }
+}
+
+async function cloudSignUp(){
+  const email = document.getElementById('acc_email').value.trim();
+  const password = document.getElementById('acc_password').value;
+  const errEl = document.getElementById('accountError');
+  errEl.style.color = 'var(--red)'; errEl.textContent = '';
+  if(!email || password.length < 6){ errEl.textContent = 'Enter a valid email and a password of at least 6 characters.'; return; }
+  const { data, error } = await supabaseClient.auth.signUp({ email, password });
+  if(error){ errEl.textContent = error.message; return; }
+  if(data.user && !data.session){
+    errEl.style.color = 'var(--green)';
+    errEl.textContent = 'Account created — check your email to confirm, then log in.';
+  } else {
+    cloudUser = data.user;
+    renderAccountSheet();
+    showToast('Account created');
+  }
+}
+async function cloudSignIn(){
+  const email = document.getElementById('acc_email').value.trim();
+  const password = document.getElementById('acc_password').value;
+  const errEl = document.getElementById('accountError');
+  errEl.style.color = 'var(--red)'; errEl.textContent = '';
+  const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
+  if(error){ errEl.textContent = error.message; return; }
+  cloudUser = data.user;
+  renderAccountSheet();
+  showToast('Logged in');
+}
+async function cloudSignOut(){
+  await supabaseClient.auth.signOut();
+  cloudUser = null;
+  renderAccountSheet();
+  showToast('Signed out');
+}
+
+async function cloudSaveCurrentProject(){
+  if(!cloudUser) return;
+  const projectData = buildProjectData();
+  try{
+    const { error } = await supabaseClient.from('projects').upsert({
+      user_id: cloudUser.id,
+      name: projectData.name,
+      data: projectData,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'user_id,name' });
+    if(error) throw error;
+    showToast('Saved "' + projectData.name + '" to the cloud');
+    refreshCloudList();
+  } catch(err){ showToast('Cloud save failed: ' + err.message); }
+}
+
+async function refreshCloudList(){
+  const body = document.getElementById('cloudListBody');
+  if(!body) return;
+  try{
+    const { data, error } = await supabaseClient.from('projects').select('id,name,updated_at').eq('user_id', cloudUser.id).order('updated_at', { ascending:false });
+    if(error) throw error;
+    if(!data || data.length===0){
+      body.innerHTML = '<div style="color:var(--text-dim); font-size:12.5px; padding:16px 0; text-align:center;">No cloud-saved projects yet.</div>';
+      return;
+    }
+    body.innerHTML = data.map(row => `<div class="load-row" style="gap:8px;">
+      <span data-cload-id="${row.id}" style="flex:1; cursor:pointer;">${row.name}</span>
+      <span class="arrow" data-cload-id="${row.id}" style="cursor:pointer;">Open ›</span>
+      <div class="lock-btn" data-cdel-id="${row.id}" title="Delete cloud project" style="opacity:1; color:var(--red); flex-shrink:0;">🗑</div>
+    </div>`).join('');
+    body.querySelectorAll('[data-cload-id]').forEach(el => el.addEventListener('click', async () => {
+      try{
+        const { data: row, error } = await supabaseClient.from('projects').select('data').eq('id', el.dataset.cloadId).single();
+        if(error) throw error;
+        applyLoadedProject(row.data);
+        closeSheets();
+        showToast('Loaded from cloud');
+      } catch(err){ showToast('Load failed: ' + err.message); }
+    }));
+    body.querySelectorAll('[data-cdel-id]').forEach(btn => btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const id = btn.dataset.cdelId;
+      openConfirmModal('Delete cloud project?', 'Permanently delete this project from your account. This cannot be undone.', async () => {
+        try{
+          const { error } = await supabaseClient.from('projects').delete().eq('id', id);
+          if(error) throw error;
+          showToast('Deleted');
+          refreshCloudList();
+        } catch(err){ showToast('Delete failed: ' + err.message); }
+      }, 'Delete');
+    }));
+  } catch(err){
+    body.innerHTML = '<div style="color:var(--text-dim); font-size:12.5px; padding:16px 0; text-align:center;">Could not load cloud projects.</div>';
+  }
+}
+initCloudAuth();
+
 function clearCurrentProject(name){
   document.getElementById('projName').value = name || 'New Project';
   document.getElementById('rateLabour').value = 95;
@@ -4042,6 +4204,7 @@ document.getElementById('dtbPriceList').addEventListener('click', () => { render
 document.getElementById('dtbCommsRacks').addEventListener('click', () => { renderCircuits(); openSheet('sheetCircuits'); });
 document.getElementById('dtbVersions').addEventListener('click', () => { renderVersionHistory(); openSheet('sheetVersions'); });
 document.getElementById('dtbDuplicates').addEventListener('click', () => { renderDuplicatesReport(); openSheet('sheetDuplicates'); });
+document.getElementById('dtbAccount').addEventListener('click', () => { renderAccountSheet(); openSheet('sheetAccount'); });
 document.getElementById('dtbQuote').addEventListener('click', () => { updateQuote(); renderSchedule(); openSheet('sheetQuote'); });
 document.getElementById('dtbUndo2').addEventListener('click', () => document.getElementById('btnUndo').click());
 document.getElementById('dtbRedo2').addEventListener('click', () => document.getElementById('btnRedo').click());
