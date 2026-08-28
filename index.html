@@ -4234,6 +4234,15 @@ async function gateAuth(mode){
         options: { data: { full_name: name, organization: org } },
       });
       if(error) throw error;
+      // Supabase deliberately returns a normal-looking user object for an
+      // email that's already registered and confirmed, rather than an
+      // error — an anti-enumeration measure so signup can't be used to
+      // probe which emails exist. identities.length === 0 is the
+      // documented way to tell the two cases apart.
+      if(data.user && data.user.identities && data.user.identities.length === 0){
+        errEl.textContent = 'That email is already registered — try logging in instead.';
+        return;
+      }
       if(data.user && !data.session){
         pendingVerifyEmail = email;
         gateMode = 'verify';
