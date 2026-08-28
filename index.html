@@ -4020,6 +4020,8 @@ async function initCloudAuth(){
 // cloudUser is set. This just overlays/blocks — it doesn't touch the app's
 // own init sequence, so whatever runs in the background (canvas render,
 // recovery banner, etc.) is harmless either way once the gate lifts.
+let gateMode = 'signin'; // 'signin' | 'signup'
+
 function renderAuthGate(){
   const gate = document.getElementById('authGate');
   const body = document.getElementById('authGateBody');
@@ -4033,33 +4035,60 @@ function renderAuthGate(){
     body.innerHTML = `<div class="auth-msg">Couldn't reach the login service. Check your internet connection and reload the page.</div>`;
     return;
   }
-  body.innerHTML = `
+  body.innerHTML = gateMode === 'signup' ? `
+    <div class="prop-row"><label>Full name</label><input id="gate_name" type="text" placeholder="Jane Smith" autocomplete="name"></div>
+    <div class="prop-row"><label>Phone number</label><input id="gate_phone" type="tel" placeholder="04xx xxx xxx" autocomplete="tel"></div>
     <div class="prop-row"><label>Email</label><input id="gate_email" type="email" placeholder="you@example.com" autocomplete="email"></div>
-    <div class="prop-row"><label>Password</label><input id="gate_password" type="password" placeholder="At least 6 characters" autocomplete="current-password"></div>
+    <div class="prop-row"><label>Password</label><input id="gate_password" type="password" placeholder="At least 6 characters" autocomplete="new-password"></div>
+    <div class="prop-row"><label>Repeat password</label><input id="gate_password2" type="password" placeholder="Re-enter your password" autocomplete="new-password"></div>
     <div id="gateError" class="auth-error"></div>
-    <button class="add-btn" id="gateLogin" style="margin-top:0;">Log in</button>
-    <button class="add-btn" id="gateSignup" style="background:transparent;">Create account</button>
+    <button class="add-btn" id="gateSubmit" style="margin-top:0;">Create account</button>
+    <div class="auth-toggle">Already have an account? <a href="#" id="gateToggle">Log in</a></div>
+  ` : `
+    <div class="prop-row"><label>Email</label><input id="gate_email" type="email" placeholder="you@example.com" autocomplete="email"></div>
+    <div class="prop-row"><label>Password</label><input id="gate_password" type="password" placeholder="Your password" autocomplete="current-password"></div>
+    <div id="gateError" class="auth-error"></div>
+    <button class="add-btn" id="gateSubmit" style="margin-top:0;">Log in</button>
+    <div class="auth-toggle">Don't have an account? <a href="#" id="gateToggle">Create one</a></div>
   `;
-  document.getElementById('gateLogin').addEventListener('click', () => gateAuth('signin'));
-  document.getElementById('gateSignup').addEventListener('click', () => gateAuth('signup'));
-  document.getElementById('gate_password').addEventListener('keydown', e => { if(e.key === 'Enter') gateAuth('signin'); });
+  document.getElementById('gateSubmit').addEventListener('click', () => gateAuth(gateMode));
+  document.getElementById('gateToggle').addEventListener('click', (e) => {
+    e.preventDefault();
+    gateMode = gateMode === 'signin' ? 'signup' : 'signin';
+    renderAuthGate();
+  });
+  document.getElementById('gate_password').addEventListener('keydown', e => { if(e.key === 'Enter' && gateMode === 'signin') gateAuth('signin'); });
 }
 
 async function gateAuth(mode){
   const email = document.getElementById('gate_email').value.trim();
   const password = document.getElementById('gate_password').value;
   const errEl = document.getElementById('gateError');
-  const loginBtn = document.getElementById('gateLogin');
-  const signupBtn = document.getElementById('gateSignup');
+  const submitBtn = document.getElementById('gateSubmit');
   errEl.style.color = 'var(--red)'; errEl.textContent = '';
-  if(!email || password.length < 6){ errEl.textContent = 'Enter a valid email and a password of at least 6 characters.'; return; }
-  loginBtn.disabled = true; signupBtn.disabled = true;
-  const activeBtn = mode === 'signin' ? loginBtn : signupBtn;
-  const prevLabel = activeBtn.textContent;
-  activeBtn.textContent = 'Please wait…';
+
+  let name = '', phone = '';
+  if(mode === 'signup'){
+    name = document.getElementById('gate_name').value.trim();
+    phone = document.getElementById('gate_phone').value.trim();
+    const password2 = document.getElementById('gate_password2').value;
+    if(!name){ errEl.textContent = 'Enter your name.'; return; }
+    if(!phone){ errEl.textContent = 'Enter your phone number.'; return; }
+    if(!email || password.length < 6){ errEl.textContent = 'Enter a valid email and a password of at least 6 characters.'; return; }
+    if(password !== password2){ errEl.textContent = "Passwords don't match."; return; }
+  } else if(!email || !password){
+    errEl.textContent = 'Enter your email and password.'; return;
+  }
+
+  submitBtn.disabled = true;
+  const prevLabel = submitBtn.textContent;
+  submitBtn.textContent = 'Please wait…';
   try{
     if(mode === 'signup'){
-      const { data, error } = await supabaseClient.auth.signUp({ email, password });
+      const { data, error } = await supabaseClient.auth.signUp({
+        email, password,
+        options: { data: { full_name: name, phone: phone } },
+      });
       if(error) throw error;
       if(data.user && !data.session){
         errEl.style.color = 'var(--green)';
@@ -4067,19 +4096,22 @@ async function gateAuth(mode){
         return;
       }
       cloudUser = data.user;
+      renderAuthGate();
+      showToast('Welcome, ' + name + '!');
     } else {
       const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
       if(error) throw error;
       cloudUser = data.user;
+      renderAuthGate();
+      const uname = cloudUser.user_metadata && cloudUser.user_metadata.full_name;
+      showToast('Welcome back' + (uname ? ', ' + uname : '') + '!');
     }
-    renderAuthGate();
-    showToast(mode === 'signup' ? 'Account created' : 'Logged in');
   } catch(err){
     console.error('SparkyDraft auth error:', err);
     errEl.textContent = err.message || 'Something went wrong — try again.';
   } finally {
-    loginBtn.disabled = false; signupBtn.disabled = false;
-    activeBtn.textContent = prevLabel;
+    submitBtn.disabled = false;
+    submitBtn.textContent = prevLabel;
   }
 }
 
@@ -4110,8 +4142,10 @@ function renderAccountSheet(){
     document.getElementById('btnAccLogin').addEventListener('click', () => cloudSignIn());
     document.getElementById('btnAccSignup').addEventListener('click', () => cloudSignUp());
   } else {
+    const uname = cloudUser.user_metadata && cloudUser.user_metadata.full_name;
     body.innerHTML = `
-      <div style="font-size:12px; color:var(--text); margin-bottom:4px;">Signed in as <b>${cloudUser.email}</b></div>
+      <div style="font-size:12px; color:var(--text); margin-bottom:2px;">Signed in as <b>${uname || cloudUser.email}</b></div>
+      ${uname ? `<div style="font-size:11px; color:var(--text-dim); margin-bottom:4px;">${cloudUser.email}</div>` : ''}
       <button class="add-btn" id="btnAccLogout" style="background:transparent; margin-bottom:14px;">Sign out</button>
       <button class="add-btn" id="btnAccSaveCloud" style="margin-top:0;">☁ Save current project to cloud</button>
       <div style="font-family:var(--mono); font-size:10px; letter-spacing:1px; text-transform:uppercase; color:var(--text-dim); margin:14px 0 6px; padding-bottom:4px; border-bottom:1px solid var(--line-soft);">Cloud projects</div>
