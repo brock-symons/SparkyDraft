@@ -4025,7 +4025,9 @@ async function initCloudAuth(){
 // cloudUser is set. This just overlays/blocks — it doesn't touch the app's
 // own init sequence, so whatever runs in the background (canvas render,
 // recovery banner, etc.) is harmless either way once the gate lifts.
-let gateMode = 'signin'; // 'signin' | 'signup' | 'reset' | 'newpassword'
+let gateMode = 'signin'; // 'signin' | 'signup' | 'reset' | 'newpassword' | 'verify' | 'resetcode'
+let pendingVerifyEmail = '';
+let pendingResetEmail = '';
 
 function renderAuthGate(){
   const gate = document.getElementById('authGate');
@@ -4066,6 +4068,37 @@ function renderAuthGate(){
     `;
     document.getElementById('gateSubmit').addEventListener('click', () => sendPasswordReset());
     document.getElementById('gateToggle').addEventListener('click', (e) => { e.preventDefault(); gateMode = 'signin'; renderAuthGate(); });
+    return;
+  }
+  if(gateMode === 'resetcode'){
+    body.innerHTML = `
+      <div class="auth-msg" style="text-align:left; padding:0 0 14px;">We sent a 6-digit code to <b>${pendingResetEmail}</b>. Enter it below to continue.</div>
+      <div class="prop-row"><label>Reset code</label><input id="gate_code" type="text" inputmode="numeric" placeholder="123456" autocomplete="one-time-code"></div>
+      <div id="gateError" class="auth-error"></div>
+      <button class="add-btn" id="gateSubmit" style="margin-top:0;">Continue</button>
+      <div class="auth-toggle"><a href="#" id="gateToggle">Back to log in</a></div>
+    `;
+    document.getElementById('gateSubmit').addEventListener('click', () => submitResetCode());
+    document.getElementById('gateToggle').addEventListener('click', (e) => { e.preventDefault(); gateMode = 'signin'; renderAuthGate(); });
+    document.getElementById('gate_code').addEventListener('keydown', e => { if(e.key === 'Enter') submitResetCode(); });
+    return;
+  }
+  // Some inboxes (Gmail's link-safety scanning, Microsoft Safe Links, etc.)
+  // automatically visit a confirmation link before the person ever clicks
+  // it, which burns the one-time token and makes it show as expired no
+  // matter how fresh it is — a known Supabase gotcha, not a settings bug.
+  // A typed code sidesteps it entirely, since nothing can "click" a code.
+  if(gateMode === 'verify'){
+    body.innerHTML = `
+      <div class="auth-msg" style="text-align:left; padding:0 0 14px;">We sent a 6-digit code to <b>${pendingVerifyEmail}</b>. Enter it below to confirm your account.</div>
+      <div class="prop-row"><label>Confirmation code</label><input id="gate_code" type="text" inputmode="numeric" placeholder="123456" autocomplete="one-time-code"></div>
+      <div id="gateError" class="auth-error"></div>
+      <button class="add-btn" id="gateSubmit" style="margin-top:0;">Verify</button>
+      <div class="auth-toggle"><a href="#" id="gateToggle">Back to log in</a></div>
+    `;
+    document.getElementById('gateSubmit').addEventListener('click', () => submitVerifyCode());
+    document.getElementById('gateToggle').addEventListener('click', (e) => { e.preventDefault(); gateMode = 'signin'; renderAuthGate(); });
+    document.getElementById('gate_code').addEventListener('keydown', e => { if(e.key === 'Enter') submitVerifyCode(); });
     return;
   }
   body.innerHTML = gateMode === 'signup' ? `
@@ -4110,11 +4143,36 @@ async function sendPasswordReset(){
       redirectTo: window.location.origin + window.location.pathname,
     });
     if(error) throw error;
-    errEl.style.color = 'var(--green)';
-    errEl.textContent = 'Check your email for a reset link.';
+    pendingResetEmail = email;
+    gateMode = 'resetcode';
+    renderAuthGate();
   } catch(err){
     console.error('SparkyDraft auth error:', err);
     errEl.textContent = err.message || 'Something went wrong — try again.';
+  } finally {
+    submitBtn.disabled = false;
+    submitBtn.textContent = prevLabel;
+  }
+}
+
+async function submitResetCode(){
+  const code = document.getElementById('gate_code').value.trim();
+  const errEl = document.getElementById('gateError');
+  const submitBtn = document.getElementById('gateSubmit');
+  errEl.style.color = 'var(--red)'; errEl.textContent = '';
+  if(!code){ errEl.textContent = 'Enter the code from your email.'; return; }
+  submitBtn.disabled = true;
+  const prevLabel = submitBtn.textContent;
+  submitBtn.textContent = 'Verifying…';
+  try{
+    const { data, error } = await supabaseClient.auth.verifyOtp({ email: pendingResetEmail, token: code, type: 'recovery' });
+    if(error) throw error;
+    cloudUser = data.user;
+    gateMode = 'newpassword';
+    renderAuthGate();
+  } catch(err){
+    console.error('SparkyDraft auth error:', err);
+    errEl.textContent = err.message || 'Invalid or expired code — check your email for the latest one.';
   } finally {
     submitBtn.disabled = false;
     submitBtn.textContent = prevLabel;
@@ -4177,8 +4235,9 @@ async function gateAuth(mode){
       });
       if(error) throw error;
       if(data.user && !data.session){
-        errEl.style.color = 'var(--green)';
-        errEl.textContent = 'Account created — check your email to confirm, then log in.';
+        pendingVerifyEmail = email;
+        gateMode = 'verify';
+        renderAuthGate();
         return;
       }
       cloudUser = data.user;
@@ -4195,6 +4254,32 @@ async function gateAuth(mode){
   } catch(err){
     console.error('SparkyDraft auth error:', err);
     errEl.textContent = err.message || 'Something went wrong — try again.';
+  } finally {
+    submitBtn.disabled = false;
+    submitBtn.textContent = prevLabel;
+  }
+}
+
+async function submitVerifyCode(){
+  const code = document.getElementById('gate_code').value.trim();
+  const errEl = document.getElementById('gateError');
+  const submitBtn = document.getElementById('gateSubmit');
+  errEl.style.color = 'var(--red)'; errEl.textContent = '';
+  if(!code){ errEl.textContent = 'Enter the code from your email.'; return; }
+  submitBtn.disabled = true;
+  const prevLabel = submitBtn.textContent;
+  submitBtn.textContent = 'Verifying…';
+  try{
+    const { data, error } = await supabaseClient.auth.verifyOtp({ email: pendingVerifyEmail, token: code, type: 'signup' });
+    if(error) throw error;
+    cloudUser = data.user;
+    gateMode = 'signin';
+    renderAuthGate();
+    const uname = cloudUser.user_metadata && cloudUser.user_metadata.full_name;
+    showToast('Welcome' + (uname ? ', ' + uname : '') + '!');
+  } catch(err){
+    console.error('SparkyDraft auth error:', err);
+    errEl.textContent = err.message || 'Invalid or expired code — check your email for the latest one.';
   } finally {
     submitBtn.disabled = false;
     submitBtn.textContent = prevLabel;
