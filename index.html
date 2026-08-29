@@ -371,6 +371,11 @@ td{padding:6px; border-bottom:1px solid var(--line-soft);}
 .tile-proj:hover .tile-del{ opacity:1; }
 .tile-share{ position:absolute; top:6px; right:36px; width:24px; height:24px; border-radius:6px; background:rgba(12,17,22,0.75); color:var(--blue); display:flex; align-items:center; justify-content:center; font-size:12px; opacity:0; transition:opacity .15s; }
 .tile-proj:hover .tile-share{ opacity:1; }
+/* :hover never fires on touch, which would leave no way to delete, share,
+   or manage a project at all on this mobile-first app -- always show these
+   where there's no hover-capable pointer, instead of hiding them until a
+   hover that can never happen. */
+@media (hover:none){ .tile-del, .tile-share{ opacity:1; } }
 .picker-tabs{ display:flex; gap:6px; margin-top:14px; }
 .picker-tab{ font-family:inherit; font-size:11.5px; font-weight:600; color:var(--text-dim); background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:7px 14px; cursor:pointer; transition:.15s; }
 .picker-tab:hover{ color:var(--text); }
@@ -1080,7 +1085,22 @@ function makeFloor(name){
     gridOriginX: 0, gridOriginY: 0, gridVisible: true, gridAlignWallId: null,
     bankNames: {} }; // 'switchId::group' → display name for a lighting bank
 }
+// Stable identity for a project's storage record -- local AND cloud --
+// separate from its display name, so renaming or sharing a name with
+// another project never changes (or forks/collides with) which record
+// gets saved to. A real UUID (not just a locally-unique string) so the
+// same value doubles as the row id for the personal `projects` cloud
+// table. See buildProjectData()/saveLocalProject()/cloudSyncSilently().
+function genProjectId(){
+  if(typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
+  // crypto.randomUUID() fallback for older browsers -- RFC4122 v4 shape
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+    const r = Math.random()*16|0, v = c==='x' ? r : (r&0x3|0x8);
+    return v.toString(16);
+  });
+}
 let state = {
+  currentProjectId: genProjectId(),
   floors:[ makeFloor('Ground Floor') ], activeFloorIndex:0,
   layers: LAYER_DEFS.map(l=>({...l,visible:true})),
   activeTool:'select', activeSymbol:null, activeCableSize:CABLE_SIZES[2], selectedObjectId:null, selectedCableId:null,
@@ -1150,7 +1170,11 @@ function recomputeSwitchGang(switchId){
     else if(types.includes('tastic_2h')) total += 3;
     else total += 1;
   });
-  sw.props.gang = Math.max(1, total);
+  // Only ever raise the gang count to fit more linked functions than the
+  // plate currently has slots for — never lower it, so unlinking a light
+  // (dropping the group count) doesn't silently undo a gang count the user
+  // configured deliberately for a physical plate that hasn't changed.
+  sw.props.gang = Math.max(sw.props.gang || 1, total);
 }
 // Auto-grouping: a "switching function" (gang) is a set of devices that get
 // turned on/off together. Devices of the same type already linked to this
@@ -3827,6 +3851,7 @@ const storageAPI = (typeof window.storage !== 'undefined' && window.storage) ? w
 
 function buildProjectData(){
   return {
+    id: state.currentProjectId,
     name: document.getElementById('projName').value,
     activeFloorIndex: state.activeFloorIndex,
     customSymbols: state.customSymbols, symbolSize: state.symbolSize, gridOverlay: !!state.gridOverlay,
@@ -3896,7 +3921,7 @@ function buildProjectData(){
 async function saveLocalProject(){
   const projectData = buildProjectData();
   try{
-    const key = 'project:' + projectData.name.replace(/\s+/g,'_').toLowerCase();
+    const key = 'project:' + projectData.id;
     await storageAPI.set(key, JSON.stringify(projectData));
     await storageAPI.set('last-open-project', key);
     state.saveStatus = 'saved'; state.lastSavedAt = new Date(); updateSaveStatusUI();
@@ -3942,7 +3967,7 @@ async function performAutosave(){
   state.saveStatus = 'saving'; updateSaveStatusUI();
   try{
     const data = buildProjectData();
-    const key = 'project:' + data.name.replace(/\s+/g,'_').toLowerCase();
+    const key = 'project:' + data.id;
     await storageAPI.set(key, JSON.stringify(data));
     await storageAPI.set('last-open-project', key);
     state.saveStatus = 'saved'; state.lastSavedAt = new Date();
@@ -3974,6 +3999,7 @@ async function checkForRecovery(){
     const result = await storageAPI.get(pointer.value);
     if(!result) return;
     const d = JSON.parse(result.value);
+    d.id = d.id || pointer.value.replace(/^project:/,'');
     document.getElementById('recoveryText').textContent = 'Restore "' + d.name + '" from your last session?';
     document.getElementById('recoveryBanner').classList.remove('hidden');
     document.getElementById('recoveryRestore').onclick = () => {
@@ -3998,6 +4024,10 @@ function normalizeLayers(saved){
   });
 }
 function applyLoadedProject(d){
+  // Callers set d.id from the record's storage key/row id when the saved
+  // data predates this field, so legacy projects keep saving to the same
+  // slot instead of forking into a second copy under a freshly generated id.
+  state.currentProjectId = d.id || genProjectId();
   document.getElementById('projName').value = d.name || 'Untitled';
   document.getElementById('rateLabour').value = d.rateLabour != null ? d.rateLabour : 95;
   document.getElementById('rateMargin').value = d.rateMargin != null ? d.rateMargin : 20;
@@ -4133,11 +4163,11 @@ function applyReadOnlyMode(isReadOnly, sharedByName){
   document.getElementById('projName').disabled = isReadOnly;
   document.getElementById('fileImport').disabled = isReadOnly;
 }
-function pickerTileHtml({ name, meta, thumb, openAttr, delAttr, shareAttr, manageAttr }){
+function pickerTileHtml({ name, meta, thumb, openAttr, delAttr, delName, shareAttr, manageAttr }){
   const thumbHtml = thumb
     ? `<img src="${thumb}" alt="">`
     : `<div class="tile-thumb-empty">▭</div>`;
-  const delHtml = delAttr ? `<div class="tile-del" ${delAttr} title="Delete">🗑</div>` : '';
+  const delHtml = delAttr ? `<div class="tile-del" ${delAttr} data-del-name="${(delName||'').replace(/"/g,'&quot;')}" title="Delete">🗑</div>` : '';
   const shareHtml = shareAttr ? `<div class="tile-share" ${shareAttr} title="Share to organization">👥</div>` : '';
   const manageHtml = manageAttr ? `<div class="tile-share" ${manageAttr} title="Manage who can edit">🔑</div>` : '';
   return `<div class="tile tile-proj" ${openAttr}>
@@ -4182,16 +4212,17 @@ async function renderMyProjectsGrid(){
 
   // Every local save now auto-syncs to the cloud when signed in, so the
   // cloud list is fetched FIRST and is treated as the source of truth —
-  // a local entry only gets its own tile if no cloud copy of the same
-  // name exists yet (still offline/unsynced), so a project that's saved
+  // a local entry only gets its own tile if it isn't ALSO the record
+  // that's already synced to the cloud (matched by stable project id, not
+  // name -- two different projects can share a name), so a project saved
   // in both places shows up once, not twice.
-  const cloudNames = new Set();
+  const cloudIds = new Set();
   if(cloudUser && cloudConfigured){
     try{
       const { data, error } = await supabaseClient.from('projects').select('id,name,updated_at').eq('user_id', cloudUser.id).order('updated_at', { ascending:false });
       if(!error && data){
         data.forEach(row => {
-          cloudNames.add(row.name.trim().toLowerCase());
+          cloudIds.add(row.id);
           grid.insertAdjacentHTML('beforeend', pickerTileHtml({
             name: row.name,
             meta: '☁ Cloud · ' + new Date(row.updated_at).toLocaleDateString('en-AU', { day:'numeric', month:'short' }),
@@ -4216,8 +4247,9 @@ async function renderMyProjectsGrid(){
       try{
         const result = await storageAPI.get(key);
         const d = JSON.parse(result.value);
+        const id = d.id || key.replace(/^project:/,'');
+        if(cloudIds.has(id)) continue;
         const name = d.name || key.replace(/^project:/,'').replace(/_/g,' ');
-        if(cloudNames.has(name.trim().toLowerCase())) continue;
         const thumb = d.floors && d.floors[0] && d.floors[0].planImageData;
         grid.insertAdjacentHTML('beforeend', pickerTileHtml({
           name,
@@ -4225,6 +4257,7 @@ async function renderMyProjectsGrid(){
           thumb,
           openAttr: `data-open-local="${key}"`,
           delAttr: `data-del-local="${key}"`,
+          delName: name,
           shareAttr: currentOrg ? `data-share-local="${key}"` : '',
         }));
       } catch(_){}
@@ -4233,7 +4266,7 @@ async function renderMyProjectsGrid(){
 
   grid.querySelectorAll('[data-open-local]').forEach(el => el.addEventListener('click', () => pickerOpenLocal(el.dataset.openLocal)));
   grid.querySelectorAll('[data-open-cloud]').forEach(el => el.addEventListener('click', () => pickerOpenCloud(el.dataset.openCloud)));
-  grid.querySelectorAll('[data-del-local]').forEach(el => el.addEventListener('click', (e) => { e.stopPropagation(); pickerDeleteLocal(el.dataset.delLocal); }));
+  grid.querySelectorAll('[data-del-local]').forEach(el => el.addEventListener('click', (e) => { e.stopPropagation(); pickerDeleteLocal(el.dataset.delLocal, el.dataset.delName); }));
   grid.querySelectorAll('[data-del-cloud]').forEach(el => el.addEventListener('click', (e) => { e.stopPropagation(); pickerDeleteCloud(el.dataset.delCloud); }));
   grid.querySelectorAll('[data-share-cloud]').forEach(el => el.addEventListener('click', (e) => { e.stopPropagation(); shareProjectToOrg({ source:'cloud', id: el.dataset.shareCloud }); }));
   grid.querySelectorAll('[data-share-local]').forEach(el => el.addEventListener('click', (e) => { e.stopPropagation(); shareProjectToOrg({ source:'local', key: el.dataset.shareLocal }); }));
@@ -4410,9 +4443,11 @@ async function pickerOpenLocal(key){
   try{
     const result = await storageAPI.get(key);
     if(!result){ showToast('Not found'); return; }
+    const data = JSON.parse(result.value);
+    data.id = data.id || key.replace(/^project:/,'');
     orgProjectContext = null;
     applyReadOnlyMode(false);
-    applyLoadedProject(JSON.parse(result.value));
+    applyLoadedProject(data);
     hideProjectPicker();
     showToast('Opened');
   } catch(err){ showToast('Could not open: ' + err.message); }
@@ -4421,6 +4456,7 @@ async function pickerOpenCloud(id){
   try{
     const { data, error } = await supabaseClient.from('projects').select('data').eq('id', id).single();
     if(error) throw error;
+    data.data.id = data.data.id || id;
     orgProjectContext = null;
     applyReadOnlyMode(false);
     applyLoadedProject(data.data);
@@ -4428,8 +4464,8 @@ async function pickerOpenCloud(id){
     showToast('Opened from cloud');
   } catch(err){ showToast('Could not open: ' + err.message); }
 }
-function pickerDeleteLocal(key){
-  const name = key.replace(/^project:/,'').replace(/_/g,' ');
+function pickerDeleteLocal(key, name){
+  name = name || key.replace(/^project:/,'').replace(/_/g,' ');
   openConfirmModal('Delete saved project?', 'Permanently delete "' + name + '" from this device. This cannot be undone.', async () => {
     try{
       await storageAPI.delete(key);
@@ -4889,12 +4925,13 @@ async function cloudSaveCurrentProject(){
       showToast('Saved "' + projectData.name + '" to ' + (currentOrg ? currentOrg.name : 'the organization'));
     } else {
       const { error } = await supabaseClient.from('projects').upsert({
+        id: projectData.id,
         user_id: cloudUser.id,
         user_name: (cloudUser.user_metadata && cloudUser.user_metadata.full_name) || cloudUser.email,
         name: projectData.name,
         data: projectData,
         updated_at: new Date().toISOString(),
-      }, { onConflict: 'user_id,name' });
+      }, { onConflict: 'id' });
       if(error) throw error;
       showToast('Saved "' + projectData.name + '" to the cloud');
     }
@@ -4918,12 +4955,13 @@ function cloudSyncSilently(projectData){
     return;
   }
   supabaseClient.from('projects').upsert({
+    id: projectData.id,
     user_id: cloudUser.id,
     user_name: (cloudUser.user_metadata && cloudUser.user_metadata.full_name) || cloudUser.email,
     name: projectData.name,
     data: projectData,
     updated_at: new Date().toISOString(),
-  }, { onConflict: 'user_id,name' }).then(({ error }) => {
+  }, { onConflict: 'id' }).then(({ error }) => {
     if(error) console.error('Background cloud sync failed:', error);
   });
 }
@@ -5086,6 +5124,7 @@ async function renderOrgSheet(){
 initCloudAuth();
 
 function clearCurrentProject(name){
+  state.currentProjectId = genProjectId();
   document.getElementById('projName').value = name || 'New Project';
   document.getElementById('rateLabour').value = 95;
   document.getElementById('rateMargin').value = 20;
