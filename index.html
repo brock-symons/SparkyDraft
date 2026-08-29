@@ -599,8 +599,6 @@ html.force-desktop{
   <button class="dtb-btn" id="dtbQuote">💲 Quote</button>
   <button class="dtb-btn" id="dtbVersions">🕐 History</button>
   <button class="dtb-btn" id="dtbDuplicates">🧹 Find duplicates</button>
-  <button class="dtb-btn" id="dtbAccount">☁ Account</button>
-  <button class="dtb-btn" id="dtbOrg">👥 Organization</button>
 </div>
 
 <div id="recoveryBanner" class="hidden">
@@ -754,10 +752,6 @@ html.force-desktop{
     <div class="tool-row">
       <div class="tool-card hidden-feature" id="moreWall"><span class="icon">▬</span><span class="lbl">Mark wall</span></div>
       <div class="tool-card" id="moreDuplicates"><span class="icon">🧹</span><span class="lbl">Find duplicates</span></div>
-    </div>
-    <div class="tool-row">
-      <div class="tool-card" id="moreAccount"><span class="icon">☁</span><span class="lbl">Account &amp; cloud</span></div>
-      <div class="tool-card" id="moreOrg"><span class="icon">👥</span><span class="lbl">Organization</span></div>
     </div>
   </div>
 </div>
@@ -2355,8 +2349,6 @@ document.getElementById('morePriceList').addEventListener('click', () => { rende
 document.getElementById('moreVersions').addEventListener('click', () => { renderVersionHistory(); openSheet('sheetVersions'); });
 document.getElementById('moreRooms').addEventListener('click', () => { renderRooms(); openSheet('sheetRooms'); });
 document.getElementById('moreDuplicates').addEventListener('click', () => { renderDuplicatesReport(); openSheet('sheetDuplicates'); });
-document.getElementById('moreAccount').addEventListener('click', () => { renderAccountSheet(); openSheet('sheetAccount'); });
-document.getElementById('moreOrg').addEventListener('click', () => { renderOrgSheet(); openSheet('sheetOrg'); });
 
 // ===================================================================
 // DUPLICATE DEVICE FINDER
@@ -4545,23 +4537,36 @@ function renderAccountSheet(){
     document.getElementById('btnAccSignup').addEventListener('click', () => cloudSignUp());
   } else {
     const uname = cloudUser.user_metadata && cloudUser.user_metadata.full_name;
-    const org = cloudUser.user_metadata && cloudUser.user_metadata.organization;
     const initials = (uname || cloudUser.email || '?').trim().split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase();
     const memberSince = cloudUser.created_at ? new Date(cloudUser.created_at).toLocaleDateString('en-AU', { day:'numeric', month:'short', year:'numeric' }) : null;
     body.innerHTML = `
       <div style="text-align:center; padding:4px 0 20px;">
         <div style="width:56px; height:56px; border-radius:50%; background:var(--blue-dim); color:#eaf6ff; display:flex; align-items:center; justify-content:center; margin:0 auto 12px; font-size:19px; font-weight:700; font-family:var(--mono);">${initials}</div>
-        <div style="font-size:16px; font-weight:700; color:var(--text);">${uname || 'Sparky Draft user'}</div>
-        ${org ? `<div style="font-size:12px; color:var(--text-dim); margin-top:2px;">${org}</div>` : ''}
       </div>
-      <div class="prop-row"><label>Email</label><div style="font-size:13.5px; color:var(--text); padding:2px 0 4px;">${cloudUser.email}</div></div>
+      <div class="prop-row"><label>Name</label><input id="acc_name_edit" type="text" value="${uname || ''}"></div>
+      <button class="add-btn" id="btnSaveProfile" style="background:var(--panel2); border-color:var(--line); color:var(--text); margin-top:0;">Save profile</button>
+      <div class="prop-row" style="margin-top:14px;"><label>Email</label><div style="font-size:13.5px; color:var(--text); padding:2px 0 4px;">${cloudUser.email}</div></div>
       ${memberSince ? `<div class="prop-row"><label>Member since</label><div style="font-size:13.5px; color:var(--text); padding:2px 0 4px;">${memberSince}</div></div>` : ''}
       <button class="danger-btn" id="btnAccLogout" style="margin-top:16px;">Sign out</button>
     `;
+    document.getElementById('btnSaveProfile').addEventListener('click', () => {
+      const newName = document.getElementById('acc_name_edit').value.trim();
+      if(!newName){ showToast('Enter your name'); return; }
+      updateProfileName(newName);
+    });
     document.getElementById('btnAccLogout').addEventListener('click', () => {
       openConfirmModal('Log out?', "You'll need to log back in to keep using SparkyDraft. Any unsaved changes are autosaved locally first.", () => cloudSignOut(), 'Log out');
     });
   }
+}
+async function updateProfileName(newName){
+  try{
+    const { data, error } = await supabaseClient.auth.updateUser({ data: { full_name: newName } });
+    if(error) throw error;
+    cloudUser = data.user;
+    showToast('Profile updated');
+    renderAccountSheet();
+  } catch(err){ showToast('Could not update profile: ' + err.message); }
 }
 
 async function cloudSignUp(){
@@ -4875,8 +4880,6 @@ document.getElementById('dtbPriceList').addEventListener('click', () => { render
 document.getElementById('dtbCommsRacks').addEventListener('click', () => { renderCircuits(); openSheet('sheetCircuits'); });
 document.getElementById('dtbVersions').addEventListener('click', () => { renderVersionHistory(); openSheet('sheetVersions'); });
 document.getElementById('dtbDuplicates').addEventListener('click', () => { renderDuplicatesReport(); openSheet('sheetDuplicates'); });
-document.getElementById('dtbAccount').addEventListener('click', () => { renderAccountSheet(); openSheet('sheetAccount'); });
-document.getElementById('dtbOrg').addEventListener('click', () => { renderOrgSheet(); openSheet('sheetOrg'); });
 document.getElementById('dtbQuote').addEventListener('click', () => { updateQuote(); renderSchedule(); openSheet('sheetQuote'); });
 
 // ===================================================================
