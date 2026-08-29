@@ -8,9 +8,14 @@
 @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600;700;800&display=swap');
 
 :root{
-  --bg:#0c1116; --panel:#121923; --panel2:#0f151d; --line:#223041; --line-soft:#1a2532;
-  --text:#dbe6f0; --text-dim:#7d8fa3; --blue:#4fb3ff; --blue-dim:#2a5d80;
+  /* cool slate neutrals + a single professional blue accent — this pairing
+     is what most modern B2B/trade SaaS tools converge on for a reason: it
+     holds up under long sessions and reads clearly in variable job-site
+     lighting, versus a warmer or higher-chroma palette */
+  --bg:#0b0f14; --panel:#131920; --panel2:#0e1319; --line:#232b35; --line-soft:#1a2028;
+  --text:#e4e9ef; --text-dim:#8993a4; --blue:#4fb3ff; --blue-dim:#2a5d80;
   --amber:#f2a93b; --amber-dim:#6b5427; --green:#4ade80; --red:#f87171;
+  --shadow-sm:0 1px 2px rgba(0,0,0,0.3); --shadow-md:0 4px 14px rgba(0,0,0,0.28);
   --mono:'JetBrains Mono',monospace; --sans:'Inter',-apple-system,sans-serif;
   --safe-b: env(safe-area-inset-bottom, 0px);
   --safe-t: env(safe-area-inset-top, 0px);
@@ -256,8 +261,9 @@ td{padding:6px; border-bottom:1px solid var(--line-soft);}
 .circuit-row .circuit-count{font-family:var(--mono); font-size:11px; color:var(--amber); flex-shrink:0;}
 .add-btn{
   width:100%; padding:13px; border-radius:8px; background:var(--blue-dim); border:1px solid var(--blue);
-  color:#eaf6ff; font-weight:600; font-size:13px; margin-top:6px;
+  color:#eaf6ff; font-weight:600; font-size:13px; margin-top:6px; transition:filter .15s;
 }
+.add-btn:hover{ filter:brightness(1.08); }
 .prop-row select{
   background:var(--panel2); border:1px solid var(--line); color:var(--text);
   padding:11px 12px; border-radius:8px; font-size:15px; width:100%;
@@ -309,23 +315,31 @@ td{padding:6px; border-bottom:1px solid var(--line-soft);}
 
 /* ===== PROJECT PICKER — full-screen project browser, shown right after
    login and reopenable any time from the 📂 button ===== */
+/* This overlay's own background stays permanently dark (var(--bg) never
+   flips with the desktop breakpoint), matching the login screen's fixed
+   brand chrome — so anything sitting directly on it (not inside a themed
+   tile) uses fixed light-on-dark colors below rather than var(--text)/
+   var(--text-dim), which flip to light-theme (dark) values at desktop
+   widths and would otherwise render near-invisible here. */
 #projectPicker{ position:fixed; inset:0; z-index:50; background:var(--bg); display:none; flex-direction:column; }
 #projectPicker.open{ display:flex; }
-.picker-top{ height:56px; flex-shrink:0; display:flex; align-items:center; justify-content:space-between; padding:0 20px; border-bottom:1px solid var(--line-soft); }
+.picker-top{ height:56px; flex-shrink:0; display:flex; align-items:center; justify-content:space-between; padding:0 20px; border-bottom:1px solid #1e2530; }
 .picker-top-actions{ display:flex; align-items:center; gap:8px; }
+.picker-top-actions .icon-btn{ color:#8993a4; }
+.picker-top-actions .icon-btn:hover{ color:#e4e9ef; background:rgba(255,255,255,0.08); }
 .picker-body{ flex:1; overflow-y:auto; padding:28px 24px 40px; }
 .picker-head{ margin-bottom:20px; max-width:900px; margin-left:auto; margin-right:auto; }
-.picker-title{ font-size:18px; font-weight:700; color:var(--text); }
-.picker-sub{ font-size:12px; color:var(--text-dim); margin-top:4px; }
+.picker-title{ font-size:18px; font-weight:700; color:#e4e9ef; }
+.picker-sub{ font-size:12px; color:#8993a4; margin-top:4px; }
 .picker-grid{ display:grid; grid-template-columns:repeat(auto-fill, minmax(170px, 1fr)); gap:14px; max-width:900px; margin:0 auto; }
 .picker-grid .tile{ border-radius:11px; overflow:hidden; cursor:pointer; position:relative; }
-.tile-new{ height:170px; border:1.5px dashed var(--line); display:flex; flex-direction:column; align-items:center; justify-content:center; gap:8px; background:var(--panel2); }
-.tile-new:hover{ border-color:var(--blue); }
-.tile-new .plus-ring{ width:38px; height:38px; border-radius:50%; background:var(--panel); display:flex; align-items:center; justify-content:center; font-size:19px; color:var(--blue); font-weight:300; }
+.tile-new{ height:170px; border:1.5px dashed var(--line); display:flex; flex-direction:column; align-items:center; justify-content:center; gap:8px; background:var(--panel); transition:border-color .15s, transform .15s, box-shadow .15s; }
+.tile-new:hover{ border-color:var(--blue); transform:translateY(-2px); box-shadow:var(--shadow-md); }
+.tile-new .plus-ring{ width:38px; height:38px; border-radius:50%; background:var(--panel2); display:flex; align-items:center; justify-content:center; font-size:19px; color:var(--blue); font-weight:300; }
 .tile-new span{ font-size:11.5px; font-weight:600; color:var(--text-dim); }
-.tile-proj{ height:170px; background:var(--panel2); border:1px solid var(--line); display:flex; flex-direction:column; }
-.tile-proj:hover{ border-color:var(--blue); }
-.tile-proj .thumb{ height:112px; flex-shrink:0; background:var(--panel); display:flex; align-items:center; justify-content:center; overflow:hidden; }
+.tile-proj{ height:170px; background:var(--panel); border:1px solid var(--line); display:flex; flex-direction:column; transition:border-color .15s, transform .15s, box-shadow .15s; }
+.tile-proj:hover{ border-color:var(--blue); transform:translateY(-2px); box-shadow:var(--shadow-md); }
+.tile-proj .thumb{ height:112px; flex-shrink:0; background:var(--panel2); display:flex; align-items:center; justify-content:center; overflow:hidden; }
 .tile-proj .thumb img{ width:100%; height:100%; object-fit:cover; }
 .tile-thumb-empty{ font-size:22px; color:var(--text-dim); opacity:0.5; }
 .tile-proj .tile-info{ flex:1; padding:8px 10px; display:flex; flex-direction:column; justify-content:center; gap:2px; border-top:1px solid var(--line-soft); }
@@ -370,10 +384,11 @@ td{padding:6px; border-bottom:1px solid var(--line-soft);}
 #desktopToolbar{ display:none; }
 @media (min-width:1400px){
   :root{
-    --panel:#ffffff; --panel2:#f3f5f7; --panel3:#ffffff; --line:#dde2e7; --line-soft:#eceff2;
-    --text:#1f2733; --text-dim:#6b7684;
+    --panel:#ffffff; --panel2:#f4f6f8; --panel3:#ffffff; --line:#e1e6ec; --line-soft:#eef1f4;
+    --text:#1a2332; --text-dim:#65728a;
+    --shadow-sm:0 1px 2px rgba(15,23,42,0.06); --shadow-md:0 6px 20px rgba(15,23,42,0.08);
   }
-  body{ background:#eef1f4; }
+  body{ background:#f4f6f9; }
   #topbar{ height:44px; box-shadow:0 1px 0 rgba(0,0,0,0.04); }
   .btn, .icon-btn, .file-btn-wrap .visual{ color:var(--text-dim); }
 
@@ -384,9 +399,10 @@ td{padding:6px; border-bottom:1px solid var(--line-soft);}
   .dtb-btn{
     background:var(--panel2); border:1px solid var(--line); color:var(--text);
     padding:6px 10px; border-radius:6px; font-size:12px; font-weight:500;
+    transition:background .12s, border-color .12s, color .12s;
   }
   .dtb-btn:hover{ border-color:var(--blue); }
-  .dtb-btn.active{ background:var(--blue-dim); border-color:var(--blue); color:#0c1116; background:#e3f2ff; color:#1a5f8a; border-color:#4fb3ff; }
+  .dtb-btn.active{ background:#e7f1fe; color:#1f5aa8; border-color:var(--blue); }
   .dtb-sep{ width:1px; height:22px; background:var(--line); margin:0 4px; }
 
   #bottombar, #multiActionBar ~ #hud #tool-hint{ }
@@ -412,7 +428,7 @@ td{padding:6px; border-bottom:1px solid var(--line-soft);}
      props-active class on <html>, see setDeviceEditorActive() — and hands
      back to Symbols on Save/Delete/deselect. */
   #sheetSymbols, #sheetProps{
-    position:fixed; right:0; left:auto; bottom:0; width:288px;
+    position:fixed; right:0; left:auto; bottom:0; width:308px;
     /* --dtb-h tracks the desktop toolbar's real (possibly wrapped) height —
        see syncDesktopToolbarHeight() — so this panel starts right below it
        instead of overhanging into it when the toolbar wraps to two rows */
@@ -429,12 +445,12 @@ td{padding:6px; border-bottom:1px solid var(--line-soft);}
   html.props-active #sheetSymbols{ display:none; }
 
   #canvas-wrap{
-    left:224px; right:288px; top:calc(44px + var(--safe-t) + var(--dtb-h, 40px)); bottom:0;
+    left:224px; right:308px; top:calc(44px + var(--safe-t) + var(--dtb-h, 40px)); bottom:0;
   }
-  #recoveryBanner{ left:calc(224px + 10px); right:calc(288px + 10px); }
+  #recoveryBanner{ left:calc(224px + 10px); right:calc(308px + 10px); }
 
   /* backdrop shouldn't dim the whole screen for the always-open docked panels */
-  #backdrop{ left:224px; right:288px; }
+  #backdrop{ left:224px; right:308px; }
 
   /* the rest of the sheets (Quote, Circuits, Elevation, Floors, Grid,
      Price list, Load, Export, Assign switch, Cable size) still behave as
@@ -457,10 +473,11 @@ td{padding:6px; border-bottom:1px solid var(--line-soft);}
    layout can be forced on at any screen size via the toggle button.
    =================================================================== */
 html.force-desktop{
-    --panel:#ffffff; --panel2:#f3f5f7; --panel3:#ffffff; --line:#dde2e7; --line-soft:#eceff2;
-    --text:#1f2733; --text-dim:#6b7684;
+    --panel:#ffffff; --panel2:#f4f6f8; --panel3:#ffffff; --line:#e1e6ec; --line-soft:#eef1f4;
+    --text:#1a2332; --text-dim:#65728a;
+    --shadow-sm:0 1px 2px rgba(15,23,42,0.06); --shadow-md:0 6px 20px rgba(15,23,42,0.08);
   }
-  html.force-desktop body{ background:#eef1f4; }
+  html.force-desktop body{ background:#f4f6f9; }
   html.force-desktop #topbar{ height:44px; box-shadow:0 1px 0 rgba(0,0,0,0.04); }
   html.force-desktop .btn, html.force-desktop .icon-btn, html.force-desktop .file-btn-wrap .visual{ color:var(--text-dim); }
   html.force-desktop #desktopToolbar{
@@ -470,9 +487,10 @@ html.force-desktop{
   html.force-desktop .dtb-btn{
     background:var(--panel2); border:1px solid var(--line); color:var(--text);
     padding:6px 10px; border-radius:6px; font-size:12px; font-weight:500;
+    transition:background .12s, border-color .12s, color .12s;
   }
   html.force-desktop .dtb-btn:hover{ border-color:var(--blue); }
-  html.force-desktop .dtb-btn.active{ background:var(--blue-dim); border-color:var(--blue); color:#0c1116; background:#e3f2ff; color:#1a5f8a; border-color:#4fb3ff; }
+  html.force-desktop .dtb-btn.active{ background:#e7f1fe; color:#1f5aa8; border-color:var(--blue); }
   html.force-desktop .dtb-sep{ width:1px; height:22px; background:var(--line); margin:0 4px; }
   html.force-desktop #bottombar, html.force-desktop #multiActionBar ~ #hud #tool-hint{ }
   html.force-desktop #bottombar{ display:none; }
@@ -491,7 +509,7 @@ html.force-desktop{
      the same right-hand slot — Properties overlays Symbols while a
      device/cable is selected, see setDeviceEditorActive() */
   html.force-desktop #sheetSymbols, html.force-desktop #sheetProps{
-    position:fixed; right:0; left:auto; bottom:0; width:288px;
+    position:fixed; right:0; left:auto; bottom:0; width:308px;
     top:calc(44px + var(--safe-t) + var(--dtb-h, 40px)); max-height:none;
     transform:none; border-radius:0; box-shadow:-2px 0 8px rgba(0,0,0,0.04);
     border-left:1px solid var(--line); z-index:8; display:flex; flex-direction:column;
@@ -504,11 +522,11 @@ html.force-desktop{
   html.force-desktop.props-active #sheetProps{ display:flex; }
   html.force-desktop.props-active #sheetSymbols{ display:none; }
   html.force-desktop #canvas-wrap{
-    left:224px; right:288px; top:calc(44px + var(--safe-t) + var(--dtb-h, 40px)); bottom:0;
+    left:224px; right:308px; top:calc(44px + var(--safe-t) + var(--dtb-h, 40px)); bottom:0;
   }
-  html.force-desktop #recoveryBanner{ left:calc(224px + 10px); right:calc(288px + 10px); }
+  html.force-desktop #recoveryBanner{ left:calc(224px + 10px); right:calc(308px + 10px); }
   /* backdrop shouldn't dim the whole screen for the always-open docked panels */
-  html.force-desktop #backdrop{ left:224px; right:288px; }
+  html.force-desktop #backdrop{ left:224px; right:308px; }
   /* the rest of the sheets (Quote, Circuits, Elevation, Floors, Grid,
      Price list, Load, Export, Assign switch, Cable size) still behave as
      real overlay dialogs on desktop, just centred instead of bottom-anchored */
@@ -577,9 +595,6 @@ html.force-desktop{
   <button class="dtb-btn" id="dtbVersions">🕐 History</button>
   <button class="dtb-btn" id="dtbDuplicates">🧹 Find duplicates</button>
   <button class="dtb-btn" id="dtbAccount">☁ Account</button>
-  <div class="dtb-sep"></div>
-  <button class="dtb-btn" id="dtbUndo2" title="Undo (Ctrl+Z)">↶</button>
-  <button class="dtb-btn" id="dtbRedo2" title="Redo (Ctrl+Shift+Z)">↷</button>
 </div>
 
 <div id="recoveryBanner" class="hidden">
@@ -4603,8 +4618,6 @@ document.getElementById('dtbVersions').addEventListener('click', () => { renderV
 document.getElementById('dtbDuplicates').addEventListener('click', () => { renderDuplicatesReport(); openSheet('sheetDuplicates'); });
 document.getElementById('dtbAccount').addEventListener('click', () => { renderAccountSheet(); openSheet('sheetAccount'); });
 document.getElementById('dtbQuote').addEventListener('click', () => { updateQuote(); renderSchedule(); openSheet('sheetQuote'); });
-document.getElementById('dtbUndo2').addEventListener('click', () => document.getElementById('btnUndo').click());
-document.getElementById('dtbRedo2').addEventListener('click', () => document.getElementById('btnRedo').click());
 
 // ===================================================================
 // INIT
