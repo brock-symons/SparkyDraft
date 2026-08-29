@@ -64,20 +64,25 @@ input,select{font-family:var(--sans); user-select:text;}
 canvas{display:block; touch-action:none;}
 
 #import-prompt{
+  /* pointer-events:none on the outer box so it doesn't cover the whole
+     canvas for clicks — otherwise every tap here (e.g. placing a device
+     on the blank grid before a plan is imported) was silently swallowed
+     by this overlay instead of reaching the canvas underneath. Only the
+     actual "Choose File" control re-enables pointer events below. */
   position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center;
-  gap:16px; padding:24px; text-align:center; z-index:5;
+  gap:16px; padding:24px; text-align:center; z-index:5; pointer-events:none;
 }
 #import-prompt.hidden{display:none;}
 #import-prompt .big{font-size:16px; font-weight:600;}
 #import-prompt .sub{color:var(--text-dim); font-size:13px; line-height:1.6; max-width:280px;}
-#import-prompt .file-btn-wrap{width:auto; height:auto;}
+#import-prompt .file-btn-wrap{width:auto; height:auto; pointer-events:auto;}
 #import-prompt .file-btn-wrap input[type=file]{
   position:static; opacity:1; width:auto; padding:12px 20px; border-radius:8px;
   background:var(--blue-dim); border:1px solid var(--blue); color:#eaf6ff; font-size:14px;
 }
 #import-prompt .file-btn-wrap .visual{display:none;}
 
-#hud{position:absolute; z-index:8; pointer-events:none;}
+#hud{position:absolute; inset:0; z-index:8; pointer-events:none;}
 #zoom-badge{
   position:absolute; bottom:10px; left:10px; font-family:var(--mono); font-size:10.5px;
   color:var(--text-dim); background:rgba(18,25,35,0.9); border:1px solid var(--line);
@@ -1906,6 +1911,7 @@ canvas.addEventListener('pointerdown', (e) => {
     // openProps() below now owns "select this device for editing"; picking
     // another device card resumes placement for the next one.
     state.activeSymbol = null; state.activeTool = 'select';
+    setHint(null);
     openProps(obj.id);
     return;
   }
