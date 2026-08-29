@@ -108,6 +108,19 @@ canvas{display:block; touch-action:none;}
 .recovery-actions button{ padding:7px 11px; border-radius:6px; font-size:11.5px; font-weight:600; }
 #recoveryRestore{ background:var(--blue-dim); border:1px solid var(--blue); color:#eaf6ff; }
 #recoveryDismiss{ background:var(--panel2); border:1px solid var(--line); color:var(--text-dim); }
+
+/* Blocks interaction with everything below the topbar/toolbar (canvas,
+   tools, bottom bar) while viewing a shared project you only have view
+   access to. Top offset is set in JS from the topbar/toolbar's actual
+   rendered height, since that differs between mobile and desktop layouts. */
+#readOnlyOverlay{ position:fixed; left:0; right:0; bottom:0; z-index:22; background:transparent; display:none; touch-action:none; }
+#readOnlyOverlay.show{ display:block; }
+#readOnlyBanner{
+  position:fixed; left:0; right:0; z-index:23; display:none;
+  background:var(--amber-dim); color:var(--amber); font-size:11px; font-weight:600;
+  text-align:center; padding:6px 10px; line-height:1.4;
+}
+#readOnlyBanner.show{ display:block; }
 .hud-btn.on{ background:var(--blue-dim); border-color:var(--blue); color:#eaf6ff; }
 #multiActionBar{
   position:absolute; top:52px; left:10px; right:10px; z-index:9; pointer-events:all;
@@ -618,6 +631,8 @@ html.force-desktop{
     <button id="recoveryDismiss">Dismiss</button>
   </div>
 </div>
+<div id="readOnlyBanner">👁 View only — you don't have edit access to this shared project.</div>
+<div id="readOnlyOverlay"></div>
 <div id="canvas-wrap">
   <canvas id="canvas"></canvas>
   <div id="import-prompt">
@@ -895,6 +910,12 @@ html.force-desktop{
   <div class="sheet-handle"></div>
   <div class="sheet-header"><div class="sheet-title">Organization</div><div class="sheet-close" data-close>✕</div></div>
   <div class="sheet-body" id="orgBody"></div>
+</div>
+
+<div class="sheet" id="sheetProjectAccess">
+  <div class="sheet-handle"></div>
+  <div class="sheet-header"><div class="sheet-title" id="projectAccessTitle">Project access</div><div class="sheet-close" data-close>✕</div></div>
+  <div class="sheet-body" id="projectAccessBody"></div>
 </div>
 
 <div class="modal-backdrop" id="modalBackdrop"></div>
@@ -3905,6 +3926,7 @@ document.getElementById('btnSaveDownloadOpt').addEventListener('click', () => { 
 // ===================================================================
 let autosaveTimer = null;
 function markDirty(){
+  if(readOnlyMode) return;
   state.saveStatus = 'unsaved';
   updateSaveStatusUI();
   clearTimeout(autosaveTimer);
@@ -4073,15 +4095,46 @@ function showProjectPicker(){
 function hideProjectPicker(){
   document.getElementById('projectPicker').classList.remove('open');
 }
-function pickerTileHtml({ name, meta, thumb, openAttr, delAttr, shareAttr }){
+// Blocks editing for a shared organization project you only have view
+// access to. The block is a single overlay under the canvas/toolbars
+// rather than disabling every individual tool -- simpler and can't miss
+// a control, at the cost of also blocking pan/zoom while read-only.
+function applyReadOnlyMode(isReadOnly, sharedByName){
+  readOnlyMode = isReadOnly;
+  const overlay = document.getElementById('readOnlyOverlay');
+  const banner = document.getElementById('readOnlyBanner');
+  if(isReadOnly){
+    const topbar = document.getElementById('topbar');
+    const dtb = document.getElementById('desktopToolbar');
+    let top = topbar.getBoundingClientRect().bottom;
+    if(dtb && getComputedStyle(dtb).display !== 'none') top = Math.max(top, dtb.getBoundingClientRect().bottom);
+    overlay.style.top = top + 'px';
+    banner.style.top = top + 'px';
+    banner.textContent = '👁 View only' + (sharedByName ? ' — shared by ' + sharedByName + '.' : '.') + " You don't have edit access to this shared project.";
+    overlay.classList.add('show');
+    banner.classList.add('show');
+  } else {
+    overlay.classList.remove('show');
+    banner.classList.remove('show');
+  }
+  const saveBtn = document.getElementById('btnSave');
+  saveBtn.disabled = isReadOnly;
+  saveBtn.style.opacity = isReadOnly ? '0.35' : '';
+  saveBtn.style.pointerEvents = isReadOnly ? 'none' : '';
+  document.getElementById('projName').disabled = isReadOnly;
+  document.getElementById('fileImport').disabled = isReadOnly;
+}
+function pickerTileHtml({ name, meta, thumb, openAttr, delAttr, shareAttr, manageAttr }){
   const thumbHtml = thumb
     ? `<img src="${thumb}" alt="">`
     : `<div class="tile-thumb-empty">▭</div>`;
   const delHtml = delAttr ? `<div class="tile-del" ${delAttr} title="Delete">🗑</div>` : '';
   const shareHtml = shareAttr ? `<div class="tile-share" ${shareAttr} title="Share to organization">👥</div>` : '';
+  const manageHtml = manageAttr ? `<div class="tile-share" ${manageAttr} title="Manage who can edit">🔑</div>` : '';
   return `<div class="tile tile-proj" ${openAttr}>
     ${delHtml}
     ${shareHtml}
+    ${manageHtml}
     <div class="thumb">${thumbHtml}</div>
     <div class="tile-info">
       <div class="tile-name">${name}</div>
@@ -4219,28 +4272,50 @@ async function renderOrgProjectsGrid(){
       return;
     }
     data.forEach(row => {
-      const canRemove = row.shared_by === cloudUser.id || orgRole === 'admin';
+      const canManage = row.shared_by === cloudUser.id || orgRole === 'admin';
       grid.insertAdjacentHTML('beforeend', pickerTileHtml({
         name: row.name,
         meta: '👥 ' + (row.shared_by_name || 'Shared') + ' · ' + new Date(row.updated_at).toLocaleDateString('en-AU', { day:'numeric', month:'short' }),
         thumb: null,
         openAttr: `data-open-org="${row.id}"`,
-        delAttr: canRemove ? `data-del-org="${row.id}"` : '',
+        delAttr: canManage ? `data-del-org="${row.id}"` : '',
+        manageAttr: canManage ? `data-manage-org="${row.id}" data-manage-org-name="${row.name.replace(/"/g,'&quot;')}"` : '',
       }));
     });
     grid.querySelectorAll('[data-open-org]').forEach(el => el.addEventListener('click', () => pickerOpenOrgProject(el.dataset.openOrg)));
     grid.querySelectorAll('[data-del-org]').forEach(el => el.addEventListener('click', (e) => { e.stopPropagation(); pickerDeleteOrgProject(el.dataset.delOrg); }));
+    grid.querySelectorAll('[data-manage-org]').forEach(el => el.addEventListener('click', (e) => {
+      e.stopPropagation();
+      renderProjectAccessSheet(el.dataset.manageOrg, el.dataset.manageOrgName);
+      openSheet('sheetProjectAccess');
+    }));
   } catch(err){
     grid.innerHTML = `<div style="grid-column:1/-1; text-align:center; padding:24px 0; color:var(--red); font-size:12.5px;">Could not load organization projects: ${err.message}</div>`;
   }
 }
+// Any org member can view a shared project; only the person who shared
+// it, an org admin, or someone explicitly granted editor access (see
+// renderProjectAccessSheet) can edit it. Resolved fresh on every open
+// rather than cached, since access can change between visits.
+async function resolveOrgProjectRole(projectId, sharedBy, orgId){
+  if(sharedBy === cloudUser.id) return 'editor';
+  if(orgRole === 'admin' && currentOrg && currentOrg.id === orgId) return 'editor';
+  try{
+    const { data, error } = await supabaseClient.from('organization_project_access').select('role').eq('project_id', projectId).eq('user_id', cloudUser.id).maybeSingle();
+    if(error) throw error;
+    return (data && data.role) || 'viewer';
+  } catch(_){ return 'viewer'; }
+}
 async function pickerOpenOrgProject(id){
   try{
-    const { data, error } = await supabaseClient.from('organization_projects').select('data').eq('id', id).single();
+    const { data, error } = await supabaseClient.from('organization_projects').select('data, shared_by, shared_by_name, org_id').eq('id', id).single();
     if(error) throw error;
+    const role = await resolveOrgProjectRole(id, data.shared_by, data.org_id);
+    orgProjectContext = { id, orgId: data.org_id, role };
     applyLoadedProject(data.data);
     hideProjectPicker();
-    showToast('Opened shared project');
+    applyReadOnlyMode(role === 'viewer', data.shared_by_name);
+    showToast(role === 'viewer' ? 'Opened (view only)' : 'Opened shared project');
   } catch(err){ showToast('Could not open: ' + err.message); }
 }
 function pickerDeleteOrgProject(id){
@@ -4253,11 +4328,70 @@ function pickerDeleteOrgProject(id){
     } catch(err){ showToast('Delete failed: ' + err.message); }
   }, 'Remove');
 }
+// Only the person who shared a project or an org admin can open this (the
+// 🔑 icon only renders for them, see renderOrgProjectsGrid) -- everyone
+// else in the org can already view the project by default, this just
+// controls who additionally gets to edit it.
+async function renderProjectAccessSheet(projectId, projectName){
+  document.getElementById('projectAccessTitle').textContent = 'Access — ' + (projectName || 'project');
+  const body = document.getElementById('projectAccessBody');
+  body.innerHTML = `<div style="text-align:center; padding:24px 0; color:var(--text-dim); font-size:12.5px;">Loading…</div>`;
+  try{
+    const [{ data: project, error: projErr }, { data: grants, error: grantErr }] = await Promise.all([
+      supabaseClient.from('organization_projects').select('shared_by').eq('id', projectId).single(),
+      supabaseClient.from('organization_project_access').select('user_id').eq('project_id', projectId).eq('role', 'editor'),
+    ]);
+    if(projErr) throw projErr;
+    if(grantErr) throw grantErr;
+    const editorIds = new Set((grants || []).map(g => g.user_id));
+    body.innerHTML = `
+      <div style="font-size:11px; color:var(--text-dim); margin-bottom:14px; line-height:1.5;">Everyone in the organization can view this project. Turn on "Can edit" for anyone who should be able to change it too.</div>
+      <div id="projectAccessList">${orgMembers.map(m => {
+        const isOwner = m.user_id === project.shared_by;
+        const isAdmin = m.role === 'admin';
+        const alwaysEditor = isOwner || isAdmin;
+        const isEditor = alwaysEditor || editorIds.has(m.user_id);
+        return `
+          <div class="load-row" style="gap:8px;">
+            <span style="flex:1;">${m.user_name || m.user_id}${isOwner ? ' <span style="color:var(--blue); font-size:10px;">OWNER</span>' : ''}${isAdmin ? ' <span style="color:var(--amber); font-size:10px;">ADMIN</span>' : ''}</span>
+            <span style="font-size:10.5px; color:var(--text-dim); margin-right:4px;">Can edit</span>
+            <div class="toggle ${isEditor ? 'on' : ''}" data-access-toggle="${m.user_id}" style="${alwaysEditor ? 'opacity:0.4; pointer-events:none;' : ''}"><div class="knob"></div></div>
+          </div>
+        `;
+      }).join('')}</div>
+    `;
+    body.querySelectorAll('[data-access-toggle]').forEach(el => el.addEventListener('click', async () => {
+      const userId = el.dataset.accessToggle;
+      const nowOn = !el.classList.contains('on');
+      el.classList.toggle('on', nowOn);
+      await setProjectAccessRole(projectId, userId, nowOn);
+    }));
+  } catch(err){
+    body.innerHTML = `<div class="auth-msg">Could not load access: ${err.message}</div>`;
+  }
+}
+async function setProjectAccessRole(projectId, userId, canEdit){
+  try{
+    if(canEdit){
+      const { error } = await supabaseClient.from('organization_project_access').upsert({
+        project_id: projectId, user_id: userId, role: 'editor', granted_by: cloudUser.id,
+      }, { onConflict: 'project_id,user_id' });
+      if(error) throw error;
+      showToast('Can now edit');
+    } else {
+      const { error } = await supabaseClient.from('organization_project_access').delete().eq('project_id', projectId).eq('user_id', userId);
+      if(error) throw error;
+      showToast('Now view only');
+    }
+  } catch(err){ showToast('Could not update access: ' + err.message); }
+}
 function pickerCreateNew(){
   openFormModal('New Project', [
     { id:'name', label:'Project name', type:'text', value:'New Project' },
   ], (vals) => {
     const name = (vals.name || 'New Project').trim() || 'New Project';
+    orgProjectContext = null;
+    applyReadOnlyMode(false);
     clearCurrentProject(name);
     hideProjectPicker();
     showToast('Started "' + name + '"');
@@ -4267,6 +4401,8 @@ async function pickerOpenLocal(key){
   try{
     const result = await storageAPI.get(key);
     if(!result){ showToast('Not found'); return; }
+    orgProjectContext = null;
+    applyReadOnlyMode(false);
     applyLoadedProject(JSON.parse(result.value));
     hideProjectPicker();
     showToast('Opened');
@@ -4276,6 +4412,8 @@ async function pickerOpenCloud(id){
   try{
     const { data, error } = await supabaseClient.from('projects').select('data').eq('id', id).single();
     if(error) throw error;
+    orgProjectContext = null;
+    applyReadOnlyMode(false);
     applyLoadedProject(data.data);
     hideProjectPicker();
     showToast('Opened from cloud');
@@ -4330,6 +4468,11 @@ const cloudLibraryLoaded = typeof window.supabase !== 'undefined';
 const cloudConfigured = cloudCredentialsSet && cloudLibraryLoaded;
 const supabaseClient = cloudConfigured ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 let cloudUser = null;
+// Set only when the currently-open project came from an organization's
+// shared list (see Organization Projects below). null for a normal
+// personal project. { id, orgId, role: 'viewer'|'editor' } otherwise.
+let orgProjectContext = null;
+let readOnlyMode = false;
 
 async function initCloudAuth(){
   if(cloudConfigured){
@@ -4724,17 +4867,28 @@ async function cloudSignOut(){
 }
 async function cloudSaveCurrentProject(){
   if(!cloudUser) return;
+  if(readOnlyMode){ showToast("You don't have edit access to this project"); return; }
   const projectData = buildProjectData();
   try{
-    const { error } = await supabaseClient.from('projects').upsert({
-      user_id: cloudUser.id,
-      user_name: (cloudUser.user_metadata && cloudUser.user_metadata.full_name) || cloudUser.email,
-      name: projectData.name,
-      data: projectData,
-      updated_at: new Date().toISOString(),
-    }, { onConflict: 'user_id,name' });
-    if(error) throw error;
-    showToast('Saved "' + projectData.name + '" to the cloud');
+    // Editing a shared org project saves back to that same shared record
+    // (so teammates see the change), not a fork into your personal projects.
+    if(orgProjectContext && orgProjectContext.role === 'editor'){
+      const { error } = await supabaseClient.from('organization_projects').update({
+        name: projectData.name, data: projectData, updated_at: new Date().toISOString(),
+      }).eq('id', orgProjectContext.id);
+      if(error) throw error;
+      showToast('Saved "' + projectData.name + '" to ' + (currentOrg ? currentOrg.name : 'the organization'));
+    } else {
+      const { error } = await supabaseClient.from('projects').upsert({
+        user_id: cloudUser.id,
+        user_name: (cloudUser.user_metadata && cloudUser.user_metadata.full_name) || cloudUser.email,
+        name: projectData.name,
+        data: projectData,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'user_id,name' });
+      if(error) throw error;
+      showToast('Saved "' + projectData.name + '" to the cloud');
+    }
     if(document.getElementById('projectPicker').classList.contains('open')) renderProjectPicker();
   } catch(err){ showToast('Cloud save failed: ' + err.message); }
 }
@@ -4745,7 +4899,15 @@ async function cloudSaveCurrentProject(){
 // noise) and only logs on failure rather than interrupting with an error
 // toast, since the local save it's riding on already succeeded either way.
 function cloudSyncSilently(projectData){
-  if(!cloudUser || !cloudConfigured) return;
+  if(!cloudUser || !cloudConfigured || readOnlyMode) return;
+  if(orgProjectContext && orgProjectContext.role === 'editor'){
+    supabaseClient.from('organization_projects').update({
+      name: projectData.name, data: projectData, updated_at: new Date().toISOString(),
+    }).eq('id', orgProjectContext.id).then(({ error }) => {
+      if(error) console.error('Background org project sync failed:', error);
+    });
+    return;
+  }
   supabaseClient.from('projects').upsert({
     user_id: cloudUser.id,
     user_name: (cloudUser.user_metadata && cloudUser.user_metadata.full_name) || cloudUser.email,
