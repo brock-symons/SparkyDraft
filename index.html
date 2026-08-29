@@ -517,7 +517,6 @@ html.force-desktop{
   <button class="icon-btn" id="btnSave" title="Save now" style="position:relative;">💾<span id="saveStatusDot"></span></button>
   <button class="icon-btn" id="btnLoad">📂</button>
   <button class="icon-btn" id="btnLayoutToggle" title="Switch between bright desktop layout and dark mobile layout">🖥</button>
-  <button class="icon-btn" id="btnLogout" title="Log out">🚪</button>
 </div>
 
 <div id="desktopToolbar">
@@ -794,8 +793,11 @@ html.force-desktop{
   <div class="sheet-body">
     <button class="add-btn" id="btnNewProject" style="margin-top:0; margin-bottom:8px;">+ New Project</button>
     <button class="add-btn" id="btnClearProject" style="background:rgba(248,113,113,0.1); border-color:#5c2626; color:var(--red); margin-top:0; margin-bottom:12px;">Clear current project</button>
-    <div style="font-family:var(--mono); font-size:10px; letter-spacing:1px; text-transform:uppercase; color:var(--text-dim); margin:4px 0 6px; padding-bottom:4px; border-bottom:1px solid var(--line-soft);">Saved projects</div>
+    <div style="font-family:var(--mono); font-size:10px; letter-spacing:1px; text-transform:uppercase; color:var(--text-dim); margin:4px 0 6px; padding-bottom:4px; border-bottom:1px solid var(--line-soft);">Saved projects (this device)</div>
     <div id="loadListBody"></div>
+    <button class="add-btn" id="btnSaveCloud" style="background:var(--panel2); border-color:var(--line); color:var(--text); margin-top:16px;">☁ Save current project to cloud</button>
+    <div style="font-family:var(--mono); font-size:10px; letter-spacing:1px; text-transform:uppercase; color:var(--text-dim); margin:14px 0 6px; padding-bottom:4px; border-bottom:1px solid var(--line-soft);">Cloud projects</div>
+    <div id="cloudListBody">Loading…</div>
   </div>
 </div>
 
@@ -3983,7 +3985,9 @@ async function refreshLoadList(){
 document.getElementById('btnLoad').addEventListener('click', async () => {
   await refreshLoadList();
   openSheet('sheetLoad');
+  if(cloudUser) refreshCloudList();
 });
+document.getElementById('btnSaveCloud').addEventListener('click', () => cloudSaveCurrentProject());
 
 // ===================================================================
 // CLOUD ACCOUNT (Supabase) — optional login + cloud save/sync, separate
@@ -4323,17 +4327,23 @@ function renderAccountSheet(){
     document.getElementById('btnAccSignup').addEventListener('click', () => cloudSignUp());
   } else {
     const uname = cloudUser.user_metadata && cloudUser.user_metadata.full_name;
+    const org = cloudUser.user_metadata && cloudUser.user_metadata.organization;
+    const initials = (uname || cloudUser.email || '?').trim().split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase();
+    const memberSince = cloudUser.created_at ? new Date(cloudUser.created_at).toLocaleDateString('en-AU', { day:'numeric', month:'short', year:'numeric' }) : null;
     body.innerHTML = `
-      <div style="font-size:12px; color:var(--text); margin-bottom:2px;">Signed in as <b>${uname || cloudUser.email}</b></div>
-      ${uname ? `<div style="font-size:11px; color:var(--text-dim); margin-bottom:4px;">${cloudUser.email}</div>` : ''}
-      <button class="add-btn" id="btnAccLogout" style="background:transparent; margin-bottom:14px;">Sign out</button>
-      <button class="add-btn" id="btnAccSaveCloud" style="margin-top:0;">☁ Save current project to cloud</button>
-      <div style="font-family:var(--mono); font-size:10px; letter-spacing:1px; text-transform:uppercase; color:var(--text-dim); margin:14px 0 6px; padding-bottom:4px; border-bottom:1px solid var(--line-soft);">Cloud projects</div>
-      <div id="cloudListBody">Loading…</div>
+      <div style="text-align:center; padding:4px 0 20px;">
+        <div style="width:56px; height:56px; border-radius:50%; background:var(--blue-dim); color:#eaf6ff; display:flex; align-items:center; justify-content:center; margin:0 auto 12px; font-size:19px; font-weight:700; font-family:var(--mono);">${initials}</div>
+        <div style="font-size:16px; font-weight:700; color:var(--text);">${uname || 'Sparky Draft user'}</div>
+        ${org ? `<div style="font-size:12px; color:var(--text-dim); margin-top:2px;">${org}</div>` : ''}
+      </div>
+      <div class="prop-row"><label>Email</label><div style="font-size:13.5px; color:var(--text); padding:2px 0 4px;">${cloudUser.email}</div></div>
+      ${memberSince ? `<div class="prop-row"><label>Member since</label><div style="font-size:13.5px; color:var(--text); padding:2px 0 4px;">${memberSince}</div></div>` : ''}
+      <div style="font-size:11px; color:var(--text-dim); line-height:1.5; margin-top:4px;">Cloud saving and loading your projects now lives in the Projects sheet (📂), alongside your saves on this device.</div>
+      <button class="danger-btn" id="btnAccLogout" style="margin-top:16px;">Sign out</button>
     `;
-    document.getElementById('btnAccLogout').addEventListener('click', () => cloudSignOut());
-    document.getElementById('btnAccSaveCloud').addEventListener('click', () => cloudSaveCurrentProject());
-    refreshCloudList();
+    document.getElementById('btnAccLogout').addEventListener('click', () => {
+      openConfirmModal('Log out?', "You'll need to log back in to keep using SparkyDraft. Any unsaved changes are autosaved locally first.", () => cloudSignOut(), 'Log out');
+    });
   }
 }
 
@@ -4373,11 +4383,6 @@ async function cloudSignOut(){
   renderAuthGate();
   showToast('Signed out');
 }
-document.getElementById('btnLogout').addEventListener('click', () => {
-  if(!cloudUser){ showToast('Not signed in'); return; }
-  openConfirmModal('Log out?', 'You\'ll need to log back in to keep using SparkyDraft. Any unsaved changes are autosaved locally first.', () => cloudSignOut(), 'Log out');
-});
-
 async function cloudSaveCurrentProject(){
   if(!cloudUser) return;
   const projectData = buildProjectData();
