@@ -307,6 +307,33 @@ td{padding:6px; border-bottom:1px solid var(--line-soft);}
 .auth-toggle{ text-align:center; font-size:11.5px; color:var(--text-dim); margin-top:14px; }
 .auth-toggle a{ color:var(--blue); text-decoration:none; }
 
+/* ===== PROJECT PICKER — full-screen project browser, shown right after
+   login and reopenable any time from the 📂 button ===== */
+#projectPicker{ position:fixed; inset:0; z-index:50; background:var(--bg); display:none; flex-direction:column; }
+#projectPicker.open{ display:flex; }
+.picker-top{ height:56px; flex-shrink:0; display:flex; align-items:center; justify-content:space-between; padding:0 20px; border-bottom:1px solid var(--line-soft); }
+.picker-top-actions{ display:flex; align-items:center; gap:8px; }
+.picker-body{ flex:1; overflow-y:auto; padding:28px 24px 40px; }
+.picker-head{ margin-bottom:20px; max-width:900px; margin-left:auto; margin-right:auto; }
+.picker-title{ font-size:18px; font-weight:700; color:var(--text); }
+.picker-sub{ font-size:12px; color:var(--text-dim); margin-top:4px; }
+.picker-grid{ display:grid; grid-template-columns:repeat(auto-fill, minmax(170px, 1fr)); gap:14px; max-width:900px; margin:0 auto; }
+.picker-grid .tile{ border-radius:11px; overflow:hidden; cursor:pointer; position:relative; }
+.tile-new{ height:170px; border:1.5px dashed var(--line); display:flex; flex-direction:column; align-items:center; justify-content:center; gap:8px; background:var(--panel2); }
+.tile-new:hover{ border-color:var(--blue); }
+.tile-new .plus-ring{ width:38px; height:38px; border-radius:50%; background:var(--panel); display:flex; align-items:center; justify-content:center; font-size:19px; color:var(--blue); font-weight:300; }
+.tile-new span{ font-size:11.5px; font-weight:600; color:var(--text-dim); }
+.tile-proj{ height:170px; background:var(--panel2); border:1px solid var(--line); display:flex; flex-direction:column; }
+.tile-proj:hover{ border-color:var(--blue); }
+.tile-proj .thumb{ height:112px; flex-shrink:0; background:var(--panel); display:flex; align-items:center; justify-content:center; overflow:hidden; }
+.tile-proj .thumb img{ width:100%; height:100%; object-fit:cover; }
+.tile-thumb-empty{ font-size:22px; color:var(--text-dim); opacity:0.5; }
+.tile-proj .tile-info{ flex:1; padding:8px 10px; display:flex; flex-direction:column; justify-content:center; gap:2px; border-top:1px solid var(--line-soft); }
+.tile-name{ font-size:11.5px; font-weight:700; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.tile-meta{ font-family:var(--mono); font-size:9.5px; color:var(--text-dim); }
+.tile-del{ position:absolute; top:6px; right:6px; width:24px; height:24px; border-radius:6px; background:rgba(12,17,22,0.75); color:var(--red); display:flex; align-items:center; justify-content:center; font-size:12px; opacity:0; transition:opacity .15s; }
+.tile-proj:hover .tile-del{ opacity:1; }
+
 #toastHost{position:fixed; left:0; right:0; bottom:calc(76px + var(--safe-b)); z-index:70; display:flex; flex-direction:column; align-items:center; gap:8px; pointer-events:none;}
 .toast{
   background:var(--panel); border:1px solid var(--line); color:var(--text); font-size:12.5px;
@@ -356,7 +383,7 @@ td{padding:6px; border-bottom:1px solid var(--line-soft);}
   }
   .dtb-btn{
     background:var(--panel2); border:1px solid var(--line); color:var(--text);
-    padding:7px 12px; border-radius:7px; font-size:12.5px; font-weight:500;
+    padding:6px 10px; border-radius:6px; font-size:12px; font-weight:500;
   }
   .dtb-btn:hover{ border-color:var(--blue); }
   .dtb-btn.active{ background:var(--blue-dim); border-color:var(--blue); color:#0c1116; background:#e3f2ff; color:#1a5f8a; border-color:#4fb3ff; }
@@ -370,7 +397,7 @@ td{padding:6px; border-bottom:1px solid var(--line-soft);}
      Symbols has moved to the right, so it no longer needs to share space
      with (or squeeze out) another panel */
   #sheetLayers{
-    position:fixed; left:0; right:auto; bottom:0; width:280px;
+    position:fixed; left:0; right:auto; bottom:0; width:224px;
     top:calc(48px + var(--safe-t) + var(--dtb-h, 49px));
     transform:none; border-radius:0; max-height:none; box-shadow:2px 0 8px rgba(0,0,0,0.04);
     border-right:1px solid var(--line); z-index:8;
@@ -385,7 +412,7 @@ td{padding:6px; border-bottom:1px solid var(--line-soft);}
      props-active class on <html>, see setDeviceEditorActive() — and hands
      back to Symbols on Save/Delete/deselect. */
   #sheetSymbols, #sheetProps{
-    position:fixed; right:0; left:auto; bottom:0; width:320px;
+    position:fixed; right:0; left:auto; bottom:0; width:248px;
     /* --dtb-h tracks the desktop toolbar's real (possibly wrapped) height —
        see syncDesktopToolbarHeight() — so this panel starts right below it
        instead of overhanging into it when the toolbar wraps to two rows */
@@ -402,12 +429,12 @@ td{padding:6px; border-bottom:1px solid var(--line-soft);}
   html.props-active #sheetSymbols{ display:none; }
 
   #canvas-wrap{
-    left:280px; right:320px; top:calc(48px + var(--safe-t) + var(--dtb-h, 49px)); bottom:0;
+    left:224px; right:248px; top:calc(48px + var(--safe-t) + var(--dtb-h, 49px)); bottom:0;
   }
-  #recoveryBanner{ left:calc(280px + 10px); right:calc(320px + 10px); }
+  #recoveryBanner{ left:calc(224px + 10px); right:calc(248px + 10px); }
 
   /* backdrop shouldn't dim the whole screen for the always-open docked panels */
-  #backdrop{ left:280px; right:320px; }
+  #backdrop{ left:224px; right:248px; }
 
   /* the rest of the sheets (Quote, Circuits, Elevation, Floors, Grid,
      Price list, Load, Export, Assign switch, Cable size) still behave as
@@ -442,7 +469,7 @@ html.force-desktop{
   }
   html.force-desktop .dtb-btn{
     background:var(--panel2); border:1px solid var(--line); color:var(--text);
-    padding:7px 12px; border-radius:7px; font-size:12.5px; font-weight:500;
+    padding:6px 10px; border-radius:6px; font-size:12px; font-weight:500;
   }
   html.force-desktop .dtb-btn:hover{ border-color:var(--blue); }
   html.force-desktop .dtb-btn.active{ background:var(--blue-dim); border-color:var(--blue); color:#0c1116; background:#e3f2ff; color:#1a5f8a; border-color:#4fb3ff; }
@@ -452,7 +479,7 @@ html.force-desktop{
   html.force-desktop #hud-topright, html.force-desktop #multiActionBar{ top:10px; }
   /* dock Layers as a permanent left sidebar — full column height */
   html.force-desktop #sheetLayers{
-    position:fixed; left:0; right:auto; bottom:0; width:280px;
+    position:fixed; left:0; right:auto; bottom:0; width:224px;
     top:calc(48px + var(--safe-t) + var(--dtb-h, 49px));
     transform:none; border-radius:0; max-height:none; box-shadow:2px 0 8px rgba(0,0,0,0.04);
     border-right:1px solid var(--line); z-index:8;
@@ -464,7 +491,7 @@ html.force-desktop{
      the same right-hand slot — Properties overlays Symbols while a
      device/cable is selected, see setDeviceEditorActive() */
   html.force-desktop #sheetSymbols, html.force-desktop #sheetProps{
-    position:fixed; right:0; left:auto; bottom:0; width:320px;
+    position:fixed; right:0; left:auto; bottom:0; width:248px;
     top:calc(48px + var(--safe-t) + var(--dtb-h, 49px)); max-height:none;
     transform:none; border-radius:0; box-shadow:-2px 0 8px rgba(0,0,0,0.04);
     border-left:1px solid var(--line); z-index:8; display:flex; flex-direction:column;
@@ -477,11 +504,11 @@ html.force-desktop{
   html.force-desktop.props-active #sheetProps{ display:flex; }
   html.force-desktop.props-active #sheetSymbols{ display:none; }
   html.force-desktop #canvas-wrap{
-    left:280px; right:320px; top:calc(48px + var(--safe-t) + var(--dtb-h, 49px)); bottom:0;
+    left:224px; right:248px; top:calc(48px + var(--safe-t) + var(--dtb-h, 49px)); bottom:0;
   }
-  html.force-desktop #recoveryBanner{ left:calc(280px + 10px); right:calc(320px + 10px); }
+  html.force-desktop #recoveryBanner{ left:calc(224px + 10px); right:calc(248px + 10px); }
   /* backdrop shouldn't dim the whole screen for the always-open docked panels */
-  html.force-desktop #backdrop{ left:280px; right:320px; }
+  html.force-desktop #backdrop{ left:224px; right:248px; }
   /* the rest of the sheets (Quote, Circuits, Elevation, Floors, Grid,
      Price list, Load, Export, Assign switch, Cable size) still behave as
      real overlay dialogs on desktop, just centred instead of bottom-anchored */
@@ -502,6 +529,22 @@ html.force-desktop{
   <div class="auth-card">
     <div class="brand" style="margin-bottom:18px; justify-content:center;"><div class="dot"></div>SPARKY DRAFT</div>
     <div id="authGateBody"></div>
+  </div>
+</div>
+<div id="projectPicker">
+  <div class="picker-top">
+    <div class="brand"><div class="dot"></div>SPARKY DRAFT</div>
+    <div class="picker-top-actions">
+      <button class="icon-btn" id="pickerSaveCloud" title="Save current project to cloud">☁</button>
+      <button class="icon-btn" id="pickerClose" title="Close">✕</button>
+    </div>
+  </div>
+  <div class="picker-body">
+    <div class="picker-head">
+      <div class="picker-title">Your projects</div>
+      <div class="picker-sub">Pick up where you left off, or start something new.</div>
+    </div>
+    <div class="picker-grid" id="pickerGrid"></div>
   </div>
 </div>
 <div id="toastHost"></div>
@@ -784,20 +827,6 @@ html.force-desktop{
     <canvas id="elevCanvas" height="180"></canvas>
     <button class="add-btn" id="btnAddElevItem" style="background:var(--panel2); border-color:var(--line); color:var(--text);">+ Add device to this elevation</button>
     <div id="elevItemList"></div>
-  </div>
-</div>
-
-<div class="sheet" id="sheetLoad">
-  <div class="sheet-handle"></div>
-  <div class="sheet-header"><div class="sheet-title">Projects</div><div class="sheet-close" data-close>✕</div></div>
-  <div class="sheet-body">
-    <button class="add-btn" id="btnNewProject" style="margin-top:0; margin-bottom:8px;">+ New Project</button>
-    <button class="add-btn" id="btnClearProject" style="background:rgba(248,113,113,0.1); border-color:#5c2626; color:var(--red); margin-top:0; margin-bottom:12px;">Clear current project</button>
-    <div style="font-family:var(--mono); font-size:10px; letter-spacing:1px; text-transform:uppercase; color:var(--text-dim); margin:4px 0 6px; padding-bottom:4px; border-bottom:1px solid var(--line-soft);">Saved projects (this device)</div>
-    <div id="loadListBody"></div>
-    <button class="add-btn" id="btnSaveCloud" style="background:var(--panel2); border-color:var(--line); color:var(--text); margin-top:16px;">☁ Save current project to cloud</button>
-    <div style="font-family:var(--mono); font-size:10px; letter-spacing:1px; text-transform:uppercase; color:var(--text-dim); margin:14px 0 6px; padding-bottom:4px; border-bottom:1px solid var(--line-soft);">Cloud projects</div>
-    <div id="cloudListBody">Loading…</div>
   </div>
 </div>
 
@@ -2158,7 +2187,7 @@ document.getElementById('multiAssignSwitch').addEventListener('click', () => {
 // BOTTOM TOOLBAR + SHEETS
 // ===================================================================
 const backdrop = document.getElementById('backdrop');
-const sheets = ['sheetSymbols','sheetLayers','sheetProps','sheetQuote','sheetMore','sheetCableSize','sheetCircuits','sheetElevation','sheetLoad','sheetFloors','sheetExport','sheetGrid','sheetAssignSwitch','sheetPriceList','sheetVersions','sheetRooms','sheetDuplicates','sheetAccount'].map(id=>document.getElementById(id));
+const sheets = ['sheetSymbols','sheetLayers','sheetProps','sheetQuote','sheetMore','sheetCableSize','sheetCircuits','sheetElevation','sheetFloors','sheetExport','sheetGrid','sheetAssignSwitch','sheetPriceList','sheetVersions','sheetRooms','sheetDuplicates','sheetAccount'].map(id=>document.getElementById(id));
 function closeSheets(){ sheets.forEach(s=>s.classList.remove('open')); backdrop.classList.remove('open'); }
 // Layers/Symbols/Properties are permanently docked side panels on desktop
 // (not floating dialogs), so the backdrop shouldn't cover the canvas for
@@ -3937,57 +3966,148 @@ function resyncNextId(){
   state.nextId = maxId + 1;
 }
 
-async function refreshLoadList(){
-  const body = document.getElementById('loadListBody');
+// ===================================================================
+// PROJECT PICKER — full-screen start screen shown right after login, and
+// reopenable any time via the 📂 button. Replaces the old "Projects" bottom
+// sheet: one place to create, open, or delete a project (local or cloud)
+// instead of that being split across a separate sheet and dialogs.
+// ===================================================================
+let pickerAutoShown = false;
+function maybeShowPickerAfterLogin(){
+  if(pickerAutoShown) return;
+  pickerAutoShown = true;
+  showProjectPicker();
+}
+function showProjectPicker(){
+  document.getElementById('projectPicker').classList.add('open');
+  renderProjectPicker();
+}
+function hideProjectPicker(){
+  document.getElementById('projectPicker').classList.remove('open');
+}
+function pickerTileHtml({ name, meta, thumb, openAttr, delAttr }){
+  const thumbHtml = thumb
+    ? `<img src="${thumb}" alt="">`
+    : `<div class="tile-thumb-empty">▭</div>`;
+  return `<div class="tile tile-proj" ${openAttr}>
+    <div class="tile-del" ${delAttr} title="Delete">🗑</div>
+    <div class="thumb">${thumbHtml}</div>
+    <div class="tile-info">
+      <div class="tile-name">${name}</div>
+      <div class="tile-meta">${meta}</div>
+    </div>
+  </div>`;
+}
+async function renderProjectPicker(){
+  const grid = document.getElementById('pickerGrid');
+  grid.innerHTML = `<div class="tile tile-new" id="pickerNewTile">
+    <div class="plus-ring">+</div>
+    <span>New Project</span>
+  </div>`;
+  document.getElementById('pickerNewTile').addEventListener('click', pickerCreateNew);
+
   try{
     const list = await storageAPI.list('project:');
-    if(!list || !list.keys || list.keys.length===0){
-      body.innerHTML = '<div style="color:var(--text-dim); font-size:12.5px; padding:16px 0; text-align:center;">No saved projects yet.</div>';
-      return;
-    }
-    body.innerHTML = list.keys.map(k => {
-      const name = k.replace(/^project:/,'').replace(/_/g,' ');
-      return `<div class="load-row" style="gap:8px;">
-        <span data-load-key="${k}" style="flex:1; cursor:pointer;">${name}</span>
-        <span class="arrow" data-load-key="${k}" style="cursor:pointer;">Open ›</span>
-        <div class="lock-btn" data-del-project="${k}" title="Delete saved project" style="opacity:1; color:var(--red); flex-shrink:0;">🗑</div>
-      </div>`;
-    }).join('');
-    body.querySelectorAll('[data-load-key]').forEach(el => el.addEventListener('click', async () => {
+    const keys = (list && list.keys) || [];
+    for(const key of keys){
       try{
-        const result = await storageAPI.get(el.dataset.loadKey);
-        if(!result){ showToast('Not found'); return; }
-        applyLoadedProject(JSON.parse(result.value));
-        closeSheets();
-        showToast('Loaded');
-      } catch(err){ showToast('Load failed: ' + err.message); }
-    }));
-    body.querySelectorAll('[data-del-project]').forEach(btn => btn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const key = btn.dataset.delProject;
-      const name = key.replace(/^project:/,'').replace(/_/g,' ');
-      openConfirmModal('Delete saved project?', 'Permanently delete "' + name + '" from saved projects. This cannot be undone.', async () => {
-        try{
-          await storageAPI.delete(key);
-          try{
-            const pointer = await storageAPI.get('last-open-project');
-            if(pointer && pointer.value === key) await storageAPI.delete('last-open-project');
-          } catch(_){}
-          showToast('Deleted "' + name + '"');
-          refreshLoadList();
-        } catch(err){ showToast('Delete failed: ' + err.message); }
-      }, 'Delete');
-    }));
-  } catch(err){
-    body.innerHTML = '<div style="color:var(--text-dim); font-size:12.5px; padding:16px 0; text-align:center;">Could not list projects.</div>';
+        const result = await storageAPI.get(key);
+        const d = JSON.parse(result.value);
+        const thumb = d.floors && d.floors[0] && d.floors[0].planImageData;
+        grid.insertAdjacentHTML('beforeend', pickerTileHtml({
+          name: d.name || key.replace(/^project:/,'').replace(/_/g,' '),
+          meta: 'On this device',
+          thumb,
+          openAttr: `data-open-local="${key}"`,
+          delAttr: `data-del-local="${key}"`,
+        }));
+      } catch(_){}
+    }
+  } catch(_){}
+
+  // Cloud projects show a generic icon rather than a thumbnail — fetching
+  // every cloud project's full data (floor plan images included) just to
+  // populate this grid would be a lot of unnecessary transfer for a picker.
+  if(cloudUser && cloudConfigured){
+    try{
+      const { data, error } = await supabaseClient.from('projects').select('id,name,updated_at').eq('user_id', cloudUser.id).order('updated_at', { ascending:false });
+      if(!error && data){
+        data.forEach(row => {
+          grid.insertAdjacentHTML('beforeend', pickerTileHtml({
+            name: row.name,
+            meta: '☁ Cloud · ' + new Date(row.updated_at).toLocaleDateString('en-AU', { day:'numeric', month:'short' }),
+            thumb: null,
+            openAttr: `data-open-cloud="${row.id}"`,
+            delAttr: `data-del-cloud="${row.id}"`,
+          }));
+        });
+      }
+    } catch(_){}
   }
+
+  grid.querySelectorAll('[data-open-local]').forEach(el => el.addEventListener('click', () => pickerOpenLocal(el.dataset.openLocal)));
+  grid.querySelectorAll('[data-open-cloud]').forEach(el => el.addEventListener('click', () => pickerOpenCloud(el.dataset.openCloud)));
+  grid.querySelectorAll('[data-del-local]').forEach(el => el.addEventListener('click', (e) => { e.stopPropagation(); pickerDeleteLocal(el.dataset.delLocal); }));
+  grid.querySelectorAll('[data-del-cloud]').forEach(el => el.addEventListener('click', (e) => { e.stopPropagation(); pickerDeleteCloud(el.dataset.delCloud); }));
 }
-document.getElementById('btnLoad').addEventListener('click', async () => {
-  await refreshLoadList();
-  openSheet('sheetLoad');
-  if(cloudUser) refreshCloudList();
+function pickerCreateNew(){
+  openFormModal('New Project', [
+    { id:'name', label:'Project name', type:'text', value:'New Project' },
+  ], (vals) => {
+    const name = (vals.name || 'New Project').trim() || 'New Project';
+    clearCurrentProject(name);
+    hideProjectPicker();
+    showToast('Started "' + name + '"');
+  }, 'Create');
+}
+async function pickerOpenLocal(key){
+  try{
+    const result = await storageAPI.get(key);
+    if(!result){ showToast('Not found'); return; }
+    applyLoadedProject(JSON.parse(result.value));
+    hideProjectPicker();
+    showToast('Opened');
+  } catch(err){ showToast('Could not open: ' + err.message); }
+}
+async function pickerOpenCloud(id){
+  try{
+    const { data, error } = await supabaseClient.from('projects').select('data').eq('id', id).single();
+    if(error) throw error;
+    applyLoadedProject(data.data);
+    hideProjectPicker();
+    showToast('Opened from cloud');
+  } catch(err){ showToast('Could not open: ' + err.message); }
+}
+function pickerDeleteLocal(key){
+  const name = key.replace(/^project:/,'').replace(/_/g,' ');
+  openConfirmModal('Delete saved project?', 'Permanently delete "' + name + '" from this device. This cannot be undone.', async () => {
+    try{
+      await storageAPI.delete(key);
+      try{
+        const pointer = await storageAPI.get('last-open-project');
+        if(pointer && pointer.value === key) await storageAPI.delete('last-open-project');
+      } catch(_){}
+      showToast('Deleted');
+      renderProjectPicker();
+    } catch(err){ showToast('Delete failed: ' + err.message); }
+  }, 'Delete');
+}
+function pickerDeleteCloud(id){
+  openConfirmModal('Delete cloud project?', 'Permanently delete this project from your account. This cannot be undone.', async () => {
+    try{
+      const { error } = await supabaseClient.from('projects').delete().eq('id', id);
+      if(error) throw error;
+      showToast('Deleted');
+      renderProjectPicker();
+    } catch(err){ showToast('Delete failed: ' + err.message); }
+  }, 'Delete');
+}
+document.getElementById('btnLoad').addEventListener('click', () => showProjectPicker());
+document.getElementById('pickerClose').addEventListener('click', () => hideProjectPicker());
+document.getElementById('pickerSaveCloud').addEventListener('click', () => {
+  if(!cloudUser){ showToast('Not signed in'); return; }
+  cloudSaveCurrentProject();
 });
-document.getElementById('btnSaveCloud').addEventListener('click', () => cloudSaveCurrentProject());
 
 // ===================================================================
 // CLOUD ACCOUNT (Supabase) — optional login + cloud save/sync, separate
@@ -4052,7 +4172,7 @@ function renderAuthGate(){
     document.getElementById('gateSubmit').addEventListener('click', () => submitNewPassword());
     return;
   }
-  if(cloudUser){ gate.classList.remove('open'); return; }
+  if(cloudUser){ gate.classList.remove('open'); maybeShowPickerAfterLogin(); return; }
   gate.classList.add('open');
   if(!cloudCredentialsSet){
     body.innerHTML = `<div class="auth-msg">Cloud login isn't configured for this build.</div>`;
@@ -4395,49 +4515,8 @@ async function cloudSaveCurrentProject(){
     }, { onConflict: 'user_id,name' });
     if(error) throw error;
     showToast('Saved "' + projectData.name + '" to the cloud');
-    refreshCloudList();
+    if(document.getElementById('projectPicker').classList.contains('open')) renderProjectPicker();
   } catch(err){ showToast('Cloud save failed: ' + err.message); }
-}
-
-async function refreshCloudList(){
-  const body = document.getElementById('cloudListBody');
-  if(!body) return;
-  try{
-    const { data, error } = await supabaseClient.from('projects').select('id,name,updated_at').eq('user_id', cloudUser.id).order('updated_at', { ascending:false });
-    if(error) throw error;
-    if(!data || data.length===0){
-      body.innerHTML = '<div style="color:var(--text-dim); font-size:12.5px; padding:16px 0; text-align:center;">No cloud-saved projects yet.</div>';
-      return;
-    }
-    body.innerHTML = data.map(row => `<div class="load-row" style="gap:8px;">
-      <span data-cload-id="${row.id}" style="flex:1; cursor:pointer;">${row.name}</span>
-      <span class="arrow" data-cload-id="${row.id}" style="cursor:pointer;">Open ›</span>
-      <div class="lock-btn" data-cdel-id="${row.id}" title="Delete cloud project" style="opacity:1; color:var(--red); flex-shrink:0;">🗑</div>
-    </div>`).join('');
-    body.querySelectorAll('[data-cload-id]').forEach(el => el.addEventListener('click', async () => {
-      try{
-        const { data: row, error } = await supabaseClient.from('projects').select('data').eq('id', el.dataset.cloadId).single();
-        if(error) throw error;
-        applyLoadedProject(row.data);
-        closeSheets();
-        showToast('Loaded from cloud');
-      } catch(err){ showToast('Load failed: ' + err.message); }
-    }));
-    body.querySelectorAll('[data-cdel-id]').forEach(btn => btn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const id = btn.dataset.cdelId;
-      openConfirmModal('Delete cloud project?', 'Permanently delete this project from your account. This cannot be undone.', async () => {
-        try{
-          const { error } = await supabaseClient.from('projects').delete().eq('id', id);
-          if(error) throw error;
-          showToast('Deleted');
-          refreshCloudList();
-        } catch(err){ showToast('Delete failed: ' + err.message); }
-      }, 'Delete');
-    }));
-  } catch(err){
-    body.innerHTML = '<div style="color:var(--text-dim); font-size:12.5px; padding:16px 0; text-align:center;">Could not load cloud projects.</div>';
-  }
 }
 initCloudAuth();
 
@@ -4486,29 +4565,6 @@ function clearCurrentProject(name){
   document.getElementById('propsTitle').textContent = 'Properties';
   setTool('select');
 }
-document.getElementById('btnNewProject').addEventListener('click', () => {
-  openFormModal('New Project', [
-    { id:'name', label:'Project name', type:'text', value:'New Project' },
-  ], (vals) => {
-    const name = (vals.name || 'New Project').trim() || 'New Project';
-    clearCurrentProject(name);
-    closeSheets();
-    showToast('Started "' + name + '"');
-  }, 'Create');
-});
-document.getElementById('btnClearProject').addEventListener('click', () => {
-  openConfirmModal(
-    'Clear project?',
-    'This removes all devices, floor plans, circuits and wiring from the current project. Saved projects are not deleted.',
-    () => {
-      clearCurrentProject(document.getElementById('projName').value || 'New Project');
-      closeSheets();
-      showToast('Project cleared');
-    },
-    'Clear project'
-  );
-});
-
 // ===================================================================
 // DESKTOP TOOLBAR (>=900px — see CSS media query for the docked-panel
 // layout this pairs with). Wires straight into the same functions the
