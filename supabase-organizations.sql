@@ -77,6 +77,17 @@ as $$
   );
 $$;
 
+/* These are only meant to be called from inside other tables' RLS policies
+   (evaluated as the querying role, so authenticated genuinely needs
+   execute) -- Postgres grants execute to PUBLIC by default on every
+   create/replace, which silently included anon (fully unauthenticated
+   requests) too. Locked down after being flagged by Supabase's security
+   advisor: anon should never be able to call these directly. */
+revoke execute on function public.is_org_member(uuid) from public, anon;
+grant execute on function public.is_org_member(uuid) to authenticated;
+revoke execute on function public.is_org_admin(uuid) from public, anon;
+grant execute on function public.is_org_admin(uuid) to authenticated;
+
 /* organizations: any member can view it; only the creator can rename/delete it */
 drop policy if exists "Members can view their organization" on public.organizations;
 create policy "Members can view their organization"

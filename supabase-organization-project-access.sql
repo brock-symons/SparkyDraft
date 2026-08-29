@@ -41,6 +41,12 @@ as $$
   );
 $$;
 
+/* Same as is_org_member/is_org_admin: only meant to be called from inside
+   other RLS policies, but create/replace grants execute to PUBLIC (which
+   anon inherits) by default. Locked down per the security advisor. */
+revoke execute on function public.can_manage_org_project(uuid) from public, anon;
+grant execute on function public.can_manage_org_project(uuid) to authenticated;
+
 drop policy if exists "Managers and the member can view an access grant" on public.organization_project_access;
 create policy "Managers and the member can view an access grant"
   on public.organization_project_access for select

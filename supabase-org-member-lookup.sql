@@ -23,5 +23,5 @@ as $$
   limit 1;
 $$;
 
-revoke all on function public.find_user_by_email(text) from public;
+revoke execute on function public.find_user_by_email(text) from public, anon;
 grant execute on function public.find_user_by_email(text) to authenticated;
