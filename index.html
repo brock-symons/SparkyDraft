@@ -175,11 +175,15 @@ canvas{display:block; touch-action:none;}
 
 /* ===== BOTTOM SHEETS ===== */
 .sheet-backdrop{
-  position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:40; opacity:0; pointer-events:none; transition:opacity .2s;
+  /* above #projectPicker (z-index:50) so a sheet opened from the picker's
+     own Account/Organization buttons renders over it, not hidden behind it —
+     closing the sheet then just reveals the still-open picker underneath,
+     no extra state needed to "return" to it */
+  position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:55; opacity:0; pointer-events:none; transition:opacity .2s;
 }
 .sheet-backdrop.open{opacity:1; pointer-events:all;}
 .sheet{
-  position:fixed; left:0; right:0; bottom:0; z-index:41; background:var(--panel);
+  position:fixed; left:0; right:0; bottom:0; z-index:56; background:var(--panel);
   border-radius:16px 16px 0 0; border-top:1px solid var(--line);
   transform:translateY(100%); transition:transform .25s cubic-bezier(.32,.72,0,1);
   max-height:75vh; display:flex; flex-direction:column;
@@ -553,6 +557,8 @@ html.force-desktop{
   <div class="picker-top">
     <div class="brand"><div class="dot"></div>SPARKY DRAFT</div>
     <div class="picker-top-actions">
+      <button class="icon-btn" id="pickerOrg" title="Organization">👥</button>
+      <button class="icon-btn" id="pickerAccount" title="Account &amp; cloud">☁</button>
       <button class="icon-btn" id="pickerClose" title="Close">✕</button>
     </div>
   </div>
@@ -4086,36 +4092,25 @@ async function renderProjectPicker(){
   </div>`;
   document.getElementById('pickerNewTile').addEventListener('click', pickerCreateNew);
 
-  try{
-    const list = await storageAPI.list('project:');
-    const keys = (list && list.keys) || [];
-    for(const key of keys){
-      try{
-        const result = await storageAPI.get(key);
-        const d = JSON.parse(result.value);
-        const thumb = d.floors && d.floors[0] && d.floors[0].planImageData;
-        grid.insertAdjacentHTML('beforeend', pickerTileHtml({
-          name: d.name || key.replace(/^project:/,'').replace(/_/g,' '),
-          meta: 'On this device',
-          thumb,
-          openAttr: `data-open-local="${key}"`,
-          delAttr: `data-del-local="${key}"`,
-        }));
-      } catch(_){}
-    }
-  } catch(_){}
-
-  // Cloud projects show a generic icon rather than a thumbnail — fetching
-  // every cloud project's full data (floor plan images included) just to
-  // populate this grid would be a lot of unnecessary transfer for a picker.
+  // Every local save now auto-syncs to the cloud when signed in, so the
+  // cloud list is fetched FIRST and is treated as the source of truth —
+  // a local entry only gets its own tile if no cloud copy of the same
+  // name exists yet (still offline/unsynced), so a project that's saved
+  // in both places shows up once, not twice.
+  const cloudNames = new Set();
   if(cloudUser && cloudConfigured){
     try{
       const { data, error } = await supabaseClient.from('projects').select('id,name,updated_at').eq('user_id', cloudUser.id).order('updated_at', { ascending:false });
       if(!error && data){
         data.forEach(row => {
+          cloudNames.add(row.name.trim().toLowerCase());
           grid.insertAdjacentHTML('beforeend', pickerTileHtml({
             name: row.name,
             meta: '☁ Cloud · ' + new Date(row.updated_at).toLocaleDateString('en-AU', { day:'numeric', month:'short' }),
+            // Cloud projects show a generic icon rather than a thumbnail —
+            // fetching every cloud project's full data (floor plan images
+            // included) just to populate this grid is a lot of unnecessary
+            // transfer for a picker screen.
             thumb: null,
             openAttr: `data-open-cloud="${row.id}"`,
             delAttr: `data-del-cloud="${row.id}"`,
@@ -4124,6 +4119,27 @@ async function renderProjectPicker(){
       }
     } catch(_){}
   }
+
+  try{
+    const list = await storageAPI.list('project:');
+    const keys = (list && list.keys) || [];
+    for(const key of keys){
+      try{
+        const result = await storageAPI.get(key);
+        const d = JSON.parse(result.value);
+        const name = d.name || key.replace(/^project:/,'').replace(/_/g,' ');
+        if(cloudNames.has(name.trim().toLowerCase())) continue;
+        const thumb = d.floors && d.floors[0] && d.floors[0].planImageData;
+        grid.insertAdjacentHTML('beforeend', pickerTileHtml({
+          name,
+          meta: 'On this device',
+          thumb,
+          openAttr: `data-open-local="${key}"`,
+          delAttr: `data-del-local="${key}"`,
+        }));
+      } catch(_){}
+    }
+  } catch(_){}
 
   grid.querySelectorAll('[data-open-local]').forEach(el => el.addEventListener('click', () => pickerOpenLocal(el.dataset.openLocal)));
   grid.querySelectorAll('[data-open-cloud]').forEach(el => el.addEventListener('click', () => pickerOpenCloud(el.dataset.openCloud)));
@@ -4184,6 +4200,8 @@ function pickerDeleteCloud(id){
 }
 document.getElementById('btnLoad').addEventListener('click', () => showProjectPicker());
 document.getElementById('pickerClose').addEventListener('click', () => hideProjectPicker());
+document.getElementById('pickerOrg').addEventListener('click', () => { renderOrgSheet(); openSheet('sheetOrg'); });
+document.getElementById('pickerAccount').addEventListener('click', () => { renderAccountSheet(); openSheet('sheetAccount'); });
 
 // ===================================================================
 // CLOUD ACCOUNT (Supabase) — optional login + cloud save/sync, separate
