@@ -3830,7 +3830,7 @@ function buildProjectData(){
     name: document.getElementById('projName').value,
     activeFloorIndex: state.activeFloorIndex,
     customSymbols: state.customSymbols, symbolSize: state.symbolSize, gridOverlay: !!state.gridOverlay,
-    priceListOverrides: SYMBOL_LIBRARY.map(s => ({ id:s.id, material_cost:s.defaultProps.material_cost, labour_hours:s.defaultProps.labour_hours })),
+    priceListOverrides: SYMBOL_LIBRARY.map(s => ({ id:s.id, label:s.label, material_cost:s.defaultProps.material_cost, labour_hours:s.defaultProps.labour_hours })),
     floors: state.floors.map(f => ({
       id: f.id, name: f.name, scale: f.scale, gridSpacingMM: f.gridSpacingMM, snapEnabled: f.snapEnabled,
       gridOriginX: f.gridOriginX || 0, gridOriginY: f.gridOriginY || 0,
@@ -4028,7 +4028,10 @@ function applyLoadedProject(d){
   });
   (d.priceListOverrides || []).forEach(po => {
     const sym = SYMBOL_LIBRARY.find(s=>s.id===po.id);
-    if(sym){ sym.defaultProps.material_cost = po.material_cost; sym.defaultProps.labour_hours = po.labour_hours; }
+    if(sym){
+      if(po.label) sym.label = po.label;
+      sym.defaultProps.material_cost = po.material_cost; sym.defaultProps.labour_hours = po.labour_hours;
+    }
   });
   renderSymbolGrid();
   const floorPromises = (d.floors && d.floors.length ? d.floors : [{ name:'Ground Floor' }]).map(fd => new Promise(resolve => {
