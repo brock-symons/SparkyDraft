@@ -553,7 +553,6 @@ html.force-desktop{
   <div class="picker-top">
     <div class="brand"><div class="dot"></div>SPARKY DRAFT</div>
     <div class="picker-top-actions">
-      <button class="icon-btn" id="pickerSaveCloud" title="Save current project to cloud">☁</button>
       <button class="icon-btn" id="pickerClose" title="Close">✕</button>
     </div>
   </div>
@@ -867,6 +866,17 @@ html.force-desktop{
   <div class="sheet-handle"></div>
   <div class="sheet-header"><div class="sheet-title">Account &amp; cloud sync</div><div class="sheet-close" data-close>✕</div></div>
   <div class="sheet-body" id="accountBody"></div>
+</div>
+
+<div class="sheet" id="sheetSaveOptions">
+  <div class="sheet-handle"></div>
+  <div class="sheet-header"><div class="sheet-title">Save</div><div class="sheet-close" data-close>✕</div></div>
+  <div class="sheet-body">
+    <button class="add-btn" id="btnSaveLocalOpt" style="margin-top:0;">💾 Save on this device</button>
+    <button class="add-btn" id="btnSaveCloudOpt" style="background:var(--panel2); border-color:var(--line); color:var(--text);">☁ Save to cloud</button>
+    <button class="add-btn" id="btnSaveDownloadOpt" style="background:var(--panel2); border-color:var(--line); color:var(--text);">⬇ Download a copy to your device</button>
+    <div style="font-size:11px; color:var(--text-dim); line-height:1.5; margin-top:10px;">Saving on this device also syncs to the cloud automatically when you're signed in — "Save to cloud" is only needed if you want to push a copy there right now without changing anything else.</div>
+  </div>
 </div>
 
 <div class="modal-backdrop" id="modalBackdrop"></div>
@@ -2202,7 +2212,7 @@ document.getElementById('multiAssignSwitch').addEventListener('click', () => {
 // BOTTOM TOOLBAR + SHEETS
 // ===================================================================
 const backdrop = document.getElementById('backdrop');
-const sheets = ['sheetSymbols','sheetLayers','sheetProps','sheetQuote','sheetMore','sheetCableSize','sheetCircuits','sheetElevation','sheetFloors','sheetExport','sheetGrid','sheetAssignSwitch','sheetPriceList','sheetVersions','sheetRooms','sheetDuplicates','sheetAccount'].map(id=>document.getElementById(id));
+const sheets = ['sheetSymbols','sheetLayers','sheetProps','sheetQuote','sheetMore','sheetCableSize','sheetCircuits','sheetElevation','sheetFloors','sheetExport','sheetGrid','sheetAssignSwitch','sheetPriceList','sheetVersions','sheetRooms','sheetDuplicates','sheetAccount','sheetSaveOptions'].map(id=>document.getElementById(id));
 function closeSheets(){ sheets.forEach(s=>s.classList.remove('open')); backdrop.classList.remove('open'); }
 // Layers/Symbols/Properties are permanently docked side panels on desktop
 // (not floating dialogs), so the backdrop shouldn't cover the canvas for
@@ -2402,9 +2412,10 @@ function renderPriceList(){
     ${grouped[cat].map(sym => `
       <div class="circuit-row" style="align-items:center;">
         <input type="text" data-name-id="${sym.id}" value="${sym.label}" style="flex:1; min-width:0; background:transparent; border:none; color:${sym.color}; font-weight:700; font-size:13px; font-family:var(--mono); padding:6px 4px;">
-        <div style="display:flex; gap:6px; flex-shrink:0;">
+        <div style="display:flex; gap:6px; flex-shrink:0; align-items:center;">
           <input type="number" step="0.01" data-price-id="${sym.id}" value="${sym.defaultProps.material_cost}" style="width:66px; background:var(--panel2); border:1px solid var(--line); color:var(--text); padding:6px 6px; border-radius:6px; font-size:12px;">
           <input type="number" step="0.05" data-labour-id="${sym.id}" value="${sym.defaultProps.labour_hours}" style="width:54px; background:var(--panel2); border:1px solid var(--line); color:var(--text); padding:6px 6px; border-radius:6px; font-size:12px;">
+          ${sym.id.startsWith('custom_') ? `<div class="lock-btn" data-del-fitting="${sym.id}" title="Delete this fitting" style="opacity:1; color:var(--red);">🗑</div>` : ''}
         </div>
       </div>
     `).join('')}
@@ -2424,6 +2435,25 @@ function renderPriceList(){
     sym.defaultProps.labour_hours = parseFloat(e.target.value)||0;
     renderSchedule(); updateQuote(); markDirty();
   }));
+  el.querySelectorAll('[data-del-fitting]').forEach(btn => btn.addEventListener('click', () => deleteCustomFitting(btn.dataset.delFitting)));
+}
+function deleteCustomFitting(id){
+  const sym = SYMBOL_LIBRARY.find(s => s.id === id);
+  if(!sym) return;
+  const inUse = state.floors.reduce((n, f) => n + f.objects.filter(o => o.symbolId === id).length, 0);
+  if(inUse > 0){
+    showToast(inUse + ' device' + (inUse===1?'':'s') + ' on your plan use this fitting — remove or change them first.');
+    return;
+  }
+  openConfirmModal('Delete "' + sym.label + '"?', 'Removes this fitting from your device library. This cannot be undone.', () => {
+    const idx = SYMBOL_LIBRARY.findIndex(s => s.id === id);
+    if(idx > -1) SYMBOL_LIBRARY.splice(idx, 1);
+    state.customSymbols = state.customSymbols.filter(s => s.id !== id);
+    renderSymbolGrid();
+    renderPriceList();
+    pushHistory();
+    showToast('Deleted "' + sym.label + '"');
+  }, 'Delete');
 }
 
 // ===================================================================
@@ -3577,13 +3607,15 @@ function openProps(id){
     recomputeSwitchGang(swId);
     pushHistory(); render(); openProps(id);
   }));
-  document.getElementById('btnSaveDevice').addEventListener('click', () => {
+  document.getElementById('btnSaveDevice').addEventListener('click', async () => {
     // field edits already commit to obj.props live on change; this gives the
     // panel an explicit, always-visible save action (reuses the same
     // persist-now flow as the topbar save button) rather than relying on
     // the sheet's close button, which desktop hides since the panel is
-    // permanently docked there.
-    document.getElementById('btnSave').click();
+    // permanently docked there. Calls saveLocalProject() directly rather
+    // than clicking the topbar save button, since that button now opens
+    // the save-options sheet instead of saving immediately.
+    await saveLocalProject();
     // on the desktop docked layout, Device settings overlays Place-a-device
     // until the user is done editing — Save is the primary "done" signal
     state.selectedObjectId = null; setDeviceEditorActive(false); render();
@@ -3817,7 +3849,7 @@ function buildProjectData(){
   });
 })();
 
-document.getElementById('btnSave').addEventListener('click', async () => {
+async function saveLocalProject(){
   const projectData = buildProjectData();
   try{
     const key = 'project:' + projectData.name.replace(/\s+/g,'_').toLowerCase();
@@ -3827,7 +3859,29 @@ document.getElementById('btnSave').addEventListener('click', async () => {
     showToast('Saved "' + projectData.name + '" (' + projectData.floors.length + ' floor' + (projectData.floors.length===1?'':'s') + ')');
     cloudSyncSilently(projectData);
   } catch(err){ showToast('Save failed: ' + err.message); }
+}
+function downloadProjectCopy(){
+  const data = buildProjectData();
+  const json = JSON.stringify(data);
+  const blob = new Blob([json], { type:'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = (data.name || 'project').replace(/[^a-z0-9]+/gi,'_').toLowerCase() + '.json';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  showToast('Downloaded a copy of "' + data.name + '"');
+}
+document.getElementById('btnSave').addEventListener('click', () => openSheet('sheetSaveOptions'));
+document.getElementById('btnSaveLocalOpt').addEventListener('click', async () => { await saveLocalProject(); closeSheets(); });
+document.getElementById('btnSaveCloudOpt').addEventListener('click', () => {
+  if(!cloudUser){ showToast('Log in to save to the cloud'); return; }
+  cloudSaveCurrentProject();
+  closeSheets();
 });
+document.getElementById('btnSaveDownloadOpt').addEventListener('click', () => { downloadProjectCopy(); closeSheets(); });
 
 // ===================================================================
 // AUTOSAVE + SAVE STATUS + SESSION RECOVERY
@@ -4121,10 +4175,6 @@ function pickerDeleteCloud(id){
 }
 document.getElementById('btnLoad').addEventListener('click', () => showProjectPicker());
 document.getElementById('pickerClose').addEventListener('click', () => hideProjectPicker());
-document.getElementById('pickerSaveCloud').addEventListener('click', () => {
-  if(!cloudUser){ showToast('Not signed in'); return; }
-  cloudSaveCurrentProject();
-});
 
 // ===================================================================
 // CLOUD ACCOUNT (Supabase) — optional login + cloud save/sync, separate
@@ -4475,7 +4525,6 @@ function renderAccountSheet(){
       </div>
       <div class="prop-row"><label>Email</label><div style="font-size:13.5px; color:var(--text); padding:2px 0 4px;">${cloudUser.email}</div></div>
       ${memberSince ? `<div class="prop-row"><label>Member since</label><div style="font-size:13.5px; color:var(--text); padding:2px 0 4px;">${memberSince}</div></div>` : ''}
-      <div style="font-size:11px; color:var(--text-dim); line-height:1.5; margin-top:4px;">Cloud saving and loading your projects now lives in the Projects sheet (📂), alongside your saves on this device.</div>
       <button class="danger-btn" id="btnAccLogout" style="margin-top:16px;">Sign out</button>
     `;
     document.getElementById('btnAccLogout').addEventListener('click', () => {
