@@ -1,7 +1,12 @@
--- SparkyDraft cloud save — run this once in your Supabase project's
--- SQL Editor (Supabase dashboard → SQL Editor → New query → paste → Run).
--- Creates the "projects" table cloud save/load uses, and locks it down
--- so each account can only ever see and touch its own projects.
+/*
+  SparkyDraft cloud save setup.
+  Run this once in your Supabase project's SQL Editor:
+  Supabase dashboard -> SQL Editor -> New query -> paste this whole file -> Run.
+
+  Creates the "projects" table cloud save/load uses, and locks it down so
+  each account can only ever see and touch its own projects.
+  Safe to run again later if needed.
+*/
 
 create table if not exists public.projects (
   id uuid primary key default gen_random_uuid(),
