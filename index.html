@@ -374,12 +374,12 @@ td{padding:6px; border-bottom:1px solid var(--line-soft);}
     --text:#1f2733; --text-dim:#6b7684;
   }
   body{ background:#eef1f4; }
-  #topbar{ box-shadow:0 1px 0 rgba(0,0,0,0.04); }
+  #topbar{ height:44px; box-shadow:0 1px 0 rgba(0,0,0,0.04); }
   .btn, .icon-btn, .file-btn-wrap .visual{ color:var(--text-dim); }
 
   #desktopToolbar{
-    display:flex; align-items:center; gap:6px; flex-wrap:wrap;
-    background:var(--panel); border-bottom:1px solid var(--line); padding:8px 14px;
+    display:flex; align-items:center; gap:5px; flex-wrap:wrap;
+    background:var(--panel); border-bottom:1px solid var(--line); padding:6px 12px;
   }
   .dtb-btn{
     background:var(--panel2); border:1px solid var(--line); color:var(--text);
@@ -398,7 +398,7 @@ td{padding:6px; border-bottom:1px solid var(--line-soft);}
      with (or squeeze out) another panel */
   #sheetLayers{
     position:fixed; left:0; right:auto; bottom:0; width:224px;
-    top:calc(48px + var(--safe-t) + var(--dtb-h, 49px));
+    top:calc(44px + var(--safe-t) + var(--dtb-h, 40px));
     transform:none; border-radius:0; max-height:none; box-shadow:2px 0 8px rgba(0,0,0,0.04);
     border-right:1px solid var(--line); z-index:8;
   }
@@ -412,11 +412,11 @@ td{padding:6px; border-bottom:1px solid var(--line-soft);}
      props-active class on <html>, see setDeviceEditorActive() — and hands
      back to Symbols on Save/Delete/deselect. */
   #sheetSymbols, #sheetProps{
-    position:fixed; right:0; left:auto; bottom:0; width:248px;
+    position:fixed; right:0; left:auto; bottom:0; width:288px;
     /* --dtb-h tracks the desktop toolbar's real (possibly wrapped) height —
        see syncDesktopToolbarHeight() — so this panel starts right below it
        instead of overhanging into it when the toolbar wraps to two rows */
-    top:calc(48px + var(--safe-t) + var(--dtb-h, 49px)); max-height:none;
+    top:calc(44px + var(--safe-t) + var(--dtb-h, 40px)); max-height:none;
     transform:none; border-radius:0; box-shadow:-2px 0 8px rgba(0,0,0,0.04);
     border-left:1px solid var(--line); z-index:8; display:flex; flex-direction:column;
   }
@@ -429,12 +429,12 @@ td{padding:6px; border-bottom:1px solid var(--line-soft);}
   html.props-active #sheetSymbols{ display:none; }
 
   #canvas-wrap{
-    left:224px; right:248px; top:calc(48px + var(--safe-t) + var(--dtb-h, 49px)); bottom:0;
+    left:224px; right:288px; top:calc(44px + var(--safe-t) + var(--dtb-h, 40px)); bottom:0;
   }
-  #recoveryBanner{ left:calc(224px + 10px); right:calc(248px + 10px); }
+  #recoveryBanner{ left:calc(224px + 10px); right:calc(288px + 10px); }
 
   /* backdrop shouldn't dim the whole screen for the always-open docked panels */
-  #backdrop{ left:224px; right:248px; }
+  #backdrop{ left:224px; right:288px; }
 
   /* the rest of the sheets (Quote, Circuits, Elevation, Floors, Grid,
      Price list, Load, Export, Assign switch, Cable size) still behave as
@@ -461,11 +461,11 @@ html.force-desktop{
     --text:#1f2733; --text-dim:#6b7684;
   }
   html.force-desktop body{ background:#eef1f4; }
-  html.force-desktop #topbar{ box-shadow:0 1px 0 rgba(0,0,0,0.04); }
+  html.force-desktop #topbar{ height:44px; box-shadow:0 1px 0 rgba(0,0,0,0.04); }
   html.force-desktop .btn, html.force-desktop .icon-btn, html.force-desktop .file-btn-wrap .visual{ color:var(--text-dim); }
   html.force-desktop #desktopToolbar{
-    display:flex; align-items:center; gap:6px; flex-wrap:wrap;
-    background:var(--panel); border-bottom:1px solid var(--line); padding:8px 14px;
+    display:flex; align-items:center; gap:5px; flex-wrap:wrap;
+    background:var(--panel); border-bottom:1px solid var(--line); padding:6px 12px;
   }
   html.force-desktop .dtb-btn{
     background:var(--panel2); border:1px solid var(--line); color:var(--text);
@@ -480,7 +480,7 @@ html.force-desktop{
   /* dock Layers as a permanent left sidebar — full column height */
   html.force-desktop #sheetLayers{
     position:fixed; left:0; right:auto; bottom:0; width:224px;
-    top:calc(48px + var(--safe-t) + var(--dtb-h, 49px));
+    top:calc(44px + var(--safe-t) + var(--dtb-h, 40px));
     transform:none; border-radius:0; max-height:none; box-shadow:2px 0 8px rgba(0,0,0,0.04);
     border-right:1px solid var(--line); z-index:8;
   }
@@ -491,8 +491,8 @@ html.force-desktop{
      the same right-hand slot — Properties overlays Symbols while a
      device/cable is selected, see setDeviceEditorActive() */
   html.force-desktop #sheetSymbols, html.force-desktop #sheetProps{
-    position:fixed; right:0; left:auto; bottom:0; width:248px;
-    top:calc(48px + var(--safe-t) + var(--dtb-h, 49px)); max-height:none;
+    position:fixed; right:0; left:auto; bottom:0; width:288px;
+    top:calc(44px + var(--safe-t) + var(--dtb-h, 40px)); max-height:none;
     transform:none; border-radius:0; box-shadow:-2px 0 8px rgba(0,0,0,0.04);
     border-left:1px solid var(--line); z-index:8; display:flex; flex-direction:column;
   }
@@ -504,11 +504,11 @@ html.force-desktop{
   html.force-desktop.props-active #sheetProps{ display:flex; }
   html.force-desktop.props-active #sheetSymbols{ display:none; }
   html.force-desktop #canvas-wrap{
-    left:224px; right:248px; top:calc(48px + var(--safe-t) + var(--dtb-h, 49px)); bottom:0;
+    left:224px; right:288px; top:calc(44px + var(--safe-t) + var(--dtb-h, 40px)); bottom:0;
   }
-  html.force-desktop #recoveryBanner{ left:calc(224px + 10px); right:calc(248px + 10px); }
+  html.force-desktop #recoveryBanner{ left:calc(224px + 10px); right:calc(288px + 10px); }
   /* backdrop shouldn't dim the whole screen for the always-open docked panels */
-  html.force-desktop #backdrop{ left:224px; right:248px; }
+  html.force-desktop #backdrop{ left:224px; right:288px; }
   /* the rest of the sheets (Quote, Circuits, Elevation, Floors, Grid,
      Price list, Load, Export, Assign switch, Cable size) still behave as
      real overlay dialogs on desktop, just centred instead of bottom-anchored */
@@ -3810,6 +3810,7 @@ document.getElementById('btnSave').addEventListener('click', async () => {
     await storageAPI.set('last-open-project', key);
     state.saveStatus = 'saved'; state.lastSavedAt = new Date(); updateSaveStatusUI();
     showToast('Saved "' + projectData.name + '" (' + projectData.floors.length + ' floor' + (projectData.floors.length===1?'':'s') + ')');
+    cloudSyncSilently(projectData);
   } catch(err){ showToast('Save failed: ' + err.message); }
 });
 
@@ -3831,6 +3832,7 @@ async function performAutosave(){
     await storageAPI.set(key, JSON.stringify(data));
     await storageAPI.set('last-open-project', key);
     state.saveStatus = 'saved'; state.lastSavedAt = new Date();
+    cloudSyncSilently(data);
   } catch(err){
     state.saveStatus = 'unsaved';
   }
@@ -4517,6 +4519,23 @@ async function cloudSaveCurrentProject(){
     showToast('Saved "' + projectData.name + '" to the cloud');
     if(document.getElementById('projectPicker').classList.contains('open')) renderProjectPicker();
   } catch(err){ showToast('Cloud save failed: ' + err.message); }
+}
+// Piggybacks on every local save (the 💾 button and autosave alike) so the
+// cloud copy stays current automatically — no separate "remember to sync"
+// step. Deliberately silent on success (autosave alone fires every couple
+// of seconds while actively editing; a toast on each one would be constant
+// noise) and only logs on failure rather than interrupting with an error
+// toast, since the local save it's riding on already succeeded either way.
+function cloudSyncSilently(projectData){
+  if(!cloudUser || !cloudConfigured) return;
+  supabaseClient.from('projects').upsert({
+    user_id: cloudUser.id,
+    name: projectData.name,
+    data: projectData,
+    updated_at: new Date().toISOString(),
+  }, { onConflict: 'user_id,name' }).then(({ error }) => {
+    if(error) console.error('Background cloud sync failed:', error);
+  });
 }
 initCloudAuth();
 
