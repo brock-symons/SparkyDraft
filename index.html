@@ -594,6 +594,7 @@ html.force-desktop{
   <button class="dtb-btn" id="dtbVersions">🕐 History</button>
   <button class="dtb-btn" id="dtbDuplicates">🧹 Find duplicates</button>
   <button class="dtb-btn" id="dtbAccount">☁ Account</button>
+  <button class="dtb-btn" id="dtbOrg">👥 Organization</button>
 </div>
 
 <div id="recoveryBanner" class="hidden">
@@ -750,6 +751,7 @@ html.force-desktop{
     </div>
     <div class="tool-row">
       <div class="tool-card" id="moreAccount"><span class="icon">☁</span><span class="lbl">Account &amp; cloud</span></div>
+      <div class="tool-card" id="moreOrg"><span class="icon">👥</span><span class="lbl">Organization</span></div>
     </div>
   </div>
 </div>
@@ -877,6 +879,12 @@ html.force-desktop{
     <button class="add-btn" id="btnSaveDownloadOpt" style="background:var(--panel2); border-color:var(--line); color:var(--text);">⬇ Download a copy to your device</button>
     <div style="font-size:11px; color:var(--text-dim); line-height:1.5; margin-top:10px;">Saving on this device also syncs to the cloud automatically when you're signed in — "Save to cloud" is only needed if you want to push a copy there right now without changing anything else.</div>
   </div>
+</div>
+
+<div class="sheet" id="sheetOrg">
+  <div class="sheet-handle"></div>
+  <div class="sheet-header"><div class="sheet-title">Organization</div><div class="sheet-close" data-close>✕</div></div>
+  <div class="sheet-body" id="orgBody"></div>
 </div>
 
 <div class="modal-backdrop" id="modalBackdrop"></div>
@@ -2212,7 +2220,7 @@ document.getElementById('multiAssignSwitch').addEventListener('click', () => {
 // BOTTOM TOOLBAR + SHEETS
 // ===================================================================
 const backdrop = document.getElementById('backdrop');
-const sheets = ['sheetSymbols','sheetLayers','sheetProps','sheetQuote','sheetMore','sheetCableSize','sheetCircuits','sheetElevation','sheetFloors','sheetExport','sheetGrid','sheetAssignSwitch','sheetPriceList','sheetVersions','sheetRooms','sheetDuplicates','sheetAccount','sheetSaveOptions'].map(id=>document.getElementById(id));
+const sheets = ['sheetSymbols','sheetLayers','sheetProps','sheetQuote','sheetMore','sheetCableSize','sheetCircuits','sheetElevation','sheetFloors','sheetExport','sheetGrid','sheetAssignSwitch','sheetPriceList','sheetVersions','sheetRooms','sheetDuplicates','sheetAccount','sheetSaveOptions','sheetOrg'].map(id=>document.getElementById(id));
 function closeSheets(){ sheets.forEach(s=>s.classList.remove('open')); backdrop.classList.remove('open'); }
 // Layers/Symbols/Properties are permanently docked side panels on desktop
 // (not floating dialogs), so the backdrop shouldn't cover the canvas for
@@ -2342,6 +2350,7 @@ document.getElementById('moreVersions').addEventListener('click', () => { render
 document.getElementById('moreRooms').addEventListener('click', () => { renderRooms(); openSheet('sheetRooms'); });
 document.getElementById('moreDuplicates').addEventListener('click', () => { renderDuplicatesReport(); openSheet('sheetDuplicates'); });
 document.getElementById('moreAccount').addEventListener('click', () => { renderAccountSheet(); openSheet('sheetAccount'); });
+document.getElementById('moreOrg').addEventListener('click', () => { renderOrgSheet(); openSheet('sheetOrg'); });
 
 // ===================================================================
 // DUPLICATE DEVICE FINDER
@@ -4239,7 +4248,7 @@ function renderAuthGate(){
     document.getElementById('gateSubmit').addEventListener('click', () => submitNewPassword());
     return;
   }
-  if(cloudUser){ gate.classList.remove('open'); maybeShowPickerAfterLogin(); return; }
+  if(cloudUser){ gate.classList.remove('open'); maybeShowPickerAfterLogin(); acceptPendingOrgInvites(); return; }
   gate.classList.add('open');
   if(!cloudCredentialsSet){
     body.innerHTML = `<div class="auth-msg">Cloud login isn't configured for this build.</div>`;
@@ -4603,6 +4612,164 @@ function cloudSyncSilently(projectData){
     if(error) console.error('Background cloud sync failed:', error);
   });
 }
+
+// ===================================================================
+// ORGANIZATIONS (Phase 1) — create/join an org and invite members by
+// email. Being a member doesn't grant access to any project by itself;
+// that's project-level sharing, a separate phase built on top of this.
+// ===================================================================
+let currentOrg = null;
+let orgRole = null; // 'admin' | 'member' | null
+let orgMembers = [];
+let orgPendingInvites = [];
+
+async function loadMyOrg(){
+  currentOrg = null; orgRole = null; orgMembers = []; orgPendingInvites = [];
+  if(!cloudUser || !cloudConfigured) return;
+  try{
+    const { data, error } = await supabaseClient.from('organization_members').select('org_id, role, organizations(id, name, created_by)').eq('user_id', cloudUser.id).limit(1).maybeSingle();
+    if(error) throw error;
+    if(!data) return;
+    currentOrg = data.organizations;
+    orgRole = data.role;
+    await loadOrgMembers();
+    if(orgRole === 'admin') await loadOrgPendingInvites();
+  } catch(err){ console.error('Could not load organization:', err); }
+}
+async function loadOrgMembers(){
+  if(!currentOrg) return;
+  try{
+    const { data, error } = await supabaseClient.from('organization_members').select('user_id, user_name, role').eq('org_id', currentOrg.id).order('joined_at', { ascending:true });
+    if(error) throw error;
+    orgMembers = data || [];
+  } catch(err){ console.error('Could not load members:', err); orgMembers = []; }
+}
+async function loadOrgPendingInvites(){
+  if(!currentOrg) return;
+  try{
+    const { data, error } = await supabaseClient.from('organization_invites').select('id, email, created_at').eq('org_id', currentOrg.id).is('accepted_at', null).order('created_at', { ascending:false });
+    if(error) throw error;
+    orgPendingInvites = data || [];
+  } catch(err){ console.error('Could not load invites:', err); orgPendingInvites = []; }
+}
+async function createOrganization(name){
+  try{
+    const { data, error } = await supabaseClient.from('organizations').insert({ name, created_by: cloudUser.id }).select().single();
+    if(error) throw error;
+    const uname = (cloudUser.user_metadata && cloudUser.user_metadata.full_name) || cloudUser.email;
+    const { error: memErr } = await supabaseClient.from('organization_members').insert({ org_id: data.id, user_id: cloudUser.id, user_name: uname, role:'admin' });
+    if(memErr) throw memErr;
+    showToast('Created "' + name + '"');
+  } catch(err){ showToast('Could not create organization: ' + err.message); }
+}
+async function inviteToOrg(email){
+  if(!currentOrg) return;
+  try{
+    const { error } = await supabaseClient.from('organization_invites').insert({ org_id: currentOrg.id, email: email.toLowerCase().trim(), invited_by: cloudUser.id });
+    if(error) throw error;
+    showToast('Invited ' + email);
+    await loadOrgPendingInvites();
+    renderOrgSheet();
+  } catch(err){ showToast('Could not send invite: ' + err.message); }
+}
+async function removeOrgMember(userId){
+  if(!currentOrg) return;
+  try{
+    const { error } = await supabaseClient.from('organization_members').delete().eq('org_id', currentOrg.id).eq('user_id', userId);
+    if(error) throw error;
+    showToast('Removed');
+    await loadOrgMembers();
+    renderOrgSheet();
+  } catch(err){ showToast('Could not remove: ' + err.message); }
+}
+async function cancelOrgInvite(inviteId){
+  try{
+    const { error } = await supabaseClient.from('organization_invites').delete().eq('id', inviteId);
+    if(error) throw error;
+    showToast('Invite cancelled');
+    await loadOrgPendingInvites();
+    renderOrgSheet();
+  } catch(err){ showToast('Could not cancel invite: ' + err.message); }
+}
+// Called once right after login: if this account's email has a pending
+// invite waiting, turn it into real membership automatically instead of
+// making them do anything to "accept" it.
+async function acceptPendingOrgInvites(){
+  if(!cloudUser || !cloudConfigured) return;
+  try{
+    const { data, error } = await supabaseClient.from('organization_invites').select('id, org_id').eq('email', cloudUser.email.toLowerCase()).is('accepted_at', null);
+    if(error || !data || !data.length) return;
+    const uname = (cloudUser.user_metadata && cloudUser.user_metadata.full_name) || cloudUser.email;
+    for(const invite of data){
+      await supabaseClient.from('organization_members').insert({ org_id: invite.org_id, user_id: cloudUser.id, user_name: uname, role:'member' });
+      await supabaseClient.from('organization_invites').update({ accepted_at: new Date().toISOString() }).eq('id', invite.id);
+    }
+  } catch(err){ console.error('Could not accept pending invites:', err); }
+}
+
+async function renderOrgSheet(){
+  const body = document.getElementById('orgBody');
+  if(!cloudConfigured || !cloudLibraryLoaded){
+    body.innerHTML = `<div class="auth-msg">Couldn't reach the cloud service. Check your connection and try again.</div>`;
+    return;
+  }
+  if(!cloudUser){
+    body.innerHTML = `<div class="auth-msg">Log in to use organizations.</div>`;
+    return;
+  }
+  body.innerHTML = `<div style="text-align:center; padding:24px 0; color:var(--text-dim); font-size:12.5px;">Loading…</div>`;
+  await loadMyOrg();
+  if(!currentOrg){
+    body.innerHTML = `
+      <div style="font-size:11px; color:var(--text-dim); margin-bottom:14px; line-height:1.5;">You're not part of an organization yet. Create one to start inviting people to specific projects.</div>
+      <div class="prop-row"><label>Organization name</label><input id="org_name" type="text" placeholder="e.g. IJED Electric"></div>
+      <button class="add-btn" id="btnCreateOrg" style="margin-top:0;">+ Create organization</button>
+    `;
+    document.getElementById('btnCreateOrg').addEventListener('click', async () => {
+      const name = document.getElementById('org_name').value.trim();
+      if(!name){ showToast('Enter an organization name'); return; }
+      await createOrganization(name);
+      renderOrgSheet();
+    });
+    return;
+  }
+  const isAdmin = orgRole === 'admin';
+  body.innerHTML = `
+    <div style="font-size:16px; font-weight:700; color:var(--text); margin-bottom:2px;">${currentOrg.name}</div>
+    <div style="font-size:11px; color:var(--text-dim); margin-bottom:16px;">${orgMembers.length} member${orgMembers.length===1?'':'s'}${isAdmin ? " · you're an admin" : ''}</div>
+    ${isAdmin ? `
+      <div class="prop-row"><label>Invite by email</label><input id="org_invite_email" type="email" placeholder="teammate@example.com"></div>
+      <button class="add-btn" id="btnInvite" style="margin-top:0;">Send invite</button>
+    ` : ''}
+    <div style="font-family:var(--mono); font-size:10px; letter-spacing:1px; text-transform:uppercase; color:var(--text-dim); margin:16px 0 6px; padding-bottom:4px; border-bottom:1px solid var(--line-soft);">Members</div>
+    <div id="orgMemberList">${orgMembers.map(m => `
+      <div class="load-row" style="gap:8px;">
+        <span style="flex:1;">${m.user_name || m.user_id}${m.role==='admin' ? ' <span style="color:var(--amber); font-size:10px;">ADMIN</span>' : ''}</span>
+        ${isAdmin && m.user_id !== cloudUser.id ? `<div class="lock-btn" data-remove-member="${m.user_id}" title="Remove from organization" style="opacity:1; color:var(--red);">🗑</div>` : ''}
+      </div>
+    `).join('')}</div>
+    ${isAdmin && orgPendingInvites.length ? `
+      <div style="font-family:var(--mono); font-size:10px; letter-spacing:1px; text-transform:uppercase; color:var(--text-dim); margin:16px 0 6px; padding-bottom:4px; border-bottom:1px solid var(--line-soft);">Pending invites</div>
+      <div id="orgInviteList">${orgPendingInvites.map(i => `
+        <div class="load-row" style="gap:8px;">
+          <span style="flex:1; color:var(--text-dim);">${i.email}</span>
+          <div class="lock-btn" data-cancel-invite="${i.id}" title="Cancel invite" style="opacity:1; color:var(--red);">🗑</div>
+        </div>
+      `).join('')}</div>
+    ` : ''}
+  `;
+  if(isAdmin){
+    document.getElementById('btnInvite').addEventListener('click', () => {
+      const email = document.getElementById('org_invite_email').value.trim();
+      if(!email){ showToast('Enter an email'); return; }
+      inviteToOrg(email);
+    });
+    body.querySelectorAll('[data-remove-member]').forEach(btn => btn.addEventListener('click', () => {
+      openConfirmModal('Remove member?', "They'll lose access to any projects shared with them in this organization.", () => removeOrgMember(btn.dataset.removeMember), 'Remove');
+    }));
+    body.querySelectorAll('[data-cancel-invite]').forEach(btn => btn.addEventListener('click', () => cancelOrgInvite(btn.dataset.cancelInvite)));
+  }
+}
 initCloudAuth();
 
 function clearCurrentProject(name){
@@ -4668,6 +4835,7 @@ document.getElementById('dtbCommsRacks').addEventListener('click', () => { rende
 document.getElementById('dtbVersions').addEventListener('click', () => { renderVersionHistory(); openSheet('sheetVersions'); });
 document.getElementById('dtbDuplicates').addEventListener('click', () => { renderDuplicatesReport(); openSheet('sheetDuplicates'); });
 document.getElementById('dtbAccount').addEventListener('click', () => { renderAccountSheet(); openSheet('sheetAccount'); });
+document.getElementById('dtbOrg').addEventListener('click', () => { renderOrgSheet(); openSheet('sheetOrg'); });
 document.getElementById('dtbQuote').addEventListener('click', () => { updateQuote(); renderSchedule(); openSheet('sheetQuote'); });
 
 // ===================================================================
