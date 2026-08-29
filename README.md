@@ -13,5 +13,7 @@ The `supabase-*.sql` files set up the Supabase schema and RPC functions used for
 1. `supabase-schema.sql`
 2. `supabase-organizations.sql`
 3. `supabase-organization-projects.sql`
-4. `supabase-org-member-lookup.sql`
-5. `supabase-add-user-name-column.sql`
+4. `supabase-organization-project-access.sql`
+5. `supabase-org-member-lookup.sql`
+6. `supabase-add-user-name-column.sql`
+7. `supabase-fix-project-identity.sql`
