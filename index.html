@@ -4575,6 +4575,7 @@ async function cloudSaveCurrentProject(){
   try{
     const { error } = await supabaseClient.from('projects').upsert({
       user_id: cloudUser.id,
+      user_name: (cloudUser.user_metadata && cloudUser.user_metadata.full_name) || cloudUser.email,
       name: projectData.name,
       data: projectData,
       updated_at: new Date().toISOString(),
@@ -4594,6 +4595,7 @@ function cloudSyncSilently(projectData){
   if(!cloudUser || !cloudConfigured) return;
   supabaseClient.from('projects').upsert({
     user_id: cloudUser.id,
+    user_name: (cloudUser.user_metadata && cloudUser.user_metadata.full_name) || cloudUser.email,
     name: projectData.name,
     data: projectData,
     updated_at: new Date().toISOString(),
