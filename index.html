@@ -4246,6 +4246,7 @@ async function initCloudAuth(){
 let gateMode = 'signin'; // 'signin' | 'signup' | 'reset' | 'newpassword' | 'verify' | 'resetcode'
 let pendingVerifyEmail = '';
 let pendingResetEmail = '';
+let pendingOrgName = '';
 
 function renderAuthGate(){
   const gate = document.getElementById('authGate');
@@ -4463,11 +4464,13 @@ async function gateAuth(mode){
       }
       if(data.user && !data.session){
         pendingVerifyEmail = email;
+        pendingOrgName = org;
         gateMode = 'verify';
         renderAuthGate();
         return;
       }
       cloudUser = data.user;
+      if(org) await createOrganization(org);
       renderAuthGate();
       showToast('Welcome, ' + name + '!');
     } else {
@@ -4500,6 +4503,7 @@ async function submitVerifyCode(){
     const { data, error } = await supabaseClient.auth.verifyOtp({ email: pendingVerifyEmail, token: code, type: 'signup' });
     if(error) throw error;
     cloudUser = data.user;
+    if(pendingOrgName){ await createOrganization(pendingOrgName); pendingOrgName = ''; }
     gateMode = 'signin';
     renderAuthGate();
     const uname = cloudUser.user_metadata && cloudUser.user_metadata.full_name;
@@ -4680,6 +4684,16 @@ async function createOrganization(name){
     showToast('Created "' + name + '"');
   } catch(err){ showToast('Could not create organization: ' + err.message); }
 }
+async function updateOrganizationName(newName){
+  if(!currentOrg || !newName || newName === currentOrg.name) return;
+  try{
+    const { error } = await supabaseClient.from('organizations').update({ name: newName }).eq('id', currentOrg.id);
+    if(error) throw error;
+    currentOrg.name = newName;
+    showToast('Renamed to "' + newName + '"');
+    renderOrgSheet();
+  } catch(err){ showToast('Could not rename: ' + err.message); }
+}
 async function inviteToOrg(email){
   if(!currentOrg) return;
   try{
@@ -4753,8 +4767,12 @@ async function renderOrgSheet(){
   }
   const isAdmin = orgRole === 'admin';
   body.innerHTML = `
-    <div style="font-size:16px; font-weight:700; color:var(--text); margin-bottom:2px;">${currentOrg.name}</div>
-    <div style="font-size:11px; color:var(--text-dim); margin-bottom:16px;">${orgMembers.length} member${orgMembers.length===1?'':'s'}${isAdmin ? " · you're an admin" : ''}</div>
+    ${isAdmin
+      ? `<div class="prop-row"><label>Organization name</label><input id="org_name_edit" type="text" value="${currentOrg.name}"></div>
+         <button class="add-btn" id="btnRenameOrg" style="background:var(--panel2); border-color:var(--line); color:var(--text); margin-top:0;">Save name</button>`
+      : `<div style="font-size:16px; font-weight:700; color:var(--text); margin-bottom:2px;">${currentOrg.name}</div>`
+    }
+    <div style="font-size:11px; color:var(--text-dim); margin:6px 0 16px;">${orgMembers.length} member${orgMembers.length===1?'':'s'}${isAdmin ? " · you're an admin" : ''}</div>
     ${isAdmin ? `
       <div class="prop-row"><label>Invite by email</label><input id="org_invite_email" type="email" placeholder="teammate@example.com"></div>
       <button class="add-btn" id="btnInvite" style="margin-top:0;">Send invite</button>
@@ -4781,6 +4799,11 @@ async function renderOrgSheet(){
       const email = document.getElementById('org_invite_email').value.trim();
       if(!email){ showToast('Enter an email'); return; }
       inviteToOrg(email);
+    });
+    document.getElementById('btnRenameOrg').addEventListener('click', () => {
+      const newName = document.getElementById('org_name_edit').value.trim();
+      if(!newName){ showToast('Enter an organization name'); return; }
+      updateOrganizationName(newName);
     });
     body.querySelectorAll('[data-remove-member]').forEach(btn => btn.addEventListener('click', () => {
       openConfirmModal('Remove member?', "They'll lose access to any projects shared with them in this organization.", () => removeOrgMember(btn.dataset.removeMember), 'Remove');
