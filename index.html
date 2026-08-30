@@ -1340,10 +1340,16 @@ function computeBankAttachPoints(floor, bank, order){
 // Covers every device on the Power layer (GPOs, isolators, HWS, ovens,
 // etc.) — not just GPO-shaped symbols — so a circuit that mixes device
 // types still shows a complete run, which matters for "isolate circuit".
+// A switch with its own circuit assigned ("hard active" — fed straight from
+// the switchboard rather than looped off its light) joins the same chain
+// system even though it lives on the Lighting layer, so its run gets drawn
+// too; chains flagged hardActive are what the caller draws in red.
 function computeGpoChains(floor){
   const byCircuit = {};
   floor.objects.forEach(o => {
-    if(!o.circuit || o.layer !== 'power') return;
+    if(!o.circuit) return;
+    const hardActiveSwitch = isSwitchSymbol(o.symbolId);
+    if(o.layer !== 'power' && !hardActiveSwitch) return;
     (byCircuit[o.circuit] = byCircuit[o.circuit] || []).push(o.id);
   });
   return Object.keys(byCircuit).map(circuitId => {
@@ -1364,7 +1370,20 @@ function computeGpoChains(floor){
     }
     const seed = boardObj || floor.objects.find(o => o.id === gpoIds[0]) || { x:0, y:0 };
     const order = computeChainOrder(floor, gpoIds, seed);
-    return { circuitId, gpoIds, order, boardObj };
+    const hardActive = gpoIds.some(id => isSwitchSymbol(floor.objects.find(o=>o.id===id)?.symbolId));
+    return { circuitId, gpoIds, order, boardObj, hardActive };
+  });
+}
+// A switch fed directly from the switchboard (hard active — has its own
+// circuit assigned, rather than looping off the light it controls) feeds
+// its linked light(s) from that same run, so they belong on the same
+// circuit too. Called whenever a switch's circuit is set, or a new
+// switch->light link is made on a switch that already has one.
+function propagateSwitchCircuitToLinkedLights(switchObj){
+  if(!isSwitchSymbol(switchObj.symbolId) || !switchObj.circuit) return;
+  currentFloor().switchLinks.filter(l=>l.switchId===switchObj.id).forEach(l => {
+    const light = currentFloor().objects.find(o=>o.id===l.lightId);
+    if(light) light.circuit = switchObj.circuit;
   });
 }
 
@@ -1673,36 +1692,42 @@ function render(){
   }
   // GPO circuit daisy-chains — one switchboard feed per circuit, then GPO→GPO.
   // Separate from lighting banks; only power outlets on the same circuit share a chain.
+  // A chain that includes a hard-active switch (its own circuit, fed straight
+  // from the switchboard rather than looped off its light) draws in red so
+  // it reads as a distinct feed from a normal power circuit; visibility for
+  // those follows the Lighting layer instead of Power, since that's the
+  // layer the switch itself lives on.
   {
-    const layer = state.layers.find(l=>l.id==='power');
-    if(layer && layer.visible){
-      computeGpoChains(currentFloor()).forEach(chain => {
-        if(!chain.order.length) return;
-        const relevantIds = new Set(chain.gpoIds);
-        if(chain.boardObj) relevantIds.add(chain.boardObj.id);
-        const isRelevant = state.isolatedCircuitId
-          ? chain.circuitId === state.isolatedCircuitId
-          : state.showSwitchRuns
-            || (state.selectedObjectId && relevantIds.has(state.selectedObjectId))
-            || (state.selectedObjectId && currentFloor().objects.find(o=>o.id===state.selectedObjectId && o.circuit===chain.circuitId))
-            || [...state.multiSelectedIds].some(id => relevantIds.has(id));
-        if(!isRelevant) return;
-        ctx.strokeStyle = '#4fb3ffcc'; ctx.lineWidth = 2.5; ctx.setLineDash([4,4]);
-        // single feed from switchboard to the first GPO in the physical order
-        if(chain.boardObj && chain.order[0]){
-          const p1 = worldToScreen(chain.boardObj.x, chain.boardObj.y);
-          const p2 = worldToScreen(chain.order[0].x, chain.order[0].y);
-          ctx.beginPath(); ctx.moveTo(p1.x,p1.y); ctx.lineTo(p2.x,p2.y); ctx.stroke();
-        }
-        // daisy chain through remaining GPOs on this circuit only
-        for(let i=0;i<chain.order.length-1;i++){
-          const p1 = worldToScreen(chain.order[i].x, chain.order[i].y);
-          const p2 = worldToScreen(chain.order[i+1].x, chain.order[i+1].y);
-          ctx.beginPath(); ctx.moveTo(p1.x,p1.y); ctx.lineTo(p2.x,p2.y); ctx.stroke();
-        }
-        ctx.setLineDash([]);
-      });
-    }
+    const powerLayer = state.layers.find(l=>l.id==='power');
+    const lightingLayer = state.layers.find(l=>l.id==='lighting');
+    computeGpoChains(currentFloor()).forEach(chain => {
+      if(!chain.order.length) return;
+      const layer = chain.hardActive ? lightingLayer : powerLayer;
+      if(!layer || !layer.visible) return;
+      const relevantIds = new Set(chain.gpoIds);
+      if(chain.boardObj) relevantIds.add(chain.boardObj.id);
+      const isRelevant = state.isolatedCircuitId
+        ? chain.circuitId === state.isolatedCircuitId
+        : state.showSwitchRuns
+          || (state.selectedObjectId && relevantIds.has(state.selectedObjectId))
+          || (state.selectedObjectId && currentFloor().objects.find(o=>o.id===state.selectedObjectId && o.circuit===chain.circuitId))
+          || [...state.multiSelectedIds].some(id => relevantIds.has(id));
+      if(!isRelevant) return;
+      ctx.strokeStyle = chain.hardActive ? '#ff4d4dcc' : '#4fb3ffcc'; ctx.lineWidth = 2.5; ctx.setLineDash([4,4]);
+      // single feed from switchboard to the first device in the physical order
+      if(chain.boardObj && chain.order[0]){
+        const p1 = worldToScreen(chain.boardObj.x, chain.boardObj.y);
+        const p2 = worldToScreen(chain.order[0].x, chain.order[0].y);
+        ctx.beginPath(); ctx.moveTo(p1.x,p1.y); ctx.lineTo(p2.x,p2.y); ctx.stroke();
+      }
+      // daisy chain through the remaining devices on this circuit only
+      for(let i=0;i<chain.order.length-1;i++){
+        const p1 = worldToScreen(chain.order[i].x, chain.order[i].y);
+        const p2 = worldToScreen(chain.order[i+1].x, chain.order[i+1].y);
+        ctx.beginPath(); ctx.moveTo(p1.x,p1.y); ctx.lineTo(p2.x,p2.y); ctx.stroke();
+      }
+      ctx.setLineDash([]);
+    });
   }
   // Comms home-runs — one straight line per occupied port, rack straight to
   // its device (no daisy-chain: real structured cabling is point-to-point,
@@ -2147,6 +2172,8 @@ canvas.addEventListener('pointerdown', (e) => {
         const group = state.activeLinkGroup || autoGroupForSwitchLink(state.linkPendingSwitch, hit.symbolId);
         currentFloor().switchLinks.push({ switchId: state.linkPendingSwitch, lightId: hit.id, group });
         recomputeSwitchGang(state.linkPendingSwitch);
+        const swObj = currentFloor().objects.find(o=>o.id===state.linkPendingSwitch);
+        if(swObj) propagateSwitchCircuitToLinkedLights(swObj);
         pushHistory();
       }
       setHint('Linked. Tap another light for this switch, or tap a new switch to start again');
@@ -2518,8 +2545,9 @@ document.getElementById('multiAssignSwitch').addEventListener('click', () => {
         }
       });
       recomputeSwitchGang(swId);
-      pushHistory(); render(); closeSheets();
       const sw = currentFloor().objects.find(o=>o.id===swId);
+      if(sw) propagateSwitchCircuitToLinkedLights(sw);
+      pushHistory(); render(); closeSheets();
       showToast('Linked ' + lights.length + ' light' + (lights.length===1?'':'s') + ' to ' + swId + ' (' + (sw?sw.props.gang:1) + ' gang)');
     }));
   }
@@ -4067,6 +4095,7 @@ function openProps(id){
     el.addEventListener('change', (e) => {
       const val = e.target.type==='number' ? (parseFloat(e.target.value)||0) : e.target.value;
       if(path.startsWith('props.')) obj.props[path.split('.')[1]] = val; else obj[path] = val;
+      if(elId==='p_circuit') propagateSwitchCircuitToLinkedLights(obj);
       pushHistory(); renderSchedule(); updateQuote(); render();
     });
   });
