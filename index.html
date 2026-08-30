@@ -4877,7 +4877,7 @@ function applyLoadedProject(d){
     state.floors = floors;
     state.activeFloorIndex = Math.min(d.activeFloorIndex || 0, state.floors.length - 1);
     resyncNextId();
-    updateFloorBadge(); fitToScreen(); renderSchedule(); updateQuote(); updateScaleBadge();
+    updateFloorBadge(); fitToScreen(); renderSchedule(); updateQuote(); updateScaleBadge(); renderLayersMobile();
     history = []; historyIndex = -1; pushHistory();
     clearTimeout(autosaveTimer);
     state.saveStatus = 'saved'; updateSaveStatusUI();
