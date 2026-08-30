@@ -633,6 +633,8 @@ html.force-desktop{
   <button class="dtb-btn" id="dtbVersions">🕐 History</button>
   <button class="dtb-btn" id="dtbDuplicates">🧹 Find duplicates</button>
   <button class="dtb-btn" id="dtbPanelSchedule">🧮 Panel schedule</button>
+  <div class="dtb-sep"></div>
+  <button class="dtb-btn" id="dtbReportProblem">🚩 Report a problem</button>
 </div>
 
 <div id="recoveryBanner" class="hidden">
@@ -802,6 +804,7 @@ html.force-desktop{
     </div>
     <div class="tool-row">
       <div class="tool-card" id="moreCommsRacks"><span class="icon">🗄</span><span class="lbl">Comms racks</span></div>
+      <div class="tool-card" id="moreReportProblem"><span class="icon">🚩</span><span class="lbl">Report a problem</span></div>
     </div>
   </div>
 </div>
@@ -2565,6 +2568,9 @@ function openFormModal(title, fields, onSubmit, okLabel){
     if(f.type==='select'){
       return `<div class="prop-row"><label>${f.label}</label><select id="mf_${f.id}">${f.options.map(o=>`<option value="${o.value}" ${o.value==f.value?'selected':''}>${o.label}</option>`).join('')}</select></div>`;
     }
+    if(f.type==='textarea'){
+      return `<div class="prop-row"><label>${f.label}</label><textarea id="mf_${f.id}" placeholder="${f.placeholder||''}">${f.value||''}</textarea></div>`;
+    }
     return `<div class="prop-row"><label>${f.label}</label><input id="mf_${f.id}" type="${f.type||'text'}" value="${f.value!=null?f.value:''}" placeholder="${f.placeholder||''}"></div>`;
   }).join('');
   const okBtn = document.getElementById('modalOk');
@@ -2597,6 +2603,30 @@ function openConfirmModal(title, message, onConfirm, okLabel){
   okBtn.className = 'modal-ok danger';
   okBtn.onclick = () => { closeModal(); onConfirm(); };
   modalBackdrop.classList.add('open'); modalCard.classList.add('open');
+}
+// Report a problem: a mailto: draft rather than sending server-side, same
+// reasoning as the org invite notification -- there's no backend here to
+// send from, and opening the reporter's own mail app means the report
+// genuinely comes from their own email address with no extra setup.
+function openReportProblemForm(){
+  openFormModal('Report a problem', [
+    { id:'description', label:'What went wrong?', type:'textarea', placeholder:"Describe what happened, and what you expected instead…" },
+  ], (vals) => {
+    if(!vals.description || !vals.description.trim()){ showToast('Describe the problem first'); return; }
+    sendProblemReport(vals.description.trim());
+  }, 'Send report');
+}
+function sendProblemReport(description){
+  const context = [
+    'Project: ' + (document.getElementById('projName').value || 'Untitled'),
+    'Account: ' + (cloudUser ? cloudUser.email : 'not signed in'),
+    'When: ' + new Date().toString(),
+    'Browser: ' + navigator.userAgent,
+  ].join('\n');
+  const subject = 'Sparky Draft — problem report';
+  const body = description + '\n\n---\n' + context;
+  window.open('mailto:Sparky.draft1@gmail.com?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(body), '_blank');
+  showToast('Opening your email app to send the report');
 }
 function showToast(msg){
   const host = document.getElementById('toastHost');
@@ -2642,6 +2672,8 @@ document.getElementById('moreWall').addEventListener('click', () => { setTool('w
 document.getElementById('moreQuote').addEventListener('click', () => { updateQuote(); renderSchedule(); openSheet('sheetQuote'); });
 document.getElementById('moreCircuits').addEventListener('click', () => { renderCircuits(); openSheet('sheetCircuits'); });
 document.getElementById('moreCommsRacks').addEventListener('click', () => { renderCommsRacksSheet(); openSheet('sheetCommsRacks'); });
+document.getElementById('moreReportProblem').addEventListener('click', () => { closeSheets(); openReportProblemForm(); });
+document.getElementById('dtbReportProblem').addEventListener('click', openReportProblemForm);
 document.getElementById('moreElevation').addEventListener('click', () => { renderElevationSelect(); openSheet('sheetElevation'); });
 document.getElementById('moreFloors').addEventListener('click', () => { renderFloors(); openSheet('sheetFloors'); });
 document.getElementById('moreGrid').addEventListener('click', () => { openGridSheet(); openSheet('sheetGrid'); });
