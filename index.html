@@ -22,6 +22,27 @@
   --rail-w: 56px;
   --layers-w: 224px;
   --symbols-w: 308px;
+
+  /* ---- HUD tokens ----------------------------------------------------
+     Everything floating directly over the plan canvas (tool hint, zoom /
+     scale badges, Fit, undo/redo, the multi-select bar) sits on a surface
+     that is ALWAYS dark — the canvas paints #0c1116 regardless of which UI
+     theme is active. So this chrome must keep its own fixed dark-surface
+     palette instead of inheriting --text / --panel, which flip to dark-on-
+     light in the bright desktop theme and render the text invisible
+     against the canvas. Define the contrast pair once here and use it for
+     every HUD element, rather than hardcoding one-off hex values. */
+  --hud-bg: rgba(16,22,30,0.82);
+  --hud-bg-solid: rgba(16,22,30,0.96);
+  --hud-border: rgba(255,255,255,0.14);
+  --hud-border-strong: rgba(255,255,255,0.22);
+  --hud-text: #eef3f9;
+  --hud-text-dim: #9fb0c4;
+  --hud-shadow: 0 2px 10px rgba(0,0,0,0.45);
+
+  /* consistent elevation + radius scale, so floating surfaces read as one
+     system instead of each picking its own shadow and corner rounding */
+  --r-sm: 6px; --r-md: 9px; --r-lg: 13px;
 }
 *{box-sizing:border-box; margin:0; padding:0; -webkit-tap-highlight-color:transparent; user-select:none;}
 html,body{height:100%; overscroll-behavior:none;}
@@ -76,8 +97,10 @@ canvas{display:block; touch-action:none;}
   gap:16px; padding:24px; text-align:center; z-index:5; pointer-events:none;
 }
 #import-prompt.hidden{display:none;}
-#import-prompt .big{font-size:16px; font-weight:600;}
-#import-prompt .sub{color:var(--text-dim); font-size:13px; line-height:1.6; max-width:280px;}
+/* also sits on the always-dark canvas — must not inherit the theme --text,
+   which is near-black in the bright desktop layout */
+#import-prompt .big{font-size:17px; font-weight:600; color:var(--hud-text); letter-spacing:-0.2px;}
+#import-prompt .sub{color:var(--hud-text-dim); font-size:13px; line-height:1.6; max-width:300px;}
 #import-prompt .file-btn-wrap{width:auto; height:auto; pointer-events:auto;}
 #import-prompt .file-btn-wrap input[type=file]{
   position:static; opacity:1; width:auto; padding:12px 20px; border-radius:8px;
@@ -88,15 +111,18 @@ canvas{display:block; touch-action:none;}
 #hud{position:absolute; inset:0; z-index:8; pointer-events:none;}
 #zoom-badge{
   position:absolute; bottom:10px; left:10px; font-family:var(--mono); font-size:10.5px;
-  color:var(--text-dim); background:rgba(18,25,35,0.9); border:1px solid var(--line);
-  padding:5px 8px; border-radius:5px;
+  color:var(--hud-text-dim); background:var(--hud-bg); border:1px solid var(--hud-border);
+  padding:5px 8px; border-radius:var(--r-sm); backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px);
+  box-shadow:var(--hud-shadow); letter-spacing:0.3px;
 }
 #scale-badge{
   position:absolute; bottom:10px; left:98px; font-family:var(--mono); font-size:10.5px;
-  color:var(--amber); background:rgba(18,25,35,0.9); border:1px solid var(--line);
-  padding:5px 8px; border-radius:5px; max-width:190px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
-  pointer-events:all; cursor:pointer;
+  color:var(--amber); background:var(--hud-bg); border:1px solid var(--hud-border);
+  padding:5px 8px; border-radius:var(--r-sm); max-width:190px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  pointer-events:all; cursor:pointer; backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px);
+  box-shadow:var(--hud-shadow); letter-spacing:0.3px; transition:border-color .12s;
 }
+#scale-badge:hover{ border-color:var(--hud-border-strong); }
 #scale-badge.calibrated{ color:var(--green); }
 #saveStatusDot{
   position:absolute; top:4px; right:4px; width:8px; height:8px; border-radius:50%;
@@ -129,28 +155,44 @@ canvas{display:block; touch-action:none;}
   text-align:center; padding:6px 10px; line-height:1.4;
 }
 #readOnlyBanner.show{ display:block; }
-.hud-btn.on{ background:var(--blue-dim); border-color:var(--blue); color:#eaf6ff; }
+.hud-btn.on{ background:var(--blue); border-color:var(--blue); color:#08131f; }
+/* Also floats over the canvas, so it and everything inside it use the
+   fixed HUD palette — the buttons previously used --panel2/--text, which
+   flipped to a light chip with dark text sitting on this dark bar. */
 #multiActionBar{
   position:absolute; top:52px; left:10px; right:10px; z-index:9; pointer-events:all;
-  background:rgba(18,25,35,0.96); border:1px solid var(--line); border-radius:10px;
+  background:var(--hud-bg-solid); border:1px solid var(--hud-border); border-radius:var(--r-md);
   padding:8px 10px; display:flex; align-items:center; gap:8px;
+  backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px); box-shadow:var(--hud-shadow);
 }
 #multiActionBar.hidden{ display:none; }
-#multiCount{ font-size:11px; color:var(--text-dim); font-weight:600; flex-shrink:0; white-space:nowrap; }
+#multiCount{ font-size:11px; color:var(--hud-text-dim); font-weight:600; flex-shrink:0; white-space:nowrap; }
 .multi-scroll{ display:flex; gap:6px; overflow-x:auto; }
 .multi-scroll button{
-  flex-shrink:0; background:var(--panel2); border:1px solid var(--line); color:var(--text);
-  padding:7px 10px; border-radius:6px; font-size:11px; white-space:nowrap;
+  flex-shrink:0; background:rgba(255,255,255,0.07); border:1px solid var(--hud-border); color:var(--hud-text);
+  padding:7px 10px; border-radius:var(--r-sm); font-size:11px; white-space:nowrap;
+  transition:background .12s, border-color .12s;
 }
-.multi-scroll button.danger{ background:rgba(248,113,113,0.12); border-color:#5c2626; color:var(--red); }
+.multi-scroll button:hover{ background:rgba(255,255,255,0.13); border-color:var(--hud-border-strong); }
+.multi-scroll button.danger{ background:rgba(248,113,113,0.16); border-color:rgba(248,113,113,0.4); color:#ffb4b4; }
+.multi-scroll button.danger:hover{ background:rgba(248,113,113,0.26); }
 #fit-btn{
   position:absolute; bottom:10px; right:10px; pointer-events:all; font-family:var(--mono); font-size:10.5px;
-  color:var(--text); background:rgba(18,25,35,0.9); border:1px solid var(--line);
-  padding:6px 10px; border-radius:5px;
+  color:var(--hud-text); background:var(--hud-bg); border:1px solid var(--hud-border);
+  padding:6px 10px; border-radius:var(--r-sm); backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px);
+  box-shadow:var(--hud-shadow); cursor:pointer; transition:border-color .12s, background .12s;
 }
+#fit-btn:hover{ border-color:var(--hud-border-strong); background:var(--hud-bg-solid); }
+/* The active-tool hint. Sits directly on the canvas, so it uses the fixed
+   HUD palette — with the theme's --text it was dark-on-dark and unreadable
+   in the bright desktop layout. Accent bar on the left ties it to the
+   currently active tool without shouting. */
 #tool-hint{
-  position:absolute; top:10px; left:10px; pointer-events:none; font-size:11px; color:var(--text);
-  background:rgba(18,25,35,0.92); border:1px solid var(--line); padding:6px 10px; border-radius:5px; max-width:60%;
+  position:absolute; top:10px; left:10px; pointer-events:none; font-size:11.5px; font-weight:500;
+  color:var(--hud-text); background:var(--hud-bg-solid); border:1px solid var(--hud-border);
+  border-left:3px solid var(--blue);
+  padding:7px 12px; border-radius:var(--r-sm); max-width:60%; line-height:1.45;
+  backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px); box-shadow:var(--hud-shadow);
 }
 #tool-hint.hidden{display:none;}
 /* z-index:8 (matches #hud) so these stay clickable above #import-prompt
@@ -160,15 +202,16 @@ canvas{display:block; touch-action:none;}
    sibling that has one, regardless of DOM order. */
 #hud-topright{position:absolute; top:10px; right:10px; pointer-events:none; display:flex; gap:6px; z-index:8;}
 .hud-btn{
-  /* always floats over the canvas, which stays dark regardless of the
-     light/dark UI theme — so its icon colour is fixed, not tied to --text,
-     otherwise the light-theme (desktop) text colour goes near-invisible
-     against this button's own fixed dark background */
-  pointer-events:all; font-family:var(--mono); font-size:15px; color:#dbe6f0;
-  background:rgba(18,25,35,0.92); border:1px solid #3a4a5c; width:34px; height:34px;
-  border-radius:8px; display:flex; align-items:center; justify-content:center;
+  /* floats over the always-dark canvas — see the HUD tokens in :root for
+     why this keeps a fixed dark-surface palette instead of theme vars */
+  pointer-events:all; font-family:var(--mono); font-size:15px; color:var(--hud-text);
+  background:var(--hud-bg); border:1px solid var(--hud-border); width:34px; height:34px;
+  border-radius:var(--r-md); display:flex; align-items:center; justify-content:center;
+  backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px); box-shadow:var(--hud-shadow);
+  transition:background .12s, border-color .12s;
 }
-.hud-btn:disabled{opacity:0.3;}
+.hud-btn:hover:not(:disabled){ background:var(--hud-bg-solid); border-color:var(--hud-border-strong); }
+.hud-btn:disabled{opacity:0.32;}
 .floor-badge{
   flex-shrink:0; display:flex; align-items:center; gap:4px; background:var(--panel2); border:1px solid var(--line);
   padding:7px 10px; border-radius:8px; font-size:11.5px; color:var(--text); font-weight:600; max-width:100px;
@@ -484,6 +527,21 @@ td{padding:6px; border-bottom:1px solid var(--line-soft);}
 
 ::-webkit-scrollbar{display:none;}
 
+/* Visible keyboard focus. :focus-visible only fires for keyboard/AT
+   navigation, so mouse users never see a ring — but tabbing through the
+   app is no longer an invisible guessing game. */
+:focus-visible{
+  outline:2px solid var(--blue);
+  outline-offset:2px;
+  border-radius:var(--r-sm);
+}
+/* HUD chrome sits on the dark canvas, where the plain accent ring can get
+   lost against dark pixels — give it a brighter ring instead. */
+.hud-btn:focus-visible, #fit-btn:focus-visible, #scale-badge:focus-visible,
+.multi-scroll button:focus-visible{
+  outline-color:#8fd0ff;
+}
+
 /* ===================================================================
    DESKTOP LAYOUT (>=900px) — top toolbar + docked left/right panels,
    bright professional theme around the drawing. The canvas itself stays
@@ -508,9 +566,16 @@ html.panel-resizing #canvas-wrap, html.panel-resizing #backdrop, html.panel-resi
 }
 @media (min-width:1400px){
   :root{
-    --panel:#ffffff; --panel2:#f4f6f8; --panel3:#ffffff; --line:#e1e6ec; --line-soft:#eef1f4;
-    --text:#1a2332; --text-dim:#65728a;
-    --shadow-sm:0 1px 2px rgba(15,23,42,0.06); --shadow-md:0 6px 20px rgba(15,23,42,0.08);
+    --panel:#ffffff; --panel2:#f5f7f9; --panel3:#ffffff; --line:#dde3ea; --line-soft:#edf0f4;
+    /* --text-dim was #65728a (~4.9:1 on white) — a touch light for 10–11px
+       labels, which is most of this UI. Nudged darker for comfortable
+       small-text reading without turning it into full-strength body text. */
+    --text:#16202e; --text-dim:#5a6880;
+    /* --blue is tuned for the dark theme and only hits ~2.1:1 on white, so
+       the light theme needs its own accent for anything that is text or a
+       border rather than a large filled area */
+    --blue-strong:#1f5aa8;
+    --shadow-sm:0 1px 2px rgba(15,23,42,0.07); --shadow-md:0 8px 24px rgba(15,23,42,0.10);
   }
   /* expand/minimize is a mobile bottom-sheet affordance — desktop sheets
      are either docked sidebars or centred dialogs with the canvas already
@@ -526,12 +591,12 @@ html.panel-resizing #canvas-wrap, html.panel-resizing #backdrop, html.panel-resi
     background:var(--panel); border-bottom:1px solid var(--line); padding:6px 12px;
   }
   .dtb-btn{
-    background:var(--panel2); border:1px solid var(--line); color:var(--text);
-    padding:6px 10px; border-radius:6px; font-size:12px; font-weight:500;
-    transition:background .12s, border-color .12s, color .12s;
+    background:var(--panel); border:1px solid var(--line); color:var(--text);
+    padding:6px 11px; border-radius:var(--r-sm); font-size:12px; font-weight:500;
+    transition:background .12s, border-color .12s, color .12s, box-shadow .12s;
   }
-  .dtb-btn:hover{ border-color:var(--blue); }
-  .dtb-btn.active{ background:#e7f1fe; color:#1f5aa8; border-color:var(--blue); }
+  .dtb-btn:hover{ border-color:#b9c6d6; background:var(--panel2); }
+  .dtb-btn.active{ background:#e7f1fe; color:var(--blue-strong); border-color:#bcd9f7; font-weight:600; }
   .dtb-sep{ width:1px; height:22px; background:var(--line); margin:0 4px; }
 
   #bottombar, #multiActionBar ~ #hud #tool-hint{ }
@@ -548,14 +613,22 @@ html.panel-resizing #canvas-wrap, html.panel-resizing #backdrop, html.panel-resi
     background:var(--panel); border-right:1px solid var(--line); padding:10px 0; z-index:8; overflow-y:auto;
   }
   .rail-btn{
-    width:38px; height:38px; border-radius:8px; flex-shrink:0;
-    background:var(--panel2); border:1px solid var(--line); color:var(--text);
+    /* padding:0 overrides .dtb-btn's — the rail buttons carry both classes
+       so the tool-active sync can find them with one selector */
+    position:relative; width:38px; height:38px; padding:0; border-radius:var(--r-md); flex-shrink:0;
+    background:transparent; border:1px solid transparent; color:var(--text-dim);
     font-size:16px; display:flex; align-items:center; justify-content:center;
     transition:background .12s, border-color .12s, color .12s;
   }
-  .rail-btn:hover{ border-color:var(--blue); }
-  .rail-btn.active{ background:#e7f1fe; color:#1f5aa8; border-color:var(--blue); }
-  .rail-sep{ width:26px; height:1px; background:var(--line); margin:2px 0; flex-shrink:0; }
+  .rail-btn:hover{ background:var(--panel2); color:var(--text); }
+  .rail-btn.active{ background:#e7f1fe; color:var(--blue-strong); border-color:#bcd9f7; }
+  /* left accent bar marks the live tool at a glance, the way VS Code and
+     most CAD rails do — clearer than colour alone at this icon size */
+  .rail-btn.active::before{
+    content:''; position:absolute; left:-10px; top:50%; transform:translateY(-50%);
+    width:3px; height:20px; border-radius:0 2px 2px 0; background:var(--blue-strong);
+  }
+  .rail-sep{ width:24px; height:1px; background:var(--line); margin:3px 0; flex-shrink:0; }
 
   /* drag either docked panel's inner edge to resize it — clamped in JS */
   .resize-handle{ display:block; position:absolute; top:0; bottom:0; width:6px; cursor:col-resize; z-index:10; }
@@ -651,9 +724,16 @@ html.panel-resizing #canvas-wrap, html.panel-resizing #backdrop, html.panel-resi
    layout can be forced on at any screen size via the toggle button.
    =================================================================== */
 html.force-desktop{
-    --panel:#ffffff; --panel2:#f4f6f8; --panel3:#ffffff; --line:#e1e6ec; --line-soft:#eef1f4;
-    --text:#1a2332; --text-dim:#65728a;
-    --shadow-sm:0 1px 2px rgba(15,23,42,0.06); --shadow-md:0 6px 20px rgba(15,23,42,0.08);
+    --panel:#ffffff; --panel2:#f5f7f9; --panel3:#ffffff; --line:#dde3ea; --line-soft:#edf0f4;
+    /* --text-dim was #65728a (~4.9:1 on white) — a touch light for 10–11px
+       labels, which is most of this UI. Nudged darker for comfortable
+       small-text reading without turning it into full-strength body text. */
+    --text:#16202e; --text-dim:#5a6880;
+    /* --blue is tuned for the dark theme and only hits ~2.1:1 on white, so
+       the light theme needs its own accent for anything that is text or a
+       border rather than a large filled area */
+    --blue-strong:#1f5aa8;
+    --shadow-sm:0 1px 2px rgba(15,23,42,0.07); --shadow-md:0 8px 24px rgba(15,23,42,0.10);
   }
   html.force-desktop .sheet-size-btn{ display:none; }
   html.force-desktop body{ background:#f4f6f9; }
@@ -664,12 +744,12 @@ html.force-desktop{
     background:var(--panel); border-bottom:1px solid var(--line); padding:6px 12px;
   }
   html.force-desktop .dtb-btn{
-    background:var(--panel2); border:1px solid var(--line); color:var(--text);
-    padding:6px 10px; border-radius:6px; font-size:12px; font-weight:500;
-    transition:background .12s, border-color .12s, color .12s;
+    background:var(--panel); border:1px solid var(--line); color:var(--text);
+    padding:6px 11px; border-radius:var(--r-sm); font-size:12px; font-weight:500;
+    transition:background .12s, border-color .12s, color .12s, box-shadow .12s;
   }
-  html.force-desktop .dtb-btn:hover{ border-color:var(--blue); }
-  html.force-desktop .dtb-btn.active{ background:#e7f1fe; color:#1f5aa8; border-color:var(--blue); }
+  html.force-desktop .dtb-btn:hover{ border-color:#b9c6d6; background:var(--panel2); }
+  html.force-desktop .dtb-btn.active{ background:#e7f1fe; color:var(--blue-strong); border-color:#bcd9f7; font-weight:600; }
   html.force-desktop .dtb-sep{ width:1px; height:22px; background:var(--line); margin:0 4px; }
   html.force-desktop #bottombar, html.force-desktop #multiActionBar ~ #hud #tool-hint{ }
   html.force-desktop #bottombar{ display:none; }
@@ -680,14 +760,20 @@ html.force-desktop{
     background:var(--panel); border-right:1px solid var(--line); padding:10px 0; z-index:8; overflow-y:auto;
   }
   html.force-desktop .rail-btn{
-    width:38px; height:38px; border-radius:8px; flex-shrink:0;
-    background:var(--panel2); border:1px solid var(--line); color:var(--text);
+    /* padding:0 overrides .dtb-btn's — the rail buttons carry both classes
+       so the tool-active sync can find them with one selector */
+    position:relative; width:38px; height:38px; padding:0; border-radius:var(--r-md); flex-shrink:0;
+    background:transparent; border:1px solid transparent; color:var(--text-dim);
     font-size:16px; display:flex; align-items:center; justify-content:center;
     transition:background .12s, border-color .12s, color .12s;
   }
-  html.force-desktop .rail-btn:hover{ border-color:var(--blue); }
-  html.force-desktop .rail-btn.active{ background:#e7f1fe; color:#1f5aa8; border-color:var(--blue); }
-  html.force-desktop .rail-sep{ width:26px; height:1px; background:var(--line); margin:2px 0; flex-shrink:0; }
+  html.force-desktop .rail-btn:hover{ background:var(--panel2); color:var(--text); }
+  html.force-desktop .rail-btn.active{ background:#e7f1fe; color:var(--blue-strong); border-color:#bcd9f7; }
+  html.force-desktop .rail-btn.active::before{
+    content:''; position:absolute; left:-10px; top:50%; transform:translateY(-50%);
+    width:3px; height:20px; border-radius:0 2px 2px 0; background:var(--blue-strong);
+  }
+  html.force-desktop .rail-sep{ width:24px; height:1px; background:var(--line); margin:3px 0; flex-shrink:0; }
   html.force-desktop .resize-handle{ display:block; position:absolute; top:0; bottom:0; width:6px; cursor:col-resize; z-index:10; }
   html.force-desktop .resize-handle-right{ right:-3px; }
   html.force-desktop .resize-handle-left{ left:-3px; }
