@@ -2616,17 +2616,18 @@ function openReportProblemForm(){
     sendProblemReport(vals.description.trim());
   }, 'Send report');
 }
-function sendProblemReport(description){
+async function sendProblemReport(description){
   const context = [
     'Project: ' + (document.getElementById('projName').value || 'Untitled'),
     'Account: ' + (cloudUser ? cloudUser.email : 'not signed in'),
     'When: ' + new Date().toString(),
     'Browser: ' + navigator.userAgent,
   ].join('\n');
-  const subject = 'Sparky Draft — problem report';
-  const body = description + '\n\n---\n' + context;
-  window.open('mailto:Sparky.draft1@gmail.com?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(body), '_blank');
-  showToast('Opening your email app to send the report');
+  if(!supabaseClient){ showToast('Sign in to send a report'); return; }
+  showToast('Sending report…');
+  const { error } = await supabaseClient.functions.invoke('report-problem', { body: { description, context } });
+  if(error){ showToast('Could not send report — try again'); return; }
+  showToast('Report sent — thanks!');
 }
 function showToast(msg){
   const host = document.getElementById('toastHost');
