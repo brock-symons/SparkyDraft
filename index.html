@@ -733,6 +733,44 @@ html.force-desktop{
     opacity:1; pointer-events:all;
   }
 
+/* ===================================================================
+   PRINT / PDF EXPORT VIEW
+   A white-page preview of the plan + legend, shown as a fullscreen
+   overlay on screen and used as-is when the browser's own Print
+   dialog ("Save as PDF") is invoked — no PDF library needed.
+   =================================================================== */
+#printView{ display:none; position:fixed; inset:0; z-index:90; background:#525659; overflow-y:auto; }
+#printView.open{ display:block; }
+#printViewBar{ position:sticky; top:0; z-index:2; display:flex; align-items:center; gap:10px; padding:10px 16px; background:var(--panel); border-bottom:1px solid var(--line); }
+#printViewBar .pv-title{ flex:1; font-weight:600; font-size:14px; color:var(--text); }
+.pv-btn{ background:var(--accent); color:#0c1116; border:none; padding:9px 16px; border-radius:8px; font-size:13px; font-weight:600; cursor:pointer; }
+.pv-btn.pv-close{ background:var(--panel2); color:var(--text); border:1px solid var(--line); }
+#printViewPages{ padding:24px; display:flex; flex-direction:column; align-items:center; gap:24px; }
+.print-page{ background:#ffffff; color:#111; width:1122px; height:794px; box-shadow:0 4px 24px rgba(0,0,0,0.4); display:flex; flex-direction:column; padding:20px 24px; box-sizing:border-box; font-family:'Public Sans',Arial,sans-serif; flex-shrink:0; }
+.print-page-header{ display:flex; justify-content:space-between; align-items:baseline; border-bottom:2px solid #111; padding-bottom:8px; margin-bottom:12px; }
+.print-page-header .ph-name{ font-size:18px; font-weight:700; }
+.print-page-header .ph-meta{ font-size:11px; color:#555; text-align:right; line-height:1.5; }
+.print-page-body{ flex:1; display:flex; gap:18px; min-height:0; }
+.print-plan-col{ flex:1; min-width:0; display:flex; align-items:center; justify-content:center; border:1px solid #ccc; background:#fafafa; }
+.print-plan-col img{ max-width:100%; max-height:100%; object-fit:contain; }
+.print-plan-col .pv-empty{ color:#888; font-size:12px; }
+.print-legend-col{ width:260px; flex-shrink:0; overflow-y:auto; }
+.print-legend-col h3{ font-size:11px; text-transform:uppercase; letter-spacing:0.5px; color:#555; margin:0 0 8px; border-bottom:1px solid #ccc; padding-bottom:4px; }
+.print-legend-table{ width:100%; border-collapse:collapse; font-size:11px; }
+.print-legend-table td{ padding:4px 2px; border-bottom:1px solid #eee; vertical-align:middle; }
+.print-legend-table .pl-swatch{ width:16px; height:16px; border-radius:50%; display:inline-block; text-align:center; line-height:16px; font-size:8px; font-weight:700; color:#111; margin-right:6px; }
+.print-legend-table .pl-qty{ text-align:right; font-weight:600; }
+.print-legend-total{ margin-top:8px; font-size:11px; font-weight:700; text-align:right; }
+@media print{
+  body *{ visibility:hidden; }
+  #printView, #printView *{ visibility:visible; }
+  #printView{ position:static; background:#fff; overflow:visible; }
+  #printViewBar{ display:none; }
+  #printViewPages{ padding:0; gap:0; }
+  .print-page{ box-shadow:none; width:auto; height:auto; page-break-after:always; }
+  .print-page:last-child{ page-break-after:auto; }
+  @page{ size:landscape; margin:10mm; }
+}
 </style>
 </head>
 <body>
@@ -831,6 +869,9 @@ html.force-desktop{
   <div class="dtb-sep"></div>
   <button class="dtb-btn" id="dtbVersions">🕐 History</button>
   <button class="dtb-btn" id="dtbDuplicates">🧹 Find duplicates</button>
+  <button class="dtb-btn" id="dtbPrintExport">🖨 Print / PDF export</button>
+  <div class="dtb-sep"></div>
+  <button class="dtb-btn" id="dtbReportProblem">🚩 Report a problem</button>
 </div>
 
 <div id="recoveryBanner" class="hidden">
@@ -913,7 +954,7 @@ html.force-desktop{
   <div class="sheet-handle"></div>
   <div class="sheet-header"><div class="sheet-title">Layers</div><div class="sheet-close" data-close>✕</div></div>
   <div class="sheet-body">
-    <div class="prop-row" style="margin-bottom:12px;"><label>Show circuit labels on plan</label>
+    <div class="prop-row" style="margin-bottom:12px;"><label>Show circuit/port IDs on plan</label>
       <div class="toggle" id="circuitLabelToggle"><div class="knob"></div></div>
     </div>
     <div class="prop-row" style="margin-bottom:12px;"><label>Show cable runs on plan</label>
@@ -953,6 +994,9 @@ html.force-desktop{
     <div class="quote-line total"><span>Total</span><span id="qTotal">$0.00</span></div>
     <div style="font-size:10.5px; color:var(--text-dim); margin-top:8px;">* = device has a price override, not using the product default</div>
     <button class="add-btn" id="btnExportQuote" style="background:var(--panel2); border-color:var(--line); color:var(--text);">📋 Export summary (copy text)</button>
+    <div class="prop-row" style="margin-top:10px;"><label>Itemized (one row per device)</label>
+      <div class="toggle" id="quoteSummaryToggle"><div class="knob"></div></div>
+    </div>
     <table><thead><tr><th>ID</th><th>Type</th><th>Floor</th><th>Qty</th><th>Total</th></tr></thead><tbody id="scheduleBody"></tbody></table>
   </div>
 </div>
@@ -968,6 +1012,10 @@ html.force-desktop{
   <div class="sheet-header"><div class="sheet-title">Panel schedule</div><div class="sheet-close" data-close>✕</div></div>
   <div class="sheet-body">
     <div style="font-size:11.5px; color:var(--text-dim); margin-bottom:10px; line-height:1.5;">A circuit directory and simplified load estimate per board, built from your circuits and placed devices. <b>Estimate for planning only</b> — always verify against AS/NZS 3000 and your own professional judgement.</div>
+    <div class="prop-grid2" style="margin-bottom:10px;">
+      <div class="prop-row"><label>Ceiling height (mm)</label><input type="number" id="cableCeilingHeight" value="3000"></div>
+      <div class="prop-row"><label>Route allowance %</label><input type="number" id="cableSlackPct" value="15"></div>
+    </div>
     <div id="panelScheduleBody"></div>
     <button class="add-btn" id="btnExportPanelSchedule" style="background:var(--panel2); border-color:var(--line); color:var(--text);">📋 Export summary (copy text)</button>
   </div>
@@ -1017,6 +1065,13 @@ html.force-desktop{
         <div class="tool-card" id="moreVersions"><span class="icon">🕐</span><span class="lbl">History</span></div>
         <div class="tool-card" id="moreDuplicates"><span class="icon">🧹</span><span class="lbl">Find duplicates</span></div>
       </div>
+    </div>
+    <div class="tool-row">
+      <div class="tool-card" id="moreCommsRacks"><span class="icon">🗄</span><span class="lbl">Comms racks</span></div>
+      <div class="tool-card" id="moreReportProblem"><span class="icon">🚩</span><span class="lbl">Report a problem</span></div>
+    </div>
+    <div class="tool-row">
+      <div class="tool-card" id="morePrintExport"><span class="icon">🖨</span><span class="lbl">Print / PDF export</span></div>
     </div>
   </div>
 </div>
@@ -1093,10 +1148,19 @@ html.force-desktop{
 
 <div class="sheet" id="sheetCircuits">
   <div class="sheet-handle"></div>
-  <div class="sheet-header"><div class="sheet-title">Circuits &amp; Comms Racks</div><div class="sheet-close" data-close>✕</div></div>
+  <div class="sheet-header"><div class="sheet-title">Circuits</div><div class="sheet-close" data-close>✕</div></div>
   <div class="sheet-body">
     <div id="circuitList"></div>
-    <button class="add-btn" id="btnAddCircuit">+ New circuit / connection</button>
+    <button class="add-btn" id="btnAddCircuit">+ New circuit</button>
+  </div>
+</div>
+
+<div class="sheet" id="sheetCommsRacks">
+  <div class="sheet-handle"></div>
+  <div class="sheet-header"><div class="sheet-title">Comms Racks</div><div class="sheet-close" data-close>✕</div></div>
+  <div class="sheet-body">
+    <div style="font-size:11px; color:var(--text-dim); margin-bottom:12px; line-height:1.5;">Every comms/data device gets its own dedicated cable ("home run") straight back to one numbered port on a rack — separate from electrical circuits entirely. Place a Comms Rack device on the plan to get one with 24 ports (a patch panel), ready to assign. Patch panels aren't placed separately — go over 24 ports and the quote/legend automatically account for a 2nd (48 for a 3rd, and so on).</div>
+    <div id="commsRacksBody"></div>
   </div>
 </div>
 
@@ -1158,6 +1222,15 @@ html.force-desktop{
   <div class="sheet-handle"></div>
   <div class="sheet-header"><div class="sheet-title" id="projectAccessTitle">Project access</div><div class="sheet-close" data-close>✕</div></div>
   <div class="sheet-body" id="projectAccessBody"></div>
+</div>
+
+<div id="printView">
+  <div id="printViewBar">
+    <div class="pv-title">Print / PDF export</div>
+    <button class="pv-btn" id="btnDoPrint">🖨 Print / Save as PDF</button>
+    <button class="pv-btn pv-close" id="btnClosePrintView">✕ Close</button>
+  </div>
+  <div id="printViewPages"></div>
 </div>
 
 <div class="modal-backdrop" id="modalBackdrop"></div>
@@ -1276,6 +1349,22 @@ function circuitSelectOptions(selectedId){
     `<option value="${c.id}" ${selectedId===c.id?'selected':''}>${c.id}${c.description?' — '+c.description:''}</option>`
   ).join('');
 }
+// Every port across every rack on the CURRENT floor, minus whichever one
+// is already taken by a different device (a port holds at most one home
+// run) -- always includes this device's own current port so it shows as
+// selected. Comms devices only ever link within their own floor, same as
+// how comms runs are only ever drawn on the floor they're actually on.
+function commsPortOptions(deviceId){
+  let html = '<option value="">— none —</option>';
+  currentFloor().objects.filter(o=>o.symbolId==='comms_rack').forEach(rack => {
+    (rack.commsPorts||[]).forEach(port => {
+      if(port.deviceId && port.deviceId!==deviceId) return;
+      const label = deviceDisplayName(rack) + ' — ' + (port.label || ('Port '+port.number));
+      html += `<option value="${port.id}" ${port.deviceId===deviceId?'selected':''}>${label}</option>`;
+    });
+  });
+  return html;
+}
 function deviceDisplayName(obj){
   if(!obj) return '';
   if(obj.props && obj.props.customName) return obj.props.customName;
@@ -1366,9 +1455,15 @@ let state = {
   multiSelectMode:false, multiSelectedIds: new Set(),
   showCircuitLabels:false,
   showSwitchRuns:false,
+  quoteItemized:false, // false = quantity summary grouped by type, true = one row per device
+  printMode:false, // true only while capturing a white-background snapshot for the Print/PDF export view
   isolatedCircuitId:null, // when set, only this circuit's cabling is drawn — lets a user see one circuit's run at a time
   gridOverlay:false, // when true, grid is drawn above the plan (still semi-transparent)
   boardMainSwitchAmps:{}, // board display label -> main switch/incoming supply rating (A), for the Panel Schedule's capacity-used estimate
+  // Comms ports migrated from an old-format save whose connection had no
+  // linked rack at the time -- nothing to attach them to yet, so they wait
+  // here instead of being silently dropped. See migrateLegacyCommsData().
+  unassignedCommsPorts:[],
 };
 // Product default price + object-level override (section 17-18 of the
 // revision brief). If no override, always resolve to the CURRENT product
@@ -1516,17 +1611,66 @@ function computeBankAttachPoints(floor, bank, order){
     return { switchObj: swObj, attachTo: nearest };
   }).filter(Boolean);
 }
-// Power circuit daisy-chains — same physical-routing idea as lighting banks,
-// but grouped by *circuit assignment* (not switch links). Each electrical
-// circuit gets: one feed from its switchboard to the first device, then
-// device → device → device. Different circuits never share a chain.
+// Max cables that may physically meet at one power/hard-active device —
+// beyond this a junction isn't realistic, so growth stops feeding through
+// it even if it's the nearest point. The switchboard itself is always
+// capped at exactly 1 within a single circuit's tree (one feed out per
+// circuit, same as a real board terminal), regardless of this constant.
+const CIRCUIT_JUNCTION_MAX_CABLES = 3;
+// Degree-constrained nearest-neighbour tree, used for power/hard-active
+// circuit runs: rather than a strict single-tail chain (computeChainOrder,
+// used for lighting control loops), each device can be fed from *whichever*
+// already-connected device is closest — not just the most recently added
+// one — so the run can branch. A device stops accepting new feeds once it
+// hits maxCables. Returns the actual edges to draw, since the result may
+// no longer be a single sequential path.
+function computeChainEdges(floor, ids, seedObj, maxCables){
+  const nodes = ids.map(id => floor.objects.find(o=>o.id===id)).filter(Boolean);
+  if(!nodes.length) return { edges: [] };
+  const cap = new Map(), degree = new Map();
+  nodes.forEach(n => { cap.set(n, maxCables); degree.set(n, 0); });
+  const remaining = nodes.slice();
+  let root = seedObj;
+  if(root){ cap.set(root, 1); degree.set(root, 0); }
+  else { root = remaining.shift(); }
+  const inTree = [root];
+  const edges = [];
+  while(remaining.length){
+    let bestU=null, bestVIdx=-1, bestDist=Infinity;
+    inTree.forEach(u => {
+      if(degree.get(u) >= cap.get(u)) return;
+      remaining.forEach((v,i) => {
+        const d = Math.hypot(u.x-v.x, u.y-v.y);
+        if(d < bestDist){ bestDist=d; bestU=u; bestVIdx=i; }
+      });
+    });
+    if(!bestU) break; // every in-tree node is at its cable cap — shouldn't happen with maxCables>=2
+    const v = remaining.splice(bestVIdx,1)[0];
+    degree.set(bestU, degree.get(bestU)+1);
+    degree.set(v, degree.get(v)+1);
+    inTree.push(v);
+    edges.push({ from: bestU, to: v });
+  }
+  return { edges };
+}
+// Power circuit runs — same physical-routing idea as lighting banks, but
+// grouped by *circuit assignment* (not switch links) and using the
+// degree-constrained tree above instead of a strict chain, since a real
+// power circuit commonly feeds whichever nearby point is closest rather
+// than always the last one wired. Different circuits never share a run.
 // Covers every device on the Power layer (GPOs, isolators, HWS, ovens,
 // etc.) — not just GPO-shaped symbols — so a circuit that mixes device
 // types still shows a complete run, which matters for "isolate circuit".
+// A switch with its own circuit assigned ("hard active" — fed straight from
+// the switchboard rather than looped off its light) joins the same run
+// system even though it lives on the Lighting layer; circuits flagged
+// hardActive are what the caller draws in red.
 function computeGpoChains(floor){
   const byCircuit = {};
   floor.objects.forEach(o => {
-    if(!o.circuit || o.layer !== 'power') return;
+    if(!o.circuit) return;
+    const hardActiveSwitch = isSwitchSymbol(o.symbolId);
+    if(o.layer !== 'power' && !hardActiveSwitch) return;
     (byCircuit[o.circuit] = byCircuit[o.circuit] || []).push(o.id);
   });
   return Object.keys(byCircuit).map(circuitId => {
@@ -1545,11 +1689,160 @@ function computeGpoChains(floor){
     if(!boardObj){
       boardObj = floor.objects.find(o => o.symbolId === 'switchboard' || o.symbolId === 'dist_board') || null;
     }
-    const seed = boardObj || floor.objects.find(o => o.id === gpoIds[0]) || { x:0, y:0 };
-    const order = computeChainOrder(floor, gpoIds, seed);
-    return { circuitId, gpoIds, order, boardObj };
+    const { edges } = computeChainEdges(floor, gpoIds, boardObj, CIRCUIT_JUNCTION_MAX_CABLES);
+    const hardActive = gpoIds.some(id => isSwitchSymbol(floor.objects.find(o=>o.id===id)?.symbolId));
+    return { circuitId, gpoIds, edges, boardObj, hardActive };
   });
 }
+// A switch fed directly from the switchboard (hard active — has its own
+// circuit assigned, rather than looping off the light it controls) feeds
+// its linked light(s) from that same run, so they belong on the same
+// circuit too. Called whenever a switch's circuit is set, or a new
+// switch->light link is made on a switch that already has one.
+function propagateSwitchCircuitToLinkedLights(switchObj){
+  if(!isSwitchSymbol(switchObj.symbolId) || !switchObj.circuit) return;
+  currentFloor().switchLinks.filter(l=>l.switchId===switchObj.id).forEach(l => {
+    const light = currentFloor().objects.find(o=>o.id===l.lightId);
+    if(light) light.circuit = switchObj.circuit;
+  });
+}
+
+// ===================================================================
+// COMMS RACKS + PORTS — a full rebuild, deliberately separate from the
+// switchboard/circuit system above. Electrical circuits are a shared
+// daisy-chain (one cable feeds several devices); real structured comms
+// cabling is the opposite -- every outlet gets its OWN dedicated
+// "home run" cable straight back to a numbered port on a rack. Modelling
+// that as a shared "circuit" (like the old kind:'data' entries in
+// state.circuits did) misrepresented how it actually works, so ports now
+// live directly on their rack object instead: a comms_rack device gets a
+// `commsPorts` array, each port a fixed, numbered slot (matching a real
+// patch panel -- ports are never deleted, only left unassigned) that can
+// hold at most one linked device. See migrateLegacyCommsData() for how an
+// old-format save's data circuits become ports here on load.
+// ===================================================================
+const DEFAULT_COMMS_PORT_COUNT = 24; // a standard patch panel
+function makeCommsPort(rackId, number){
+  return { id: rackId+'-P'+number, number, label:String(number), description:'', cable:'Cat6', deviceId:null };
+}
+function defaultCommsPorts(rackId){
+  return Array.from({ length: DEFAULT_COMMS_PORT_COUNT }, (_, i) => makeCommsPort(rackId, i+1));
+}
+// Patch panel isn't its own placed device any more -- a rack physically
+// needs one 24-port patch panel per 24 ports it has (2 once you go past
+// 24, 3 past 48, and so on), so its cost/legend count is derived straight
+// from port count instead of the sparky having to separately place and
+// keep a patch_panel object in sync with however many ports they've
+// actually added. SYMBOL_LIBRARY still carries 'patch_panel' (so its price
+// stays editable in the Device Library) -- it's just hidden from the
+// placement grid, see renderSymbolGrid().
+const PATCH_PANEL_PORTS_PER_UNIT = 24;
+function patchPanelUnitsForRack(rack){
+  const portCount = (rack.commsPorts||[]).length;
+  return portCount > 0 ? Math.ceil(portCount / PATCH_PANEL_PORTS_PER_UNIT) : 0;
+}
+function allPatchPanelLines(){
+  const lines = [];
+  allCommsRacks().forEach(({ rack, floorIndex }) => {
+    const units = patchPanelUnitsForRack(rack);
+    if(units > 0) lines.push({ rack, floorIndex, floorName: state.floors[floorIndex].name, units });
+  });
+  return lines;
+}
+// The port a device currently occupies, if any -- used to show the
+// sparky's own port label (they usually just number data points 1, 2, 3…)
+// on the plan instead of a circuit id, which comms devices don't have.
+function portForDevice(deviceId){
+  for(const rack of currentFloor().objects.filter(o=>o.symbolId==='comms_rack')){
+    const port = (rack.commsPorts||[]).find(p=>p.deviceId===deviceId);
+    if(port) return port;
+  }
+  return null;
+}
+function allCommsRacks(){
+  // Cross-floor by design -- unlike findBoardObjects (current floor only),
+  // the dedicated Comms Racks sheet needs to list every rack in the
+  // project regardless of which floor is currently open.
+  const out = [];
+  state.floors.forEach((f, floorIndex) => {
+    f.objects.forEach(o => { if(o.symbolId==='comms_rack') out.push({ rack:o, floorIndex }); });
+  });
+  return out;
+}
+function findCommsPort(portId){
+  for(const { rack, floorIndex } of allCommsRacks()){
+    const port = (rack.commsPorts||[]).find(p=>p.id===portId);
+    if(port) return { rack, port, floorIndex };
+  }
+  return null;
+}
+function nextCommsPortNumber(rack){
+  const ports = rack.commsPorts||[];
+  return ports.length ? Math.max(...ports.map(p=>p.number)) + 1 : 1;
+}
+// A device can occupy at most one port -- assigning it somewhere new
+// clears wherever it was before, same "one home run per device" rule a
+// real installation follows. portId falsy just unassigns.
+function assignDeviceToPort(deviceId, portId){
+  allCommsRacks().forEach(({ rack }) => (rack.commsPorts||[]).forEach(p => { if(p.deviceId===deviceId) p.deviceId = null; }));
+  if(portId){
+    const found = findCommsPort(portId);
+    if(found) found.port.deviceId = deviceId;
+  }
+  pushHistory(); render(); renderSchedule(); updateQuote();
+}
+// Home-run lines for the canvas: one per occupied port, rack -> device,
+// restricted to devices on the SAME floor as their rack since only one
+// floor renders at a time anyway.
+function computeCommsRuns(floor){
+  const runs = [];
+  floor.objects.filter(o=>o.symbolId==='comms_rack').forEach(rack => {
+    (rack.commsPorts||[]).forEach(port => {
+      if(!port.deviceId) return;
+      const device = floor.objects.find(o=>o.id===port.deviceId);
+      if(device) runs.push({ rack, port, device });
+    });
+  });
+  return runs;
+}
+// Converts any leftover kind:'data' entries from the old shared-circuit
+// comms model into ports on their linked rack. A connection with no
+// linked rack (or a rack the migration can't find) can't be attached to
+// anything physical, so it's kept in state.unassignedCommsPorts instead
+// of being silently dropped -- surfaced in the Comms Racks sheet so it
+// can be assigned to a rack by hand. Runs once, on load, against the raw
+// loaded data (d.floors) before those floor objects become live state --
+// mutates rack objects in place, which is safe since applyLoadedProject
+// passes those same object references straight through afterward.
+function migrateLegacyCommsData(d){
+  const legacy = (d.circuits||[]).filter(c=>c.kind==='data');
+  const unassigned = (d.unassignedCommsPorts||[]).slice();
+  legacy.forEach(c => {
+    let rackObj = null;
+    if(c.switchboardObjectId){
+      (d.floors||[]).forEach(f => { const r = (f.objects||[]).find(o=>o.id===c.switchboardObjectId); if(r) rackObj = r; });
+    }
+    const linkedDeviceIds = [];
+    // clear the old circuit reference on migration -- it's represented by
+    // the port's deviceId now, and a stale value here would otherwise sit
+    // around as dead data pointing at a circuit id that no longer exists
+    (d.floors||[]).forEach(f => (f.objects||[]).forEach(o => { if(o.circuit===c.id){ linkedDeviceIds.push(o.id); o.circuit=''; } }));
+    const portsToMake = linkedDeviceIds.length ? linkedDeviceIds.map(id=>({ deviceId:id })) : [{ deviceId:null }];
+    if(rackObj){
+      if(!rackObj.commsPorts) rackObj.commsPorts = [];
+      portsToMake.forEach((p, i) => {
+        const num = nextCommsPortNumber(rackObj);
+        rackObj.commsPorts.push({ ...makeCommsPort(rackObj.id, num), label: portsToMake.length>1 ? c.id+' ('+(i+1)+')' : c.id, description:c.description||'', cable:c.cable||'Cat6', deviceId:p.deviceId });
+      });
+    } else {
+      portsToMake.forEach((p, i) => {
+        unassigned.push({ id:'LEGACY-'+c.id+(portsToMake.length>1?'-'+(i+1):''), label: portsToMake.length>1 ? c.id+' ('+(i+1)+')' : c.id, description:c.description||'', cable:c.cable||'Cat6', deviceId:p.deviceId });
+      });
+    }
+  });
+  return { circuits: (d.circuits||[]).filter(c=>c.kind!=='data'), unassigned };
+}
+
 let history = []; let historyIndex = -1;
 function snapshot(){ return JSON.stringify({ floors: state.floors.map(f=>({...f, planImage:undefined})), layers:state.layers, circuits:state.circuits }); }
 function pushHistory(){ history = history.slice(0, historyIndex+1); history.push({ ts:Date.now(), data:snapshot() }); historyIndex = history.length-1; if(history.length>60){history.shift();historyIndex--;} if(typeof refreshHistoryButtons==='function') refreshHistoryButtons(); if(typeof markDirty==='function') markDirty(); }
@@ -1567,9 +1860,10 @@ function worldToScreen(x,y){ return { x: x*currentFloor().view.zoom + currentFlo
 function screenToWorld(x,y){ return { x: (x-currentFloor().view.offsetX)/currentFloor().view.zoom, y: (y-currentFloor().view.offsetY)/currentFloor().view.zoom }; }
 
 function render(){
-  ctx.fillStyle = '#0c1116'; ctx.fillRect(0,0,canvas.width,canvas.height);
-  // Underlay grid (default): drawn beneath the plan so it doesn't obscure lines
-  if(currentFloor().gridVisible !== false && !state.gridOverlay) drawGrid(false);
+  ctx.fillStyle = state.printMode ? '#ffffff' : '#0c1116'; ctx.fillRect(0,0,canvas.width,canvas.height);
+  // Underlay grid (default): drawn beneath the plan so it doesn't obscure lines --
+  // skipped entirely in print mode, since a design grid has no place on a printed drawing
+  if(currentFloor().gridVisible !== false && !state.gridOverlay && !state.printMode) drawGrid(false);
   // Architectural layer toggles the floor-plan image on/off
   const archLayer = state.layers.find(l=>l.id==='architectural');
   const showPlan = !archLayer || archLayer.visible !== false;
@@ -1644,13 +1938,22 @@ function render(){
     ctx.fillStyle='#0c1116'; ctx.font='bold 11px JetBrains Mono'; ctx.textAlign='center'; ctx.textBaseline='middle';
     const abbrText = (isSwitchSymbol(obj.symbolId) && obj.props.gang) ? (obj.props.gang+'G') : sym.abbr;
     ctx.fillText(abbrText, p.x, p.y);
-    // circuit ID label — screen-space font so it stays legible across zoom levels.
-    // Drawn just below the symbol with a high-contrast pill so it doesn't
-    // compete with the device abbreviation inside the circle.
-    if(state.showCircuitLabels && obj.circuit){
+    // circuit/port ID label — screen-space font so it stays legible across
+    // zoom levels. Drawn just below the symbol with a high-contrast pill so
+    // it doesn't compete with the device abbreviation inside the circle.
+    // A comms device has no circuit -- shows its assigned port's own label
+    // instead (sparkies usually just number data points 1, 2, 3…, and the
+    // port label defaults to exactly that, see makeCommsPort).
+    let idLabel = null;
+    if(obj.circuit) idLabel = String(obj.circuit);
+    else if(sym.category==='data' && obj.symbolId!=='comms_rack'){
+      const port = portForDevice(obj.id);
+      if(port) idLabel = port.label || ('Port '+port.number);
+    }
+    if(state.showCircuitLabels && idLabel){
       const fontPx = Math.max(9, Math.min(12, 8 + currentFloor().view.zoom * 1.5));
       ctx.font = 'bold ' + fontPx + 'px JetBrains Mono';
-      const label = String(obj.circuit);
+      const label = idLabel;
       const tw = ctx.measureText(label).width;
       const padX = 3, padY = 1;
       const boxW = tw + padX * 2;
@@ -1708,35 +2011,54 @@ function render(){
       });
     }
   }
-  // GPO circuit daisy-chains — one switchboard feed per circuit, then GPO→GPO.
-  // Separate from lighting banks; only power outlets on the same circuit share a chain.
+  // Power circuit runs — one switchboard feed per circuit, then branching
+  // to whichever device is closest (up to CIRCUIT_JUNCTION_MAX_CABLES per
+  // junction — see computeChainEdges). Separate from lighting banks; only
+  // power outlets/hard-active switches on the same circuit share a run.
+  // A run that includes a hard-active switch (its own circuit, fed straight
+  // from the switchboard rather than looped off its light) draws in red so
+  // it reads as a distinct feed from a normal power circuit; visibility for
+  // those follows the Lighting layer instead of Power, since that's the
+  // layer the switch itself lives on.
   {
-    const layer = state.layers.find(l=>l.id==='power');
+    const powerLayer = state.layers.find(l=>l.id==='power');
+    const lightingLayer = state.layers.find(l=>l.id==='lighting');
+    computeGpoChains(currentFloor()).forEach(chain => {
+      if(!chain.edges.length) return;
+      const layer = chain.hardActive ? lightingLayer : powerLayer;
+      if(!layer || !layer.visible) return;
+      const relevantIds = new Set(chain.gpoIds);
+      if(chain.boardObj) relevantIds.add(chain.boardObj.id);
+      const isRelevant = state.isolatedCircuitId
+        ? chain.circuitId === state.isolatedCircuitId
+        : state.showSwitchRuns
+          || (state.selectedObjectId && relevantIds.has(state.selectedObjectId))
+          || (state.selectedObjectId && currentFloor().objects.find(o=>o.id===state.selectedObjectId && o.circuit===chain.circuitId))
+          || [...state.multiSelectedIds].some(id => relevantIds.has(id));
+      if(!isRelevant) return;
+      ctx.strokeStyle = chain.hardActive ? '#ff4d4dcc' : '#4fb3ffcc'; ctx.lineWidth = 2.5; ctx.setLineDash([4,4]);
+      chain.edges.forEach(({from,to}) => {
+        const p1 = worldToScreen(from.x, from.y), p2 = worldToScreen(to.x, to.y);
+        ctx.beginPath(); ctx.moveTo(p1.x,p1.y); ctx.lineTo(p2.x,p2.y); ctx.stroke();
+      });
+      ctx.setLineDash([]);
+    });
+  }
+  // Comms home-runs — one straight line per occupied port, rack straight to
+  // its device (no daisy-chain: real structured cabling is point-to-point,
+  // unlike the shared circuits above). Gated on the Data layer, same
+  // show-runs/selection reveal rule as the chains above.
+  {
+    const layer = state.layers.find(l=>l.id==='data');
     if(layer && layer.visible){
-      computeGpoChains(currentFloor()).forEach(chain => {
-        if(!chain.order.length) return;
-        const relevantIds = new Set(chain.gpoIds);
-        if(chain.boardObj) relevantIds.add(chain.boardObj.id);
-        const isRelevant = state.isolatedCircuitId
-          ? chain.circuitId === state.isolatedCircuitId
-          : state.showSwitchRuns
-            || (state.selectedObjectId && relevantIds.has(state.selectedObjectId))
-            || (state.selectedObjectId && currentFloor().objects.find(o=>o.id===state.selectedObjectId && o.circuit===chain.circuitId))
-            || [...state.multiSelectedIds].some(id => relevantIds.has(id));
+      computeCommsRuns(currentFloor()).forEach(({ rack, device }) => {
+        const isRelevant = state.showSwitchRuns
+          || (state.selectedObjectId && (state.selectedObjectId===rack.id || state.selectedObjectId===device.id))
+          || state.multiSelectedIds.has(rack.id) || state.multiSelectedIds.has(device.id);
         if(!isRelevant) return;
-        ctx.strokeStyle = '#4fb3ffcc'; ctx.lineWidth = 2.5; ctx.setLineDash([4,4]);
-        // single feed from switchboard to the first GPO in the physical order
-        if(chain.boardObj && chain.order[0]){
-          const p1 = worldToScreen(chain.boardObj.x, chain.boardObj.y);
-          const p2 = worldToScreen(chain.order[0].x, chain.order[0].y);
-          ctx.beginPath(); ctx.moveTo(p1.x,p1.y); ctx.lineTo(p2.x,p2.y); ctx.stroke();
-        }
-        // daisy chain through remaining GPOs on this circuit only
-        for(let i=0;i<chain.order.length-1;i++){
-          const p1 = worldToScreen(chain.order[i].x, chain.order[i].y);
-          const p2 = worldToScreen(chain.order[i+1].x, chain.order[i+1].y);
-          ctx.beginPath(); ctx.moveTo(p1.x,p1.y); ctx.lineTo(p2.x,p2.y); ctx.stroke();
-        }
+        ctx.strokeStyle = '#4ade80cc'; ctx.lineWidth = 2.5; ctx.setLineDash([2,3]);
+        const p1 = worldToScreen(rack.x, rack.y), p2 = worldToScreen(device.x, device.y);
+        ctx.beginPath(); ctx.moveTo(p1.x,p1.y); ctx.lineTo(p2.x,p2.y); ctx.stroke();
         ctx.setLineDash([]);
       });
     }
@@ -2165,6 +2487,8 @@ canvas.addEventListener('pointerdown', (e) => {
         const group = state.activeLinkGroup || autoGroupForSwitchLink(state.linkPendingSwitch, hit.symbolId);
         currentFloor().switchLinks.push({ switchId: state.linkPendingSwitch, lightId: hit.id, group });
         recomputeSwitchGang(state.linkPendingSwitch);
+        const swObj = currentFloor().objects.find(o=>o.id===state.linkPendingSwitch);
+        if(swObj) propagateSwitchCircuitToLinkedLights(swObj);
         pushHistory();
       }
       setHint('Linked. Tap another light for this switch, or tap a new switch to start again');
@@ -2192,6 +2516,7 @@ canvas.addEventListener('pointerdown', (e) => {
       x:snapped.x, y:snapped.y, layer:layerForSymbol, circuit:'',
       props
     };
+    if(obj.symbolId==='comms_rack') obj.commsPorts = defaultCommsPorts(obj.id);
     currentFloor().objects.push(obj); state.snapGuides = []; state.snapTarget = null; pushHistory(); render(); renderSchedule(); updateQuote();
     // Exit placement mode once the device lands: activeSymbol staying set
     // meant the very next canvas click — most naturally a click/drag on the
@@ -2569,8 +2894,9 @@ document.getElementById('multiAssignSwitch').addEventListener('click', () => {
         }
       });
       recomputeSwitchGang(swId);
-      pushHistory(); render(); closeSheets();
       const sw = currentFloor().objects.find(o=>o.id===swId);
+      if(sw) propagateSwitchCircuitToLinkedLights(sw);
+      pushHistory(); render(); closeSheets();
       showToast('Linked ' + lights.length + ' light' + (lights.length===1?'':'s') + ' to ' + swId + ' (' + (sw?sw.props.gang:1) + ' gang)');
     }));
   }
@@ -2581,7 +2907,7 @@ document.getElementById('multiAssignSwitch').addEventListener('click', () => {
 // BOTTOM TOOLBAR + SHEETS
 // ===================================================================
 const backdrop = document.getElementById('backdrop');
-const sheets = ['sheetSymbols','sheetLayers','sheetProps','sheetQuote','sheetMore','sheetCableSize','sheetCircuits','sheetElevation','sheetFloors','sheetExport','sheetGrid','sheetAssignSwitch','sheetPriceList','sheetVersions','sheetRooms','sheetDuplicates','sheetAccount','sheetSaveOptions','sheetOrg','sheetPanelSchedule'].map(id=>document.getElementById(id));
+const sheets = ['sheetSymbols','sheetLayers','sheetProps','sheetQuote','sheetMore','sheetCableSize','sheetCircuits','sheetElevation','sheetFloors','sheetExport','sheetGrid','sheetAssignSwitch','sheetPriceList','sheetVersions','sheetRooms','sheetDuplicates','sheetAccount','sheetSaveOptions','sheetOrg','sheetPanelSchedule','sheetCommsRacks','sheetProjectAccess'].map(id=>document.getElementById(id));
 function closeSheets(){ sheets.forEach(s=>{ s.classList.remove('open'); if(s._resetSheetSize) s._resetSheetSize(); }); backdrop.classList.remove('open'); }
 // Layers/Symbols/Properties are permanently docked side panels on desktop
 // (not floating dialogs), so the backdrop shouldn't cover the canvas for
@@ -2698,6 +3024,9 @@ function openFormModal(title, fields, onSubmit, okLabel){
     if(f.type==='select'){
       return `<div class="prop-row"><label>${f.label}</label><select id="mf_${f.id}">${f.options.map(o=>`<option value="${o.value}" ${o.value==f.value?'selected':''}>${o.label}</option>`).join('')}</select></div>`;
     }
+    if(f.type==='textarea'){
+      return `<div class="prop-row"><label>${f.label}</label><textarea id="mf_${f.id}" placeholder="${f.placeholder||''}">${f.value||''}</textarea></div>`;
+    }
     return `<div class="prop-row"><label>${f.label}</label><input id="mf_${f.id}" type="${f.type||'text'}" value="${f.value!=null?f.value:''}" placeholder="${f.placeholder||''}"></div>`;
   }).join('');
   const okBtn = document.getElementById('modalOk');
@@ -2730,6 +3059,31 @@ function openConfirmModal(title, message, onConfirm, okLabel){
   okBtn.className = 'modal-ok danger';
   okBtn.onclick = () => { closeModal(); onConfirm(); };
   modalBackdrop.classList.add('open'); modalCard.classList.add('open');
+}
+// Report a problem: a mailto: draft rather than sending server-side, same
+// reasoning as the org invite notification -- there's no backend here to
+// send from, and opening the reporter's own mail app means the report
+// genuinely comes from their own email address with no extra setup.
+function openReportProblemForm(){
+  openFormModal('Report a problem', [
+    { id:'description', label:'What went wrong?', type:'textarea', placeholder:"Describe what happened, and what you expected instead…" },
+  ], (vals) => {
+    if(!vals.description || !vals.description.trim()){ showToast('Describe the problem first'); return; }
+    sendProblemReport(vals.description.trim());
+  }, 'Send report');
+}
+async function sendProblemReport(description){
+  const context = [
+    'Project: ' + (document.getElementById('projName').value || 'Untitled'),
+    'Account: ' + (cloudUser ? cloudUser.email : 'not signed in'),
+    'When: ' + new Date().toString(),
+    'Browser: ' + navigator.userAgent,
+  ].join('\n');
+  if(!supabaseClient){ showToast('Sign in to send a report'); return; }
+  showToast('Sending report…');
+  const { error } = await supabaseClient.functions.invoke('report-problem', { body: { description, context } });
+  if(error){ showToast('Could not send report — try again'); return; }
+  showToast('Report sent — thanks!');
 }
 function showToast(msg){
   const host = document.getElementById('toastHost');
@@ -2773,7 +3127,14 @@ document.getElementById('moreLink').addEventListener('click', () => { setTool('l
 document.getElementById('moreScale').addEventListener('click', () => { setTool('calibrate'); closeSheets(); });
 document.getElementById('moreWall').addEventListener('click', () => { setTool('wall'); closeSheets(); });
 document.getElementById('moreQuote').addEventListener('click', () => { updateQuote(); renderSchedule(); openSheet('sheetQuote'); });
+document.getElementById('quoteSummaryToggle').addEventListener('click', () => {
+  state.quoteItemized = !state.quoteItemized;
+  renderSchedule();
+});
 document.getElementById('moreCircuits').addEventListener('click', () => { renderCircuits(); openSheet('sheetCircuits'); });
+document.getElementById('moreCommsRacks').addEventListener('click', () => { renderCommsRacksSheet(); openSheet('sheetCommsRacks'); });
+document.getElementById('moreReportProblem').addEventListener('click', () => { closeSheets(); openReportProblemForm(); });
+document.getElementById('dtbReportProblem').addEventListener('click', openReportProblemForm);
 document.getElementById('moreElevation').addEventListener('click', () => { renderElevationSelect(); openSheet('sheetElevation'); });
 document.getElementById('moreFloors').addEventListener('click', () => { renderFloors(); openSheet('sheetFloors'); });
 document.getElementById('moreGrid').addEventListener('click', () => { openGridSheet(); openSheet('sheetGrid'); });
@@ -3348,10 +3709,26 @@ document.getElementById('btnExportQuote').addEventListener('click', () => {
   lines.push('Generated ' + new Date().toLocaleDateString('en-AU'));
   lines.push('');
   lines.push('DEVICE SCHEDULE');
-  allObjects().forEach(o => {
-    const sym = SYMBOL_LIBRARY.find(s=>s.id===o.symbolId);
-    lines.push(`${o.id}  ${sym.label}  x${o.props.quantity||1}  [${o.__floorName}]${o.circuit ? '  circuit:'+o.circuit : ''}`);
-  });
+  if(state.quoteItemized){
+    allObjects().forEach(o => {
+      const sym = SYMBOL_LIBRARY.find(s=>s.id===o.symbolId);
+      lines.push(`${o.id}  ${sym.label}  x${o.props.quantity||1}  [${o.__floorName}]${o.circuit ? '  circuit:'+o.circuit : ''}`);
+    });
+  } else {
+    const groups = {}; const order = [];
+    allObjects().forEach(o => {
+      const sym = SYMBOL_LIBRARY.find(s=>s.id===o.symbolId);
+      const gang = isSwitchSymbol(o.symbolId) ? (o.props.gang||1) : null;
+      const label = sym.label + (gang!=null ? ' — '+gang+' gang' : '');
+      const key = o.symbolId+(gang!=null?'::'+gang:'')+'::'+o.__floorName;
+      if(!groups[key]){ groups[key] = { label, floorName:o.__floorName, qty:0 }; order.push(key); }
+      groups[key].qty += o.props.quantity||1;
+    });
+    order.forEach(key => {
+      const g = groups[key];
+      lines.push(`${g.label}  x${g.qty}  [${g.floorName}]`);
+    });
+  }
   lines.push('');
   lines.push('SWITCHBOARD / CIRCUIT SCHEDULE');
   if(state.circuits.length===0){ lines.push('(none defined)'); }
@@ -3450,7 +3827,12 @@ function buildSymbolCategory(label, key, syms, collapsible){
 function renderSymbolGrid(){
   symbolGrid.innerHTML = '';
   const grouped = {};
-  SYMBOL_LIBRARY.forEach(sym => { (grouped[sym.category]=grouped[sym.category]||[]).push(sym); });
+  // Patch panel isn't placed as its own device -- it's derived from a
+  // comms rack's port count (see PATCH_PANEL_PORTS_PER_UNIT) -- so it's
+  // excluded here but stays in SYMBOL_LIBRARY itself so its price is still
+  // editable in the Device Library and the derived quote/legend lines can
+  // still look its cost up.
+  SYMBOL_LIBRARY.filter(sym=>sym.id!=='patch_panel').forEach(sym => { (grouped[sym.category]=grouped[sym.category]||[]).push(sym); });
   const orderedCats = Object.keys(CATEGORY_LABELS).concat(Object.keys(grouped).filter(k=>!CATEGORY_LABELS[k]));
   orderedCats.filter(cat=>grouped[cat]).forEach(cat => {
     const cards = grouped[cat].map(sym => {
@@ -3535,14 +3917,10 @@ function renderCircuits(){
     const count = allObjects().filter(o=>o.circuit===c.id).length;
     const p = PROTECTION_LIBRARY.find(x=>x.id===c.protectionId);
     const cost = effectiveProtectionCost(c);
-    const isData = c.kind==='data';
-    if(!isData) protectionTotal += cost;
+    protectionTotal += cost;
     const row = document.createElement('div');
     row.className = 'circuit-row';
-    const kindTag = isData ? '<span style="color:var(--green);">DATA</span> · ' : '';
-    const metaLine = isData
-      ? `${kindTag}${c.description||'—'} · ${resolveSwitchboardLabel(c)}<br>${c.cable||'—'}`
-      : `${c.description||'—'} · ${resolveSwitchboardLabel(c)}<br>${c.cable||'—'} · ${p?p.label:'—'} (${fmt(cost)})`;
+    const metaLine = `${c.description||'—'} · ${resolveSwitchboardLabel(c)}<br>${c.cable||'—'} · ${p?p.label:'—'} (${fmt(cost)})`;
     const isolated = state.isolatedCircuitId === c.id;
     row.innerHTML = `
       <div style="flex:1; cursor:pointer;" data-edit-circuit="${c.id}">
@@ -3580,13 +3958,7 @@ function renderCircuits(){
     });
   }));
 }
-document.getElementById('btnAddCircuit').addEventListener('click', () => {
-  openFormModal('New circuit or comms connection', [
-    { id:'kind', label:'Type', type:'select', value:'electrical', options:[{value:'electrical',label:'Electrical circuit'},{value:'data',label:'Data / comms connection'}] },
-  ], (vals) => {
-    if(vals.kind==='data') openNewDataCircuitForm(); else openNewElectricalCircuitForm();
-  }, 'Next');
-});
+document.getElementById('btnAddCircuit').addEventListener('click', openNewElectricalCircuitForm);
 function openNewElectricalCircuitForm(){
   const boardOptions = [{value:'',label:'— type board name manually below —'}].concat(
     findBoardObjects('switchboard').map(sb => ({ value:sb.id, label: sb.label || sb.id }))
@@ -3609,47 +3981,21 @@ function openNewElectricalCircuitForm(){
     showToast('Circuit ' + vals.id + ' added');
   }, 'Add circuit');
 }
-function openNewDataCircuitForm(){
-  const rackOptions = [{value:'',label:'— type rack name manually below —'}].concat(
-    findBoardObjects('comms_rack').map(r => ({ value:r.id, label:r.label || r.id }))
-  );
-  openFormModal('New data / comms connection', [
-    { id:'id', label:'Connection ID (e.g. DATA-01)', type:'text', value:'' },
-    { id:'description', label:'Description', type:'text', value:'', placeholder:'e.g. Bedroom data outlet' },
-    { id:'switchboardObjectId', label:'Linked comms rack (optional)', type:'select', value:'', options:rackOptions },
-    { id:'board', label:'Rack name (used if no rack linked)', type:'text', value:'CR-01' },
-    { id:'cable', label:'Cable', type:'select', value:'Cat6', options:[{value:'Cat6',label:'Cat6'},{value:'Cat6A',label:'Cat6A'},{value:'Coax',label:'Coax'},{value:'Fibre',label:'Fibre'}] },
-  ], (vals) => {
-    if(!vals.id){ showToast('Connection needs an ID'); return; }
-    state.circuits.push({
-      id:vals.id, description:vals.description, kind:'data',
-      switchboardObjectId: vals.switchboardObjectId || null, board:vals.board,
-      cable:vals.cable, protectionId:null, protectionCostOverride:null,
-    });
-    pushHistory(); renderCircuits(); updateQuote();
-    showToast('Connection ' + vals.id + ' added');
-  }, 'Add connection');
-}
 function openEditCircuitForm(circuitId){
   const c = state.circuits.find(x=>x.id===circuitId);
   if(!c) return;
-  const isData = c.kind==='data';
   const boardOptions = [{value:'',label:'— type name manually below —'}].concat(
-    findBoardObjects(isData ? 'comms_rack' : 'switchboard').map(sb => ({ value:sb.id, label: sb.label || sb.id }))
+    findBoardObjects('switchboard').map(sb => ({ value:sb.id, label: sb.label || sb.id }))
   );
   const fields = [
-    { id:'id', label:isData?'Connection ID':'Circuit ID', type:'text', value:c.id },
+    { id:'id', label:'Circuit ID', type:'text', value:c.id },
     { id:'description', label:'Description', type:'text', value:c.description||'' },
-    { id:'switchboardObjectId', label: isData?'Linked comms rack (optional)':'Linked switchboard (optional)', type:'select', value:c.switchboardObjectId||'', options:boardOptions },
-    { id:'board', label: isData?'Rack name (fallback)':'Board name (fallback)', type:'text', value:c.board||'' },
-    { id:'cable', label:'Cable', type:'select', value:c.cable||'', options: isData
-        ? [{value:'Cat6',label:'Cat6'},{value:'Cat6A',label:'Cat6A'},{value:'Coax',label:'Coax'},{value:'Fibre',label:'Fibre'}]
-        : CABLE_SIZES.map(cs=>({value:cs.size,label:cs.size})) },
+    { id:'switchboardObjectId', label:'Linked switchboard (optional)', type:'select', value:c.switchboardObjectId||'', options:boardOptions },
+    { id:'board', label:'Board name (fallback)', type:'text', value:c.board||'' },
+    { id:'cable', label:'Cable', type:'select', value:c.cable||'', options:CABLE_SIZES.map(cs=>({value:cs.size,label:cs.size})) },
+    { id:'protectionId', label:'Protection device', type:'select', value:c.protectionId||'rcbo20', options:PROTECTION_LIBRARY.map(p=>({value:p.id,label:p.label+' — $'+p.cost})) },
   ];
-  if(!isData){
-    fields.push({ id:'protectionId', label:'Protection device', type:'select', value:c.protectionId||'rcbo20', options:PROTECTION_LIBRARY.map(p=>({value:p.id,label:p.label+' — $'+p.cost})) });
-  }
-  openFormModal('Edit ' + (isData?'connection':'circuit') + ' ' + c.id, fields, (vals) => {
+  openFormModal('Edit circuit ' + c.id, fields, (vals) => {
     if(!vals.id){ showToast('ID cannot be empty'); return; }
     const oldId = c.id;
     if(vals.id !== oldId){
@@ -3659,11 +4005,122 @@ function openEditCircuitForm(circuitId){
       state.floors.forEach(f => f.objects.forEach(o => { if(o.circuit===oldId) o.circuit = vals.id; }));
     }
     c.id = vals.id; c.description = vals.description; c.switchboardObjectId = vals.switchboardObjectId || null;
-    c.board = vals.board; c.cable = vals.cable;
-    if(!isData) c.protectionId = vals.protectionId;
+    c.board = vals.board; c.cable = vals.cable; c.protectionId = vals.protectionId;
     pushHistory(); renderCircuits(); updateQuote(); renderSchedule();
     showToast('Updated ' + vals.id);
   }, 'Save changes');
+}
+
+// ===================================================================
+// COMMS RACKS SHEET — separate UI from Circuits above, matching the
+// separate data model (see the COMMS RACKS + PORTS block near
+// computeGpoChains). Every rack on every floor gets its own card; ports
+// are fixed slots you fill or clear, never delete, mirroring a real
+// patch panel. focusRackId scrolls straight to that rack's card, used
+// when opened from a device's own "Manage ports" button.
+// ===================================================================
+function commsDeviceOptionsForPort(floorIndex, port){
+  const floor = state.floors[floorIndex];
+  const takenIds = new Set();
+  floor.objects.filter(o=>o.symbolId==='comms_rack').forEach(r => (r.commsPorts||[]).forEach(p => { if(p.deviceId && p.id!==port.id) takenIds.add(p.deviceId); }));
+  let html = '<option value="">— unassigned —</option>';
+  floor.objects.filter(o => o.symbolId!=='comms_rack' && (SYMBOL_LIBRARY.find(s=>s.id===o.symbolId)||{}).category==='data').forEach(o => {
+    if(takenIds.has(o.id) && o.id!==port.deviceId) return;
+    html += `<option value="${o.id}" ${port.deviceId===o.id?'selected':''}>${deviceDisplayName(o)}</option>`;
+  });
+  return html;
+}
+function renderCommsRacksSheet(focusRackId){
+  const el = document.getElementById('commsRacksBody');
+  const racks = allCommsRacks();
+  if(!racks.length && !state.unassignedCommsPorts.length){
+    el.innerHTML = '<div style="color:var(--text-dim); font-size:12.5px; padding:10px 0;">No comms racks placed yet — place a Comms Rack from the device library, then come back here to manage its ports.</div>';
+    return;
+  }
+  const cableOptions = ['Cat6','Cat6A','Coax','Fibre'];
+  el.innerHTML = racks.map(({ rack, floorIndex }) => {
+    const ports = rack.commsPorts || [];
+    const used = ports.filter(p=>p.deviceId).length;
+    return `<div id="commsRackCard-${rack.id}" style="border:1px solid var(--line-soft); border-radius:8px; padding:10px; margin-bottom:14px;">
+      <div style="font-weight:700; font-size:13.5px; margin-bottom:2px;">${deviceDisplayName(rack)}</div>
+      <div style="font-size:10.5px; color:var(--text-dim); margin-bottom:8px;">${state.floors[floorIndex].name} · ${used} of ${ports.length} ports in use</div>
+      ${ports.map(port => `
+        <div style="border-top:1px solid var(--line-soft); padding:10px 2px; display:flex; flex-direction:column; gap:6px;">
+          <div style="display:flex; align-items:center; gap:8px;">
+            <span style="font-family:var(--mono); font-size:11px; color:var(--text-dim); width:30px; flex-shrink:0;">#${port.number}</span>
+            <input type="text" data-port-label="${port.id}" value="${port.label}" placeholder="Port ${port.number}" style="flex:1; background:var(--panel2); border:1px solid var(--line); color:var(--text); padding:6px 8px; border-radius:6px; font-size:12.5px;">
+          </div>
+          <input type="text" data-port-desc="${port.id}" value="${port.description||''}" placeholder="Description (e.g. Bedroom 2 data outlet)" style="background:var(--panel2); border:1px solid var(--line); color:var(--text-dim); padding:6px 8px; border-radius:6px; font-size:12px;">
+          <div style="display:flex; gap:6px;">
+            <select data-port-cable="${port.id}" style="flex:1; background:var(--panel2); border:1px solid var(--line); color:var(--text); padding:6px 8px; border-radius:6px; font-size:12px;">
+              ${cableOptions.map(c=>`<option value="${c}" ${port.cable===c?'selected':''}>${c}</option>`).join('')}
+            </select>
+            <select data-port-device="${port.id}" data-port-floor="${floorIndex}" style="flex:2; background:var(--panel2); border:1px solid var(--line); color:var(--text); padding:6px 8px; border-radius:6px; font-size:12px;">
+              ${commsDeviceOptionsForPort(floorIndex, port)}
+            </select>
+          </div>
+        </div>
+      `).join('')}
+      <button data-add-port="${rack.id}" style="background:var(--panel2); border:1px solid var(--line); color:var(--text-dim); padding:7px 12px; border-radius:6px; font-size:11.5px; margin-top:8px;">+ Add port</button>
+    </div>`;
+  }).join('') + (state.unassignedCommsPorts.length ? `
+    <div style="font-family:var(--mono); font-size:10px; letter-spacing:1px; text-transform:uppercase; color:var(--amber); margin:16px 0 6px; padding-bottom:4px; border-bottom:1px solid var(--line-soft);">Legacy — needs a rack</div>
+    <div style="font-size:11px; color:var(--text-dim); margin-bottom:10px; line-height:1.5;">Migrated from an old-format save that had no rack linked. Pick a rack to attach each one to.</div>
+    ${state.unassignedCommsPorts.map(p => `
+      <div class="load-row" style="gap:8px;">
+        <span style="flex:1; font-size:12.5px;">${p.label}${p.description?' — '+p.description:''}</span>
+        <select data-assign-legacy="${p.id}" style="background:var(--panel2); border:1px solid var(--line); color:var(--text); padding:6px 8px; border-radius:6px; font-size:12px;">
+          <option value="">— pick a rack —</option>
+          ${racks.map(({rack,floorIndex}) => `<option value="${rack.id}">${deviceDisplayName(rack)} (${state.floors[floorIndex].name})</option>`).join('')}
+        </select>
+      </div>
+    `).join('')}
+  ` : '');
+
+  el.querySelectorAll('[data-port-label]').forEach(inp => inp.addEventListener('change', (e) => {
+    const found = findCommsPort(inp.dataset.portLabel);
+    if(found){ found.port.label = e.target.value.trim() || ('Port '+found.port.number); pushHistory(); markDirty(); renderCommsRacksSheet(); }
+  }));
+  el.querySelectorAll('[data-port-desc]').forEach(inp => inp.addEventListener('change', (e) => {
+    const found = findCommsPort(inp.dataset.portDesc);
+    if(found){ found.port.description = e.target.value; pushHistory(); markDirty(); }
+  }));
+  el.querySelectorAll('[data-port-cable]').forEach(sel => sel.addEventListener('change', (e) => {
+    const found = findCommsPort(sel.dataset.portCable);
+    if(found){ found.port.cable = e.target.value; pushHistory(); markDirty(); }
+  }));
+  el.querySelectorAll('[data-port-device]').forEach(sel => sel.addEventListener('change', (e) => {
+    const portId = sel.dataset.portDevice;
+    const newDeviceId = e.target.value || null;
+    if(newDeviceId){ assignDeviceToPort(newDeviceId, portId); }
+    else { const found = findCommsPort(portId); if(found){ found.port.deviceId = null; pushHistory(); render(); renderSchedule(); updateQuote(); } }
+    renderCommsRacksSheet(focusRackId);
+  }));
+  el.querySelectorAll('[data-add-port]').forEach(btn => btn.addEventListener('click', () => {
+    const found = allCommsRacks().find(r=>r.rack.id===btn.dataset.addPort);
+    if(!found) return;
+    if(!found.rack.commsPorts) found.rack.commsPorts = [];
+    found.rack.commsPorts.push(makeCommsPort(found.rack.id, nextCommsPortNumber(found.rack)));
+    pushHistory(); markDirty();
+    renderCommsRacksSheet(found.rack.id);
+  }));
+  el.querySelectorAll('[data-assign-legacy]').forEach(sel => sel.addEventListener('change', (e) => {
+    const legacyId = sel.dataset.assignLegacy;
+    const rackId = e.target.value;
+    if(!rackId) return;
+    const legacy = state.unassignedCommsPorts.find(p=>p.id===legacyId);
+    const found = allCommsRacks().find(r=>r.rack.id===rackId);
+    if(!legacy || !found) return;
+    if(!found.rack.commsPorts) found.rack.commsPorts = [];
+    found.rack.commsPorts.push({ ...makeCommsPort(found.rack.id, nextCommsPortNumber(found.rack)), label:legacy.label, description:legacy.description, cable:legacy.cable, deviceId:legacy.deviceId });
+    state.unassignedCommsPorts = state.unassignedCommsPorts.filter(p=>p.id!==legacyId);
+    pushHistory(); render(); renderSchedule(); updateQuote();
+    renderCommsRacksSheet(found.rack.id);
+  }));
+  if(focusRackId){
+    const card = document.getElementById('commsRackCard-'+focusRackId);
+    if(card) card.scrollIntoView({ block:'start' });
+  }
 }
 
 // ===================================================================
@@ -3843,16 +4300,43 @@ document.getElementById('switchRunsToggle').addEventListener('click', () => {
 // a raw object list. Lives in the Layers panel (renderSchedule() already
 // runs after every add/delete/duplicate/floor-switch/undo, so hooking in
 // there keeps this in sync everywhere without touching each call site).
+// Switches are bucketed by gang count too, not just symbolId -- a 1-gang
+// and a 4-gang switch are different plate hardware and read as one
+// undifferentiated "Light switch" line otherwise, which is exactly the
+// ambiguity a legend is supposed to remove. Shared by the Legend panel and
+// the Print/PDF export view's legend table, so both stay in sync.
+function computeLegendEntries(floor){
+  const buckets = {};
+  floor.objects.forEach(o => {
+    const sym = SYMBOL_LIBRARY.find(s=>s.id===o.symbolId);
+    if(!sym) return;
+    const gang = isSwitchSymbol(o.symbolId) ? (o.props.gang||1) : null;
+    const key = o.symbolId + (gang!=null ? '::'+gang : '');
+    if(!buckets[key]) buckets[key] = { sym, gang, count:0 };
+    buckets[key].count += (o.props.quantity||1);
+  });
+  // Patch panels aren't placed -- derived from each rack's port count on
+  // this floor (legend is per-floor, same as everything else here).
+  floor.objects.filter(o=>o.symbolId==='comms_rack').forEach(rack => {
+    const units = patchPanelUnitsForRack(rack);
+    if(units){
+      if(!buckets.patch_panel) buckets.patch_panel = { sym: SYMBOL_LIBRARY.find(s=>s.id==='patch_panel'), gang:null, count:0 };
+      buckets.patch_panel.count += units;
+    }
+  });
+  return Object.values(buckets)
+    .filter(e => e.sym)
+    .sort((a,b) => {
+      if(a.sym.category !== b.sym.category) return a.sym.category.localeCompare(b.sym.category);
+      if(a.sym.label !== b.sym.label) return a.sym.label.localeCompare(b.sym.label);
+      return (a.gang||0) - (b.gang||0);
+    });
+}
 function renderLegend(){
   const el = document.getElementById('legendList');
   if(!el) return;
   const sectionHeaderStyle = 'font-family:var(--mono); font-size:10px; letter-spacing:1px; text-transform:uppercase; color:var(--text-dim); margin:14px 0 6px; padding-bottom:4px; border-bottom:1px solid var(--line-soft);';
-  const counts = {};
-  currentFloor().objects.forEach(o => { counts[o.symbolId] = (counts[o.symbolId]||0) + (o.props.quantity||1); });
-  const entries = Object.keys(counts)
-    .map(id => ({ sym: SYMBOL_LIBRARY.find(s=>s.id===id), count: counts[id] }))
-    .filter(e => e.sym)
-    .sort((a,b) => a.sym.category===b.sym.category ? a.sym.label.localeCompare(b.sym.label) : a.sym.category.localeCompare(b.sym.category));
+  const entries = computeLegendEntries(currentFloor());
   if(!entries.length){
     el.innerHTML = `<div style="${sectionHeaderStyle}">Legend</div><div style="color:var(--text-dim); font-size:12px; padding:2px 0 6px;">Nothing placed on this floor yet.</div>`;
     return;
@@ -3861,12 +4345,105 @@ function renderLegend(){
   el.innerHTML = `<div style="${sectionHeaderStyle}">Legend — ${total} device${total===1?'':'s'} on this floor</div>` +
     entries.map(e => `
       <div class="circuit-row" style="padding:8px 10px;">
-        <div style="width:26px; height:26px; border-radius:50%; background:${e.sym.color}; display:flex; align-items:center; justify-content:center; font-family:var(--mono); font-weight:700; font-size:10px; color:#0c1116; flex-shrink:0;">${e.sym.abbr}</div>
-        <div style="flex:1; font-size:12.5px;">${e.sym.label}</div>
+        <div style="width:26px; height:26px; border-radius:50%; background:${e.sym.color}; display:flex; align-items:center; justify-content:center; font-family:var(--mono); font-weight:700; font-size:10px; color:#0c1116; flex-shrink:0;">${e.gang ? e.gang+'G' : e.sym.abbr}</div>
+        <div style="flex:1; font-size:12.5px;">${e.sym.label}${e.gang ? ' — '+e.gang+' gang' : ''}</div>
         <div class="circuit-count">× ${e.count}</div>
       </div>
     `).join('');
 }
+
+// ===================================================================
+// PRINT / PDF EXPORT VIEW
+// Redraws each floor onto the existing plan canvas with a white
+// background (no separate renderer to maintain -- reuses render() as-is,
+// just with state.printMode on and selection/interaction state cleared),
+// captures it as an image, and lays it out on a white page next to a
+// legend table. Printing/saving as PDF is just the browser's own Print
+// dialog against this view -- no PDF library needed.
+// ===================================================================
+function fitViewToContent(floor){
+  const margin = 30;
+  if(floor.planImage){
+    const sX = (canvas.width-margin*2)/floor.planImage.width, sY = (canvas.height-margin*2)/floor.planImage.height;
+    floor.view.zoom = Math.min(sX,sY,4);
+    floor.view.offsetX = (canvas.width - floor.planImage.width*floor.view.zoom)/2;
+    floor.view.offsetY = (canvas.height - floor.planImage.height*floor.view.zoom)/2;
+    return;
+  }
+  if(!floor.objects.length){ floor.view.zoom = 1; floor.view.offsetX = canvas.width/2; floor.view.offsetY = canvas.height/2; return; }
+  let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;
+  floor.objects.forEach(o => { minX=Math.min(minX,o.x); minY=Math.min(minY,o.y); maxX=Math.max(maxX,o.x); maxY=Math.max(maxY,o.y); });
+  const w = Math.max(maxX-minX, 200), h = Math.max(maxY-minY, 200);
+  const sX = (canvas.width-margin*2)/w, sY = (canvas.height-margin*2)/h;
+  floor.view.zoom = Math.min(sX,sY,4);
+  floor.view.offsetX = (canvas.width - (minX+maxX)*floor.view.zoom)/2;
+  floor.view.offsetY = (canvas.height - (minY+maxY)*floor.view.zoom)/2;
+}
+// Renders one floor onto the real plan canvas (temporarily, at export
+// resolution, with a white background) and returns a PNG data URL.
+// Everything mutated here -- canvas size, that floor's view, selection/
+// interaction state -- is saved by the caller and restored afterward, so
+// the user's live editing session is completely unaffected.
+function captureFloorSnapshot(floorIndex){
+  const floor = state.floors[floorIndex];
+  const savedView = { ...floor.view };
+  state.activeFloorIndex = floorIndex;
+  fitViewToContent(floor);
+  render();
+  const dataUrl = canvas.toDataURL('image/png');
+  floor.view = savedView;
+  return dataUrl;
+}
+function openPrintView(){
+  const savedFloorIndex = state.activeFloorIndex;
+  const savedSelected = state.selectedObjectId, savedMulti = state.multiSelectedIds, savedMultiMode = state.multiSelectMode;
+  const savedCanvasW = canvas.width, savedCanvasH = canvas.height;
+  state.selectedObjectId = null; state.multiSelectedIds = new Set(); state.multiSelectMode = false;
+  state.printMode = true;
+  canvas.width = 1600; canvas.height = 1131; // ~A4 landscape ratio, high enough res to print cleanly
+
+  const projName = document.getElementById('projName').value || 'Untitled';
+  const dateStr = new Date().toLocaleDateString('en-AU');
+  const pagesHtml = state.floors.map((floor, i) => {
+    const imgSrc = captureFloorSnapshot(i);
+    const entries = computeLegendEntries(floor);
+    const total = entries.reduce((s,e) => s+e.count, 0);
+    const legendRows = entries.map(e => `
+      <tr>
+        <td><span class="pl-swatch" style="background:${e.sym.color};">${e.gang ? e.gang+'G' : e.sym.abbr}</span>${e.sym.label}${e.gang ? ' — '+e.gang+' gang' : ''}</td>
+        <td class="pl-qty">× ${e.count}</td>
+      </tr>`).join('');
+    return `
+      <div class="print-page">
+        <div class="print-page-header">
+          <div class="ph-name">${projName} — ${floor.name}</div>
+          <div class="ph-meta">${dateStr}${floor.scale ? '<br>Calibrated' : '<br>Not calibrated'}</div>
+        </div>
+        <div class="print-page-body">
+          <div class="print-plan-col">${floor.planImage || floor.objects.length ? `<img src="${imgSrc}">` : '<span class="pv-empty">Nothing on this floor yet</span>'}</div>
+          <div class="print-legend-col">
+            <h3>Legend</h3>
+            ${entries.length ? `<table class="print-legend-table">${legendRows}</table><div class="print-legend-total">${total} device${total===1?'':'s'} total</div>` : '<div class="pv-empty" style="font-size:11px; color:#888;">Nothing placed on this floor yet.</div>'}
+          </div>
+        </div>
+      </div>`;
+  }).join('');
+  document.getElementById('printViewPages').innerHTML = pagesHtml;
+
+  // restore the live editing session exactly as it was before capture
+  state.activeFloorIndex = savedFloorIndex;
+  state.selectedObjectId = savedSelected; state.multiSelectedIds = savedMulti; state.multiSelectMode = savedMultiMode;
+  state.printMode = false;
+  canvas.width = savedCanvasW; canvas.height = savedCanvasH;
+  render();
+
+  document.getElementById('printView').classList.add('open');
+}
+function closePrintView(){ document.getElementById('printView').classList.remove('open'); }
+document.getElementById('dtbPrintExport').addEventListener('click', openPrintView);
+document.getElementById('morePrintExport').addEventListener('click', () => { closeSheets(); openPrintView(); });
+document.getElementById('btnClosePrintView').addEventListener('click', closePrintView);
+document.getElementById('btnDoPrint').addEventListener('click', () => window.print());
 
 // ===================================================================
 // PROPERTIES SHEET
@@ -3879,6 +4456,13 @@ function openProps(id){
   const lockedLayer = isLayerLocked(obj.layer);
   document.getElementById('propsTitle').textContent = deviceDisplayName(obj);
   const circuitOptions = circuitSelectOptions(obj.circuit);
+  // Comms devices link to a rack PORT (see the new Comms Racks system),
+  // never an electrical circuit -- the rack itself has neither, it's the
+  // distribution point (see commsPortsHtml below), not something that gets
+  // assigned to its own port.
+  let circuitRowHtml = `<div class="prop-row"><label>Circuit</label><select id="p_circuit" ${lockedLayer?'disabled':''}>${circuitOptions}</select></div>`;
+  if(obj.symbolId==='comms_rack') circuitRowHtml = '';
+  else if(sym.category==='data') circuitRowHtml = `<div class="prop-row"><label>Comms port</label><select id="p_comms_port" ${lockedLayer?'disabled':''}>${commsPortOptions(obj.id)}</select></div>`;
   const roomOptions = '<option value="">— none —</option>' + currentFloor().rooms.map(r=>`<option value="${r.id}" ${obj.room===r.id?'selected':''}>${r.name}</option>`).join('');
 
   let linksHtml = '';
@@ -3944,18 +4528,19 @@ function openProps(id){
     </div>`;
   }
 
-  // Distribution view (section 39/46-48): a switchboard or comms rack is a
-  // distribution point, not just an icon — selecting one shows what it feeds.
+  // Distribution view (section 39/46-48): a switchboard is a distribution
+  // point, not just an icon — selecting one shows what it feeds. Comms
+  // racks get their own, separate ports summary just below instead (see
+  // commsPortsHtml) -- a different system entirely, not a variant of this.
   let distributionHtml = '';
-  if(obj.symbolId==='switchboard' || obj.symbolId==='comms_rack'){
+  if(obj.symbolId==='switchboard'){
     const fed = state.circuits.filter(c => c.switchboardObjectId === obj.id);
-    const heading = obj.symbolId==='switchboard' ? 'Feeds these circuits' : 'Feeds these connections';
     if(fed.length){
-      distributionHtml = `<div class="prop-row"><label>${heading}</label><div style="font-size:12px; line-height:1.8;">${sortedCircuits().filter(c=>c.switchboardObjectId===obj.id).map(c => {
+      distributionHtml = `<div class="prop-row"><label>Feeds these circuits</label><div style="font-size:12px; line-height:1.8;">${sortedCircuits().filter(c=>c.switchboardObjectId===obj.id).map(c => {
         const onC = allObjects().filter(o=>o.circuit===c.id);
         const count = onC.length;
         const p = PROTECTION_LIBRARY.find(x=>x.id===c.protectionId);
-        const detail = c.kind==='data' ? (c.cable||'') : `${c.cable||''} · ${p?p.label:''}`;
+        const detail = `${c.cable||''} · ${p?p.label:''}`;
         // Prefer bank/group names for lights, custom names for GPOs
         const names = [];
         const seenBanks = new Set();
@@ -3976,8 +4561,19 @@ function openProps(id){
         return `<div>${c.id} — ${c.description||''} · ${detail} · ${count} device${count===1?'':'s'}${nameLine}</div>`;
       }).join('')}</div></div>`;
     } else {
-      distributionHtml = `<div class="prop-row"><label>${heading}</label><span style="color:var(--text-dim); font-size:12px;">Nothing linked yet — create a circuit/connection and link it to ${deviceDisplayName(obj)} from the Circuits sheet.</span></div>`;
+      distributionHtml = `<div class="prop-row"><label>Feeds these circuits</label><span style="color:var(--text-dim); font-size:12px;">Nothing linked yet — create a circuit and link it to ${deviceDisplayName(obj)} from the Circuits sheet.</span></div>`;
     }
+  }
+  // Comms rack: its own ports summary, separate from the circuit/switchboard
+  // system above -- full management (add/rename/describe a port, assign a
+  // device) lives in the dedicated Comms Racks sheet, not crammed in here.
+  let commsPortsHtml = '';
+  if(obj.symbolId==='comms_rack'){
+    const ports = obj.commsPorts || [];
+    const used = ports.filter(p=>p.deviceId).length;
+    commsPortsHtml = `<div class="prop-row"><label>Ports</label><div style="font-size:12.5px; color:var(--text-dim); margin-bottom:6px;">${used} of ${ports.length} in use</div>
+      <button id="btnManageCommsPorts" style="background:var(--panel2); border:1px solid var(--line); color:var(--text); padding:8px 12px; border-radius:6px; font-size:12px;">Manage ports</button>
+    </div>`;
   }
 
   // cable routes whose endpoint sits at this device (drawn starting/ending here)
@@ -3998,12 +4594,13 @@ function openProps(id){
   document.getElementById('propsBody').innerHTML = `
     ${lockedLayer ? '<div style="font-size:12px; color:var(--amber); margin-bottom:10px;">🔒 This layer is locked — device is read-only until unlocked in Layers.</div>' : ''}
     <div class="prop-row"><label>Name</label><input id="p_customName" value="${obj.props.customName||''}" placeholder="${sym.label}" ${lockedLayer?'disabled':''}></div>
-    <div class="prop-row"><label>Circuit</label><select id="p_circuit" ${lockedLayer?'disabled':''}>${circuitOptions}</select></div>
+    ${circuitRowHtml}
     <div class="prop-row"><label>Room</label><select id="p_room" ${lockedLayer?'disabled':''}>${roomOptions}</select></div>
     ${linksHtml}
     ${cablesHtml}
     ${switchConfigHtml}
     ${distributionHtml}
+    ${commsPortsHtml}
     <div class="prop-grid2">
       <div class="prop-row"><label>Manufacturer</label><input id="p_manufacturer" value="${obj.props.manufacturer}" ${lockedLayer?'disabled':''}></div>
       <div class="prop-row"><label>Model</label><input id="p_model" value="${obj.props.model}" ${lockedLayer?'disabled':''}></div>
@@ -4039,9 +4636,24 @@ function openProps(id){
     el.addEventListener('change', (e) => {
       const val = e.target.type==='number' ? (parseFloat(e.target.value)||0) : e.target.value;
       if(path.startsWith('props.')) obj.props[path.split('.')[1]] = val; else obj[path] = val;
+      if(elId==='p_circuit') propagateSwitchCircuitToLinkedLights(obj);
       pushHistory(); renderSchedule(); updateQuote(); render();
     });
   });
+  // Comms port isn't a plain field on the device (fieldMap above) -- it's a
+  // two-sided link, so it goes through assignDeviceToPort to keep the
+  // port's own deviceId in sync rather than just setting something on obj.
+  const commsPortEl = document.getElementById('p_comms_port');
+  if(commsPortEl && !commsPortEl.disabled){
+    commsPortEl.addEventListener('change', (e) => {
+      assignDeviceToPort(obj.id, e.target.value || null);
+      openProps(obj.id);
+    });
+  }
+  const managePortsBtn = document.getElementById('btnManageCommsPorts');
+  if(managePortsBtn){
+    managePortsBtn.addEventListener('click', () => { renderCommsRacksSheet(obj.id); openSheet('sheetCommsRacks'); });
+  }
   const nameEl = document.getElementById('p_customName');
   if(nameEl && !nameEl.disabled){
     nameEl.addEventListener('change', (e) => {
@@ -4167,6 +4779,16 @@ function updateQuote(){
     materials += effectivePrice(o)*qty;
     labourCost += effectiveLabour(o)*qty*labourRate;
   });
+  // Patch panels are derived from port count, not placed -- see
+  // allPatchPanelLines(). Priced off the same (still editable) Device
+  // Library entry a placed patch_panel would have used.
+  const patchPanelSym = SYMBOL_LIBRARY.find(s=>s.id==='patch_panel');
+  if(patchPanelSym){
+    allPatchPanelLines().forEach(line => {
+      materials += patchPanelSym.defaultProps.material_cost * line.units;
+      labourCost += patchPanelSym.defaultProps.labour_hours * line.units * labourRate;
+    });
+  }
   const protection = state.circuits.filter(c=>c.kind!=='data').reduce((sum,c) => sum + effectiveProtectionCost(c), 0);
   const subtotal = materials+labourCost+protection+equipment+travel;
   const margin = subtotal*marginPct;
@@ -4189,16 +4811,57 @@ function fmt(n){ return '$'+n.toLocaleString('en-AU',{minimumFractionDigits:2,ma
 
 function renderSchedule(){
   renderLegend();
+  document.getElementById('quoteSummaryToggle').classList.toggle('on', state.quoteItemized);
   const body = document.getElementById('scheduleBody');
   body.innerHTML = '';
   const labourRate = parseFloat(document.getElementById('rateLabour').value)||0;
+  const patchPanelSym = SYMBOL_LIBRARY.find(s=>s.id==='patch_panel');
+
+  if(state.quoteItemized){
+    allObjects().forEach(o => {
+      const sym = SYMBOL_LIBRARY.find(s=>s.id===o.symbolId);
+      const qty = o.props.quantity||1;
+      const lineTotal = (effectivePrice(o)*qty)+(effectiveLabour(o)*qty*labourRate);
+      const overrideTag = (o.props.priceOverride!=null) ? ' *' : '';
+      const row = document.createElement('tr');
+      row.innerHTML = `<td>${o.id}</td><td>${sym.label}${overrideTag}</td><td>${o.__floorName}</td><td>${qty}</td><td>${fmt(lineTotal)}</td>`;
+      body.appendChild(row);
+    });
+    if(patchPanelSym){
+      allPatchPanelLines().forEach(line => {
+        const lineTotal = (patchPanelSym.defaultProps.material_cost*line.units) + (patchPanelSym.defaultProps.labour_hours*line.units*labourRate);
+        const row = document.createElement('tr');
+        row.innerHTML = `<td>${line.rack.id}</td><td>${patchPanelSym.label} (${deviceDisplayName(line.rack)})</td><td>${line.floorName}</td><td>${line.units}</td><td>${fmt(lineTotal)}</td>`;
+        body.appendChild(row);
+      });
+    }
+    return;
+  }
+
+  // Summary view -- one row per device type (+ switch gang, + floor), quantities summed.
+  const groups = {}; const order = [];
+  const addQty = (key, label, floorName, qty, total) => {
+    if(!groups[key]){ groups[key] = { label, floorName, qty:0, total:0 }; order.push(key); }
+    groups[key].qty += qty; groups[key].total += total;
+  };
   allObjects().forEach(o => {
     const sym = SYMBOL_LIBRARY.find(s=>s.id===o.symbolId);
     const qty = o.props.quantity||1;
     const lineTotal = (effectivePrice(o)*qty)+(effectiveLabour(o)*qty*labourRate);
-    const overrideTag = (o.props.priceOverride!=null) ? ' *' : '';
+    const gang = isSwitchSymbol(o.symbolId) ? (o.props.gang||1) : null;
+    const label = sym.label + (gang!=null ? ' — '+gang+' gang' : '');
+    addQty(o.symbolId+(gang!=null?'::'+gang:'')+'::'+o.__floorName, label, o.__floorName, qty, lineTotal);
+  });
+  if(patchPanelSym){
+    allPatchPanelLines().forEach(line => {
+      const lineTotal = (patchPanelSym.defaultProps.material_cost*line.units) + (patchPanelSym.defaultProps.labour_hours*line.units*labourRate);
+      addQty('patch_panel::'+line.floorName, patchPanelSym.label, line.floorName, line.units, lineTotal);
+    });
+  }
+  order.forEach(key => {
+    const g = groups[key];
     const row = document.createElement('tr');
-    row.innerHTML = `<td>${o.id}</td><td>${sym.label}${overrideTag}</td><td>${o.__floorName}</td><td>${qty}</td><td>${fmt(lineTotal)}</td>`;
+    row.innerHTML = `<td>—</td><td>${g.label}</td><td>${g.floorName}</td><td>${g.qty}</td><td>${fmt(g.total)}</td>`;
     body.appendChild(row);
   });
 }
@@ -4237,7 +4900,67 @@ function diversifiedWatts(connectedW, type){
   return connectedW;
 }
 const MAINS_VOLTAGE = 230; // nominal AU single-phase — three-phase circuits are shown at their single-phase-equivalent current, a simplification flagged in the UI
+
+function findObjectAnywhere(id){
+  for(const f of state.floors){ const o = f.objects.find(x=>x.id===id); if(o) return { obj:o, floor:f }; }
+  return null;
+}
+function deviceHeightMm(obj){
+  const sym = SYMBOL_LIBRARY.find(s=>s.id===obj.symbolId);
+  const v = obj.props.height_mm;
+  return (v!=null && v!=='') ? Number(v) : (sym && sym.defaultProps.height_mm!=null ? sym.defaultProps.height_mm : 1200);
+}
+// Estimated cable length for a circuit: a nearest-neighbour loop starting at
+// the linked switchboard, running through the roof space and down to each
+// device in turn (closest to furthest, then looping on to the next) --
+// the same principle a real daisy-chained circuit run uses, rather than a
+// separate home run per device. Only devices on the switchboard's own
+// floor have usable geometry; anything on another floor is left out of the
+// length and reported separately so it's never silently dropped.
+//
+// NOTE TO SELF (deliberately not attempted yet, per the user 30 Aug 2026):
+// this only estimates hard-active runs (switchboard -> switch). It does NOT
+// estimate the cable(s) actually needed to switch a light/fan/etc -- that's
+// a genuinely harder problem the user wants added *later*: a single switched
+// point can need more than one cable of different types at once (e.g. a
+// light/fan combo commonly needs a Twin & Earth run as well as a separate
+// SDI/3-core for the fan speed or a second function), so it can't be
+// estimated the same generic way GPOs/hard-actives are. The user's own
+// framing: this will likely need a redesign around a switch's own view --
+// what's actually fed from it, and which cable type feeds which downstream
+// function -- rather than bolting more cases onto this function. Don't
+// build this speculatively; wait for that conversation.
+function estimateCircuitCableLength(circuit, ceilingMm, slackPct){
+  if(!circuit.switchboardObjectId) return { ok:false, reason:'No switchboard placed on the plan for this circuit yet' };
+  const found = findObjectAnywhere(circuit.switchboardObjectId);
+  if(!found) return { ok:false, reason:'Linked switchboard could not be found' };
+  const { obj: board, floor } = found;
+  if(!floor.scale) return { ok:false, reason: floor.name + ' isn\'t calibrated — use Calibrate for a real-world estimate' };
+
+  const allDevices = allObjects().filter(o => o.circuit===circuit.id);
+  const sameFloor = allDevices.filter(o => o.__floorName === floor.name);
+  const otherFloorCount = allDevices.length - sameFloor.length;
+  if(!sameFloor.length) return { ok:false, reason:'No devices assigned to this circuit on the switchboard\'s floor', otherFloorCount };
+
+  // Same degree-constrained tree used for the on-plan run (computeChainEdges)
+  // so the metres reported here match what's actually drawn, rather than a
+  // separately-computed strict chain that could disagree with it.
+  const { edges } = computeChainEdges(floor, sameFloor.map(o=>o.id), board, CIRCUIT_JUNCTION_MAX_CABLES);
+  let totalMm = 0;
+  edges.forEach(({from,to}) => {
+    const distPx = Math.hypot(from.x-to.x, from.y-to.y);
+    const horizontalMm = (distPx / floor.scale) * 1000;
+    const riseMm = Math.max(ceilingMm - deviceHeightMm(from), 0);
+    const dropMm = Math.max(ceilingMm - deviceHeightMm(to), 0);
+    totalMm += riseMm + horizontalMm + dropMm;
+  });
+  const meters = (totalMm * (1 + (slackPct||0)/100)) / 1000;
+  return { ok:true, meters, deviceCount: sameFloor.length, otherFloorCount };
+}
+
 function buildPanelScheduleData(){
+  const ceilingMm = parseFloat(document.getElementById('cableCeilingHeight').value) || 3000;
+  const slackPct = parseFloat(document.getElementById('cableSlackPct').value) || 0;
   const boards = {};
   sortedCircuits().filter(c=>c.kind!=='data').forEach(c => {
     const boardLabel = resolveSwitchboardLabel(c);
@@ -4249,8 +4972,9 @@ function buildPanelScheduleData(){
     const prot = PROTECTION_LIBRARY.find(p=>p.id===c.protectionId);
     const protectionA = prot ? prot.amps : null;
     const overRated = protectionA!=null && connectedA > protectionA;
+    const cableEstimate = estimateCircuitCableLength(c, ceilingMm, slackPct);
     if(!boards[boardLabel]) boards[boardLabel] = { boardLabel, circuits:[], connectedW:0, demandW:0 };
-    boards[boardLabel].circuits.push({ circuit:c, deviceCount:devices.length, connectedW, connectedA, demandW, protectionA, protectionLabel: prot?prot.label:'—', overRated, diversityType });
+    boards[boardLabel].circuits.push({ circuit:c, deviceCount:devices.length, connectedW, connectedA, demandW, protectionA, protectionLabel: prot?prot.label:'—', overRated, diversityType, cableEstimate });
     boards[boardLabel].connectedW += connectedW;
     boards[boardLabel].demandW += demandW;
   });
@@ -4268,7 +4992,13 @@ function renderPanelSchedule(){
     const mainAmps = state.boardMainSwitchAmps[b.boardLabel];
     const demandA = b.demandW / MAINS_VOLTAGE;
     const pctOfMain = (mainAmps && mainAmps>0) ? (demandA/mainAmps*100) : null;
-    const rows = b.circuits.map(row => `
+    const rows = b.circuits.map(row => {
+      const ce = row.cableEstimate;
+      const otherFloorNote = ce.otherFloorCount ? ` <span title="${ce.otherFloorCount} device(s) on another floor not included">(+${ce.otherFloorCount} elsewhere)</span>` : '';
+      const cableCell = ce.ok
+        ? `~${ce.meters.toFixed(1)}m${otherFloorNote}`
+        : `<span style="color:var(--text-dim);" title="${ce.reason}">—</span>`;
+      return `
       <tr>
         <td>${row.circuit.id}${row.overRated?' ⚠':''}</td>
         <td>${row.circuit.description||'—'}</td>
@@ -4277,7 +5007,9 @@ function renderPanelSchedule(){
         <td>${row.deviceCount}</td>
         <td>${row.connectedW.toFixed(0)}W / ${row.connectedA.toFixed(1)}A</td>
         <td title="${DIVERSITY_TYPE_LABELS[row.diversityType]}">${row.demandW.toFixed(0)}W</td>
-      </tr>`).join('');
+        <td>${cableCell}</td>
+      </tr>`;
+    }).join('');
     const overRatedNote = b.circuits.some(r=>r.overRated)
       ? `<div style="color:var(--red); font-size:11.5px; margin-top:6px;">⚠ One or more circuits' connected load exceeds their protection device's rating — review before relying on this board.</div>` : '';
     return `
@@ -4285,7 +5017,7 @@ function renderPanelSchedule(){
         <div style="font-weight:700; font-size:13.5px; margin-bottom:6px;">${b.boardLabel}</div>
         <div style="overflow-x:auto;">
           <table style="width:100%; font-size:11.5px; border-collapse:collapse;">
-            <thead><tr style="color:var(--text-dim); text-align:left;"><th>Circuit</th><th>Description</th><th>Cable</th><th>Protection</th><th>Qty</th><th>Connected</th><th>Est. demand</th></tr></thead>
+            <thead><tr style="color:var(--text-dim); text-align:left;"><th>Circuit</th><th>Description</th><th>Cable</th><th>Protection</th><th>Qty</th><th>Connected</th><th>Est. demand</th><th>Est. cable run</th></tr></thead>
             <tbody>${rows}</tbody>
           </table>
         </div>
@@ -4299,7 +5031,7 @@ function renderPanelSchedule(){
         ${pctOfMain!=null ? `<div style="font-size:12px; color:${pctOfMain>100?'var(--red)':'var(--text-dim)'}; margin-top:4px;">${pctOfMain.toFixed(0)}% of main switch capacity used (estimate)${pctOfMain>100?' — exceeds rating':''}</div>` : ''}
         ${overRatedNote}
       </div>`;
-  }).join('') + `<div style="font-size:10.5px; color:var(--text-dim); margin-top:4px; line-height:1.5;">Connected load uses each device's typical load from the Device Library (editable per device and per type). Demand load applies a simplified diversity estimate for early planning only — always verify against AS/NZS 3000 and your own professional judgement before relying on it for a real installation.</div>`;
+  }).join('') + `<div style="font-size:10.5px; color:var(--text-dim); margin-top:4px; line-height:1.5;">Connected load uses each device's typical load from the Device Library (editable per device and per type). Demand load applies a simplified diversity estimate for early planning only — always verify against AS/NZS 3000 and your own professional judgement before relying on it for a real installation.<br><br>Est. cable run is only an estimate, and only covers circuits linked to a switchboard with a visible cable route on the plan — it needs the floor to be Calibrated to work at all. For lighting, it only covers hard-active runs (switch fed straight from the switchboard) — the cable for actually switching the lights/fans themselves is <b>not</b> included and needs to be worked out separately, since too many different cable combinations are possible (e.g. a light/fan combo unit can need a Twin &amp; Earth run as well as a separate SDI/3-core) to estimate generically.</div>`;
   el.querySelectorAll('[data-main-amps]').forEach(inp => inp.addEventListener('change', (e) => {
     const val = parseFloat(e.target.value);
     if(!val || val<=0) delete state.boardMainSwitchAmps[e.target.dataset.mainAmps];
@@ -4307,6 +5039,9 @@ function renderPanelSchedule(){
     pushHistory(); markDirty(); renderPanelSchedule();
   }));
 }
+['cableCeilingHeight','cableSlackPct'].forEach(id => {
+  document.getElementById(id).addEventListener('input', () => { renderPanelSchedule(); markDirty(); });
+});
 document.getElementById('btnExportPanelSchedule').addEventListener('click', () => {
   const boards = buildPanelScheduleData();
   const lines = [];
@@ -4317,7 +5052,9 @@ document.getElementById('btnExportPanelSchedule').addEventListener('click', () =
   boards.forEach(b => {
     lines.push('', b.boardLabel.toUpperCase());
     b.circuits.forEach(row => {
-      lines.push(`  ${row.circuit.id}  ${row.circuit.description||''}  |  ${row.circuit.cable||'-'}  |  ${row.protectionLabel}  |  ${row.deviceCount} device(s)  |  connected ${row.connectedW.toFixed(0)}W / ${row.connectedA.toFixed(1)}A  |  est. demand ${row.demandW.toFixed(0)}W${row.overRated?'  ⚠ EXCEEDS PROTECTION RATING':''}`);
+      const ce = row.cableEstimate;
+      const cableTxt = ce.ok ? `~${ce.meters.toFixed(1)}m est. cable${ce.otherFloorCount?` (+${ce.otherFloorCount} device(s) on another floor not included)`:''}` : `est. cable: n/a (${ce.reason})`;
+      lines.push(`  ${row.circuit.id}  ${row.circuit.description||''}  |  ${row.circuit.cable||'-'}  |  ${row.protectionLabel}  |  ${row.deviceCount} device(s)  |  connected ${row.connectedW.toFixed(0)}W / ${row.connectedA.toFixed(1)}A  |  est. demand ${row.demandW.toFixed(0)}W  |  ${cableTxt}${row.overRated?'  ⚠ EXCEEDS PROTECTION RATING':''}`);
     });
     const mainAmps = state.boardMainSwitchAmps[b.boardLabel];
     const demandA = b.demandW / MAINS_VOLTAGE;
@@ -4405,6 +5142,7 @@ function buildProjectData(){
     customSymbols: state.customSymbols, symbolSize: state.symbolSize, gridOverlay: !!state.gridOverlay,
     priceListOverrides: SYMBOL_LIBRARY.map(s => ({ id:s.id, label:s.label, material_cost:s.defaultProps.material_cost, labour_hours:s.defaultProps.labour_hours, watts:s.defaultProps.watts })),
     boardMainSwitchAmps: state.boardMainSwitchAmps,
+    unassignedCommsPorts: state.unassignedCommsPorts,
     floors: state.floors.map(f => ({
       id: f.id, name: f.name, scale: f.scale, gridSpacingMM: f.gridSpacingMM, snapEnabled: f.snapEnabled,
       gridOriginX: f.gridOriginX || 0, gridOriginY: f.gridOriginY || 0,
@@ -4534,6 +5272,16 @@ function buildProjectData(){
       document.documentElement.classList.toggle(d.cls, collapsed);
       d.btn.textContent = collapsed ? d.collapsedIcon : d.openIcon;
       d.btn.title = collapsed ? d.collapsedTitle : d.openTitle;
+      // Collapsing/expanding a docked panel moves #canvas-wrap's edge just
+      // like switching the whole layout does, but nothing was telling the
+      // canvas to re-measure — it kept its previous pixel width until the
+      // window itself was resized, leaving the drawing stretched or with a
+      // dead strip down one side. Same fire-twice pattern as the layout
+      // chooser: once now, once after the .2s panel-width transition ends.
+      try {
+        window.dispatchEvent(new Event('resize'));
+        setTimeout(() => window.dispatchEvent(new Event('resize')), 260);
+      } catch(e) {}
     }
     let collapsed = false;
     try { collapsed = localStorage.getItem(d.key) === '1'; } catch(e) {}
@@ -4576,7 +5324,7 @@ function buildProjectData(){
     { label:'Cable route', keywords:'cable route wire', action:() => document.getElementById('moreCable')?.click() },
     { label:'Grid & snap', keywords:'grid snap', action:() => { openGridSheet(); openSheet('sheetGrid'); } },
     { label:'Circuits', keywords:'circuits breaker', action:() => { renderCircuits(); openSheet('sheetCircuits'); } },
-    { label:'Comms racks', keywords:'comms rack data', action:() => { renderCircuits(); openSheet('sheetCircuits'); } },
+    { label:'Comms racks', keywords:'comms rack data patch panel port', action:() => { renderCommsRacksSheet(); openSheet('sheetCommsRacks'); } },
     { label:'Quote', keywords:'quote price cost', action:() => { updateQuote(); renderSchedule(); openSheet('sheetQuote'); } },
     { label:'Panel schedule', keywords:'panel schedule load estimate', action:() => { renderPanelSchedule(); openSheet('sheetPanelSchedule'); } },
     { label:'Device library', keywords:'device library price list', action:() => { renderPriceList(); openSheet('sheetPriceList'); } },
@@ -4585,6 +5333,8 @@ function buildProjectData(){
     { label:'Floors', keywords:'floors levels', action:() => { renderFloors(); openSheet('sheetFloors'); } },
     { label:'Rooms', keywords:'rooms assign', action:() => { renderRooms(); openSheet('sheetRooms'); } },
     { label:'Elevation', keywords:'elevation wall view', action:() => { renderElevationSelect(); openSheet('sheetElevation'); } },
+    { label:'Print / PDF export', keywords:'print pdf export legend', action:() => document.getElementById('dtbPrintExport')?.click() },
+    { label:'Report a problem', keywords:'report bug problem feedback', action:() => document.getElementById('dtbReportProblem')?.click() },
     { label:'Save now', keywords:'save', shortcut:'Ctrl+S', action:() => document.getElementById('btnSave')?.click() },
     { label:'Undo', keywords:'undo', shortcut:'Ctrl+Z', action:() => document.getElementById('btnUndo')?.click() },
     { label:'Redo', keywords:'redo', shortcut:'Ctrl+Y', action:() => document.getElementById('btnRedo')?.click() },
@@ -4852,7 +5602,12 @@ function applyLoadedProject(d){
   document.getElementById('costEquipment').value = d.costEquipment || 0;
   document.getElementById('costTravel').value = d.costTravel || 0;
   state.layers = normalizeLayers(d.layers);
-  state.circuits = d.circuits || [];
+  // Converts any leftover old-format data connections (kind:'data' circuits)
+  // into ports on their rack -- mutates d.floors in place, so this must run
+  // before the floor-construction below reads from it.
+  const migratedComms = migrateLegacyCommsData(d);
+  state.circuits = migratedComms.circuits;
+  state.unassignedCommsPorts = migratedComms.unassigned;
   state.elevations = d.elevations || [];
   state.activeElevationId = null;
   state.symbolSize = d.symbolSize || 16;
@@ -4908,11 +5663,14 @@ function applyLoadedProject(d){
     state.floors = floors;
     state.activeFloorIndex = Math.min(d.activeFloorIndex || 0, state.floors.length - 1);
     resyncNextId();
-    updateFloorBadge(); fitToScreen(); renderSchedule(); updateQuote(); updateScaleBadge();
+    updateFloorBadge(); fitToScreen(); renderSchedule(); updateQuote(); updateScaleBadge(); renderLayersMobile();
     history = []; historyIndex = -1; pushHistory();
     clearTimeout(autosaveTimer);
     state.saveStatus = 'saved'; updateSaveStatusUI();
     render();
+    if(migratedComms.unassigned.length && migratedComms.unassigned.some(p => !(d.unassignedCommsPorts||[]).includes(p))){
+      showToast('Migrated ' + migratedComms.unassigned.length + ' legacy comms connection(s) with no linked rack — assign them from Comms Racks');
+    }
   });
 }
 // state.nextId starts at 1 on every page load and was never resynced when a
@@ -5984,6 +6742,7 @@ function clearCurrentProject(name){
   state.elevations = [];
   state.activeElevationId = null;
   state.boardMainSwitchAmps = {};
+  state.unassignedCommsPorts = [];
   state.layers = LAYER_DEFS.map(l => ({ ...l, visible: true }));
   state.selectedObjectId = null;
   state.selectedCableId = null;
@@ -6033,7 +6792,7 @@ document.querySelectorAll('.dtb-btn[data-dtool]').forEach(btn => {
 document.getElementById('dtbCircuits').addEventListener('click', () => { renderCircuits(); openSheet('sheetCircuits'); });
 document.getElementById('dtbGrid').addEventListener('click', () => { openGridSheet(); openSheet('sheetGrid'); });
 document.getElementById('dtbPriceList').addEventListener('click', () => { renderPriceList(); openSheet('sheetPriceList'); });
-document.getElementById('dtbCommsRacks').addEventListener('click', () => { renderCircuits(); openSheet('sheetCircuits'); });
+document.getElementById('dtbCommsRacks').addEventListener('click', () => { renderCommsRacksSheet(); openSheet('sheetCommsRacks'); });
 document.getElementById('dtbVersions').addEventListener('click', () => { renderVersionHistory(); openSheet('sheetVersions'); });
 document.getElementById('dtbDuplicates').addEventListener('click', () => { renderDuplicatesReport(); openSheet('sheetDuplicates'); });
 document.getElementById('dtbPanelSchedule').addEventListener('click', () => { renderPanelSchedule(); openSheet('sheetPanelSchedule'); });
