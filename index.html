@@ -4479,6 +4479,14 @@ function pickerDeleteLocal(key, name){
         const pointer = await storageAPI.get('last-open-project');
         if(pointer && pointer.value === key) await storageAPI.delete('last-open-project');
       } catch(_){}
+      // The picker treats a local save and its auto-synced cloud copy as one
+      // project (same id, deduped to a single tile) once both exist -- so
+      // deleting "it" here without also clearing the cloud row left that
+      // row behind, and the project immediately reappeared in the list as
+      // a cloud tile right after this "cannot be undone" delete completed.
+      if(cloudUser && cloudConfigured){
+        try{ await supabaseClient.from('projects').delete().eq('id', key.replace(/^project:/,'')).eq('user_id', cloudUser.id); } catch(_){}
+      }
       showToast('Deleted');
       renderProjectPicker();
     } catch(err){ showToast('Delete failed: ' + err.message); }
@@ -4489,6 +4497,10 @@ function pickerDeleteCloud(id){
     try{
       const { error } = await supabaseClient.from('projects').delete().eq('id', id);
       if(error) throw error;
+      // See pickerDeleteLocal -- same project, same id, symmetric cleanup so
+      // an auto-synced local copy doesn't make this "permanent" delete
+      // immediately reappear in the list as a local-only tile.
+      try{ await storageAPI.delete('project:' + id); } catch(_){}
       showToast('Deleted');
       renderProjectPicker();
     } catch(err){ showToast('Delete failed: ' + err.message); }
