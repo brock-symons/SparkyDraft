@@ -672,7 +672,7 @@ html.force-desktop{
       <button data-dist="v">≡ Space V</button>
       <button id="multiAssignSwitch">🔗 Assign switch</button>
       <button id="multiAssignCircuit">⏚ Assign circuit</button>
-      <button id="multiAssignRoom" class="hidden-feature">▭ Assign room</button>
+      <button id="multiAssignRoom">▭ Assign room</button>
       <button id="multiDuplicate">⧉ Duplicate</button>
       <button id="multiDelete" class="danger">🗑 Delete</button>
     </div>
@@ -793,7 +793,7 @@ html.force-desktop{
     <div class="tool-row">
       <div class="tool-card" id="morePriceList"><span class="icon">🏷</span><span class="lbl">Device library</span></div>
       <div class="tool-card" id="moreVersions"><span class="icon">🕐</span><span class="lbl">History</span></div>
-      <div class="tool-card hidden-feature" id="moreRooms"><span class="icon">▭</span><span class="lbl">Rooms</span></div>
+      <div class="tool-card" id="moreRooms"><span class="icon">▭</span><span class="lbl">Rooms</span></div>
     </div>
     <div class="tool-row">
       <div class="tool-card hidden-feature" id="moreWall"><span class="icon">▬</span><span class="lbl">Mark wall</span></div>
@@ -3628,7 +3628,7 @@ function openProps(id){
     ${lockedLayer ? '<div style="font-size:12px; color:var(--amber); margin-bottom:10px;">🔒 This layer is locked — device is read-only until unlocked in Layers.</div>' : ''}
     <div class="prop-row"><label>Name</label><input id="p_customName" value="${obj.props.customName||''}" placeholder="${sym.label}" ${lockedLayer?'disabled':''}></div>
     <div class="prop-row"><label>Circuit</label><select id="p_circuit" ${lockedLayer?'disabled':''}>${circuitOptions}</select></div>
-    <div class="prop-row hidden-feature"><label>Room</label><select id="p_room">${roomOptions}</select></div>
+    <div class="prop-row"><label>Room</label><select id="p_room" ${lockedLayer?'disabled':''}>${roomOptions}</select></div>
     ${linksHtml}
     ${cablesHtml}
     ${switchConfigHtml}
