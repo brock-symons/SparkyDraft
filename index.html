@@ -753,6 +753,9 @@ html.force-desktop{
     <div class="quote-line total"><span>Total</span><span id="qTotal">$0.00</span></div>
     <div style="font-size:10.5px; color:var(--text-dim); margin-top:8px;">* = device has a price override, not using the product default</div>
     <button class="add-btn" id="btnExportQuote" style="background:var(--panel2); border-color:var(--line); color:var(--text);">📋 Export summary (copy text)</button>
+    <div class="prop-row" style="margin-top:10px;"><label>Itemized (one row per device)</label>
+      <div class="toggle" id="quoteSummaryToggle"><div class="knob"></div></div>
+    </div>
     <table><thead><tr><th>ID</th><th>Type</th><th>Floor</th><th>Qty</th><th>Total</th></tr></thead><tbody id="scheduleBody"></tbody></table>
   </div>
 </div>
@@ -1171,6 +1174,7 @@ let state = {
   multiSelectMode:false, multiSelectedIds: new Set(),
   showCircuitLabels:false,
   showSwitchRuns:false,
+  quoteItemized:false, // false = quantity summary grouped by type, true = one row per device
   isolatedCircuitId:null, // when set, only this circuit's cabling is drawn — lets a user see one circuit's run at a time
   gridOverlay:false, // when true, grid is drawn above the plan (still semi-transparent)
   boardMainSwitchAmps:{}, // board display label -> main switch/incoming supply rating (A), for the Panel Schedule's capacity-used estimate
@@ -2671,6 +2675,10 @@ document.getElementById('moreLink').addEventListener('click', () => { setTool('l
 document.getElementById('moreScale').addEventListener('click', () => { setTool('calibrate'); closeSheets(); });
 document.getElementById('moreWall').addEventListener('click', () => { setTool('wall'); closeSheets(); });
 document.getElementById('moreQuote').addEventListener('click', () => { updateQuote(); renderSchedule(); openSheet('sheetQuote'); });
+document.getElementById('quoteSummaryToggle').addEventListener('click', () => {
+  state.quoteItemized = !state.quoteItemized;
+  renderSchedule();
+});
 document.getElementById('moreCircuits').addEventListener('click', () => { renderCircuits(); openSheet('sheetCircuits'); });
 document.getElementById('moreCommsRacks').addEventListener('click', () => { renderCommsRacksSheet(); openSheet('sheetCommsRacks'); });
 document.getElementById('moreReportProblem').addEventListener('click', () => { closeSheets(); openReportProblemForm(); });
@@ -3249,10 +3257,26 @@ document.getElementById('btnExportQuote').addEventListener('click', () => {
   lines.push('Generated ' + new Date().toLocaleDateString('en-AU'));
   lines.push('');
   lines.push('DEVICE SCHEDULE');
-  allObjects().forEach(o => {
-    const sym = SYMBOL_LIBRARY.find(s=>s.id===o.symbolId);
-    lines.push(`${o.id}  ${sym.label}  x${o.props.quantity||1}  [${o.__floorName}]${o.circuit ? '  circuit:'+o.circuit : ''}`);
-  });
+  if(state.quoteItemized){
+    allObjects().forEach(o => {
+      const sym = SYMBOL_LIBRARY.find(s=>s.id===o.symbolId);
+      lines.push(`${o.id}  ${sym.label}  x${o.props.quantity||1}  [${o.__floorName}]${o.circuit ? '  circuit:'+o.circuit : ''}`);
+    });
+  } else {
+    const groups = {}; const order = [];
+    allObjects().forEach(o => {
+      const sym = SYMBOL_LIBRARY.find(s=>s.id===o.symbolId);
+      const gang = isSwitchSymbol(o.symbolId) ? (o.props.gang||1) : null;
+      const label = sym.label + (gang!=null ? ' — '+gang+' gang' : '');
+      const key = o.symbolId+(gang!=null?'::'+gang:'')+'::'+o.__floorName;
+      if(!groups[key]){ groups[key] = { label, floorName:o.__floorName, qty:0 }; order.push(key); }
+      groups[key].qty += o.props.quantity||1;
+    });
+    order.forEach(key => {
+      const g = groups[key];
+      lines.push(`${g.label}  x${g.qty}  [${g.floorName}]`);
+    });
+  }
   lines.push('');
   lines.push('SWITCHBOARD / CIRCUIT SCHEDULE');
   if(state.circuits.length===0){ lines.push('(none defined)'); }
@@ -4213,27 +4237,59 @@ function fmt(n){ return '$'+n.toLocaleString('en-AU',{minimumFractionDigits:2,ma
 
 function renderSchedule(){
   renderLegend();
+  document.getElementById('quoteSummaryToggle').classList.toggle('on', state.quoteItemized);
   const body = document.getElementById('scheduleBody');
   body.innerHTML = '';
   const labourRate = parseFloat(document.getElementById('rateLabour').value)||0;
+  const patchPanelSym = SYMBOL_LIBRARY.find(s=>s.id==='patch_panel');
+
+  if(state.quoteItemized){
+    allObjects().forEach(o => {
+      const sym = SYMBOL_LIBRARY.find(s=>s.id===o.symbolId);
+      const qty = o.props.quantity||1;
+      const lineTotal = (effectivePrice(o)*qty)+(effectiveLabour(o)*qty*labourRate);
+      const overrideTag = (o.props.priceOverride!=null) ? ' *' : '';
+      const row = document.createElement('tr');
+      row.innerHTML = `<td>${o.id}</td><td>${sym.label}${overrideTag}</td><td>${o.__floorName}</td><td>${qty}</td><td>${fmt(lineTotal)}</td>`;
+      body.appendChild(row);
+    });
+    if(patchPanelSym){
+      allPatchPanelLines().forEach(line => {
+        const lineTotal = (patchPanelSym.defaultProps.material_cost*line.units) + (patchPanelSym.defaultProps.labour_hours*line.units*labourRate);
+        const row = document.createElement('tr');
+        row.innerHTML = `<td>${line.rack.id}</td><td>${patchPanelSym.label} (${deviceDisplayName(line.rack)})</td><td>${line.floorName}</td><td>${line.units}</td><td>${fmt(lineTotal)}</td>`;
+        body.appendChild(row);
+      });
+    }
+    return;
+  }
+
+  // Summary view -- one row per device type (+ switch gang, + floor), quantities summed.
+  const groups = {}; const order = [];
+  const addQty = (key, label, floorName, qty, total) => {
+    if(!groups[key]){ groups[key] = { label, floorName, qty:0, total:0 }; order.push(key); }
+    groups[key].qty += qty; groups[key].total += total;
+  };
   allObjects().forEach(o => {
     const sym = SYMBOL_LIBRARY.find(s=>s.id===o.symbolId);
     const qty = o.props.quantity||1;
     const lineTotal = (effectivePrice(o)*qty)+(effectiveLabour(o)*qty*labourRate);
-    const overrideTag = (o.props.priceOverride!=null) ? ' *' : '';
-    const row = document.createElement('tr');
-    row.innerHTML = `<td>${o.id}</td><td>${sym.label}${overrideTag}</td><td>${o.__floorName}</td><td>${qty}</td><td>${fmt(lineTotal)}</td>`;
-    body.appendChild(row);
+    const gang = isSwitchSymbol(o.symbolId) ? (o.props.gang||1) : null;
+    const label = sym.label + (gang!=null ? ' — '+gang+' gang' : '');
+    addQty(o.symbolId+(gang!=null?'::'+gang:'')+'::'+o.__floorName, label, o.__floorName, qty, lineTotal);
   });
-  const patchPanelSym = SYMBOL_LIBRARY.find(s=>s.id==='patch_panel');
   if(patchPanelSym){
     allPatchPanelLines().forEach(line => {
       const lineTotal = (patchPanelSym.defaultProps.material_cost*line.units) + (patchPanelSym.defaultProps.labour_hours*line.units*labourRate);
-      const row = document.createElement('tr');
-      row.innerHTML = `<td>${line.rack.id}</td><td>${patchPanelSym.label} (${deviceDisplayName(line.rack)})</td><td>${line.floorName}</td><td>${line.units}</td><td>${fmt(lineTotal)}</td>`;
-      body.appendChild(row);
+      addQty('patch_panel::'+line.floorName, patchPanelSym.label, line.floorName, line.units, lineTotal);
     });
   }
+  order.forEach(key => {
+    const g = groups[key];
+    const row = document.createElement('tr');
+    row.innerHTML = `<td>—</td><td>${g.label}</td><td>${g.floorName}</td><td>${g.qty}</td><td>${fmt(g.total)}</td>`;
+    body.appendChild(row);
+  });
 }
 
 // ===================================================================
