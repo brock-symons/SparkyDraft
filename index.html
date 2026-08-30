@@ -800,6 +800,9 @@ html.force-desktop{
       <div class="tool-card" id="moreDuplicates"><span class="icon">🧹</span><span class="lbl">Find duplicates</span></div>
       <div class="tool-card" id="morePanelSchedule"><span class="icon">🧮</span><span class="lbl">Panel schedule</span></div>
     </div>
+    <div class="tool-row">
+      <div class="tool-card" id="moreCommsRacks"><span class="icon">🗄</span><span class="lbl">Comms racks</span></div>
+    </div>
   </div>
 </div>
 
@@ -874,10 +877,19 @@ html.force-desktop{
 
 <div class="sheet" id="sheetCircuits">
   <div class="sheet-handle"></div>
-  <div class="sheet-header"><div class="sheet-title">Circuits &amp; Comms Racks</div><div class="sheet-close" data-close>✕</div></div>
+  <div class="sheet-header"><div class="sheet-title">Circuits</div><div class="sheet-close" data-close>✕</div></div>
   <div class="sheet-body">
     <div id="circuitList"></div>
-    <button class="add-btn" id="btnAddCircuit">+ New circuit / connection</button>
+    <button class="add-btn" id="btnAddCircuit">+ New circuit</button>
+  </div>
+</div>
+
+<div class="sheet" id="sheetCommsRacks">
+  <div class="sheet-handle"></div>
+  <div class="sheet-header"><div class="sheet-title">Comms Racks</div><div class="sheet-close" data-close>✕</div></div>
+  <div class="sheet-body">
+    <div style="font-size:11px; color:var(--text-dim); margin-bottom:12px; line-height:1.5;">Every comms/data device gets its own dedicated cable ("home run") straight back to one numbered port on a rack — separate from electrical circuits entirely. Place a Comms Rack device on the plan to get one with 8 ports, ready to assign.</div>
+    <div id="commsRacksBody"></div>
   </div>
 </div>
 
@@ -1048,6 +1060,22 @@ function circuitSelectOptions(selectedId){
     `<option value="${c.id}" ${selectedId===c.id?'selected':''}>${c.id}${c.description?' — '+c.description:''}</option>`
   ).join('');
 }
+// Every port across every rack on the CURRENT floor, minus whichever one
+// is already taken by a different device (a port holds at most one home
+// run) -- always includes this device's own current port so it shows as
+// selected. Comms devices only ever link within their own floor, same as
+// how comms runs are only ever drawn on the floor they're actually on.
+function commsPortOptions(deviceId){
+  let html = '<option value="">— none —</option>';
+  currentFloor().objects.filter(o=>o.symbolId==='comms_rack').forEach(rack => {
+    (rack.commsPorts||[]).forEach(port => {
+      if(port.deviceId && port.deviceId!==deviceId) return;
+      const label = deviceDisplayName(rack) + ' — ' + (port.label || ('Port '+port.number));
+      html += `<option value="${port.id}" ${port.deviceId===deviceId?'selected':''}>${label}</option>`;
+    });
+  });
+  return html;
+}
 function deviceDisplayName(obj){
   if(!obj) return '';
   if(obj.props && obj.props.customName) return obj.props.customName;
@@ -1141,6 +1169,10 @@ let state = {
   isolatedCircuitId:null, // when set, only this circuit's cabling is drawn — lets a user see one circuit's run at a time
   gridOverlay:false, // when true, grid is drawn above the plan (still semi-transparent)
   boardMainSwitchAmps:{}, // board display label -> main switch/incoming supply rating (A), for the Panel Schedule's capacity-used estimate
+  // Comms ports migrated from an old-format save whose connection had no
+  // linked rack at the time -- nothing to attach them to yet, so they wait
+  // here instead of being silently dropped. See migrateLegacyCommsData().
+  unassignedCommsPorts:[],
 };
 // Product default price + object-level override (section 17-18 of the
 // revision brief). If no override, always resolve to the CURRENT product
@@ -1322,6 +1354,112 @@ function computeGpoChains(floor){
     return { circuitId, gpoIds, order, boardObj };
   });
 }
+
+// ===================================================================
+// COMMS RACKS + PORTS — a full rebuild, deliberately separate from the
+// switchboard/circuit system above. Electrical circuits are a shared
+// daisy-chain (one cable feeds several devices); real structured comms
+// cabling is the opposite -- every outlet gets its OWN dedicated
+// "home run" cable straight back to a numbered port on a rack. Modelling
+// that as a shared "circuit" (like the old kind:'data' entries in
+// state.circuits did) misrepresented how it actually works, so ports now
+// live directly on their rack object instead: a comms_rack device gets a
+// `commsPorts` array, each port a fixed, numbered slot (matching a real
+// patch panel -- ports are never deleted, only left unassigned) that can
+// hold at most one linked device. See migrateLegacyCommsData() for how an
+// old-format save's data circuits become ports here on load.
+// ===================================================================
+const DEFAULT_COMMS_PORT_COUNT = 8;
+function makeCommsPort(rackId, number){
+  return { id: rackId+'-P'+number, number, label:'Port '+number, description:'', cable:'Cat6', deviceId:null };
+}
+function defaultCommsPorts(rackId){
+  return Array.from({ length: DEFAULT_COMMS_PORT_COUNT }, (_, i) => makeCommsPort(rackId, i+1));
+}
+function allCommsRacks(){
+  // Cross-floor by design -- unlike findBoardObjects (current floor only),
+  // the dedicated Comms Racks sheet needs to list every rack in the
+  // project regardless of which floor is currently open.
+  const out = [];
+  state.floors.forEach((f, floorIndex) => {
+    f.objects.forEach(o => { if(o.symbolId==='comms_rack') out.push({ rack:o, floorIndex }); });
+  });
+  return out;
+}
+function findCommsPort(portId){
+  for(const { rack, floorIndex } of allCommsRacks()){
+    const port = (rack.commsPorts||[]).find(p=>p.id===portId);
+    if(port) return { rack, port, floorIndex };
+  }
+  return null;
+}
+function nextCommsPortNumber(rack){
+  const ports = rack.commsPorts||[];
+  return ports.length ? Math.max(...ports.map(p=>p.number)) + 1 : 1;
+}
+// A device can occupy at most one port -- assigning it somewhere new
+// clears wherever it was before, same "one home run per device" rule a
+// real installation follows. portId falsy just unassigns.
+function assignDeviceToPort(deviceId, portId){
+  allCommsRacks().forEach(({ rack }) => (rack.commsPorts||[]).forEach(p => { if(p.deviceId===deviceId) p.deviceId = null; }));
+  if(portId){
+    const found = findCommsPort(portId);
+    if(found) found.port.deviceId = deviceId;
+  }
+  pushHistory(); render(); renderSchedule(); updateQuote();
+}
+// Home-run lines for the canvas: one per occupied port, rack -> device,
+// restricted to devices on the SAME floor as their rack since only one
+// floor renders at a time anyway.
+function computeCommsRuns(floor){
+  const runs = [];
+  floor.objects.filter(o=>o.symbolId==='comms_rack').forEach(rack => {
+    (rack.commsPorts||[]).forEach(port => {
+      if(!port.deviceId) return;
+      const device = floor.objects.find(o=>o.id===port.deviceId);
+      if(device) runs.push({ rack, port, device });
+    });
+  });
+  return runs;
+}
+// Converts any leftover kind:'data' entries from the old shared-circuit
+// comms model into ports on their linked rack. A connection with no
+// linked rack (or a rack the migration can't find) can't be attached to
+// anything physical, so it's kept in state.unassignedCommsPorts instead
+// of being silently dropped -- surfaced in the Comms Racks sheet so it
+// can be assigned to a rack by hand. Runs once, on load, against the raw
+// loaded data (d.floors) before those floor objects become live state --
+// mutates rack objects in place, which is safe since applyLoadedProject
+// passes those same object references straight through afterward.
+function migrateLegacyCommsData(d){
+  const legacy = (d.circuits||[]).filter(c=>c.kind==='data');
+  const unassigned = (d.unassignedCommsPorts||[]).slice();
+  legacy.forEach(c => {
+    let rackObj = null;
+    if(c.switchboardObjectId){
+      (d.floors||[]).forEach(f => { const r = (f.objects||[]).find(o=>o.id===c.switchboardObjectId); if(r) rackObj = r; });
+    }
+    const linkedDeviceIds = [];
+    // clear the old circuit reference on migration -- it's represented by
+    // the port's deviceId now, and a stale value here would otherwise sit
+    // around as dead data pointing at a circuit id that no longer exists
+    (d.floors||[]).forEach(f => (f.objects||[]).forEach(o => { if(o.circuit===c.id){ linkedDeviceIds.push(o.id); o.circuit=''; } }));
+    const portsToMake = linkedDeviceIds.length ? linkedDeviceIds.map(id=>({ deviceId:id })) : [{ deviceId:null }];
+    if(rackObj){
+      if(!rackObj.commsPorts) rackObj.commsPorts = [];
+      portsToMake.forEach((p, i) => {
+        const num = nextCommsPortNumber(rackObj);
+        rackObj.commsPorts.push({ ...makeCommsPort(rackObj.id, num), label: portsToMake.length>1 ? c.id+' ('+(i+1)+')' : c.id, description:c.description||'', cable:c.cable||'Cat6', deviceId:p.deviceId });
+      });
+    } else {
+      portsToMake.forEach((p, i) => {
+        unassigned.push({ id:'LEGACY-'+c.id+(portsToMake.length>1?'-'+(i+1):''), label: portsToMake.length>1 ? c.id+' ('+(i+1)+')' : c.id, description:c.description||'', cable:c.cable||'Cat6', deviceId:p.deviceId });
+      });
+    }
+  });
+  return { circuits: (d.circuits||[]).filter(c=>c.kind!=='data'), unassigned };
+}
+
 let history = []; let historyIndex = -1;
 function snapshot(){ return JSON.stringify({ floors: state.floors.map(f=>({...f, planImage:undefined})), layers:state.layers, circuits:state.circuits }); }
 function pushHistory(){ history = history.slice(0, historyIndex+1); history.push({ ts:Date.now(), data:snapshot() }); historyIndex = history.length-1; if(history.length>60){history.shift();historyIndex--;} if(typeof refreshHistoryButtons==='function') refreshHistoryButtons(); if(typeof markDirty==='function') markDirty(); }
@@ -1509,6 +1647,25 @@ function render(){
           const p2 = worldToScreen(chain.order[i+1].x, chain.order[i+1].y);
           ctx.beginPath(); ctx.moveTo(p1.x,p1.y); ctx.lineTo(p2.x,p2.y); ctx.stroke();
         }
+        ctx.setLineDash([]);
+      });
+    }
+  }
+  // Comms home-runs — one straight line per occupied port, rack straight to
+  // its device (no daisy-chain: real structured cabling is point-to-point,
+  // unlike the shared circuits above). Gated on the Data layer, same
+  // show-runs/selection reveal rule as the chains above.
+  {
+    const layer = state.layers.find(l=>l.id==='data');
+    if(layer && layer.visible){
+      computeCommsRuns(currentFloor()).forEach(({ rack, device }) => {
+        const isRelevant = state.showSwitchRuns
+          || (state.selectedObjectId && (state.selectedObjectId===rack.id || state.selectedObjectId===device.id))
+          || state.multiSelectedIds.has(rack.id) || state.multiSelectedIds.has(device.id);
+        if(!isRelevant) return;
+        ctx.strokeStyle = '#4ade80cc'; ctx.lineWidth = 2.5; ctx.setLineDash([2,3]);
+        const p1 = worldToScreen(rack.x, rack.y), p2 = worldToScreen(device.x, device.y);
+        ctx.beginPath(); ctx.moveTo(p1.x,p1.y); ctx.lineTo(p2.x,p2.y); ctx.stroke();
         ctx.setLineDash([]);
       });
     }
@@ -1964,6 +2121,7 @@ canvas.addEventListener('pointerdown', (e) => {
       x:snapped.x, y:snapped.y, layer:layerForSymbol, circuit:'',
       props
     };
+    if(obj.symbolId==='comms_rack') obj.commsPorts = defaultCommsPorts(obj.id);
     currentFloor().objects.push(obj); state.snapGuides = []; state.snapTarget = null; pushHistory(); render(); renderSchedule(); updateQuote();
     // Exit placement mode once the device lands: activeSymbol staying set
     // meant the very next canvas click — most naturally a click/drag on the
@@ -2441,6 +2599,7 @@ document.getElementById('moreScale').addEventListener('click', () => { setTool('
 document.getElementById('moreWall').addEventListener('click', () => { setTool('wall'); closeSheets(); });
 document.getElementById('moreQuote').addEventListener('click', () => { updateQuote(); renderSchedule(); openSheet('sheetQuote'); });
 document.getElementById('moreCircuits').addEventListener('click', () => { renderCircuits(); openSheet('sheetCircuits'); });
+document.getElementById('moreCommsRacks').addEventListener('click', () => { renderCommsRacksSheet(); openSheet('sheetCommsRacks'); });
 document.getElementById('moreElevation').addEventListener('click', () => { renderElevationSelect(); openSheet('sheetElevation'); });
 document.getElementById('moreFloors').addEventListener('click', () => { renderFloors(); openSheet('sheetFloors'); });
 document.getElementById('moreGrid').addEventListener('click', () => { openGridSheet(); openSheet('sheetGrid'); });
@@ -3174,14 +3333,10 @@ function renderCircuits(){
     const count = allObjects().filter(o=>o.circuit===c.id).length;
     const p = PROTECTION_LIBRARY.find(x=>x.id===c.protectionId);
     const cost = effectiveProtectionCost(c);
-    const isData = c.kind==='data';
-    if(!isData) protectionTotal += cost;
+    protectionTotal += cost;
     const row = document.createElement('div');
     row.className = 'circuit-row';
-    const kindTag = isData ? '<span style="color:var(--green);">DATA</span> · ' : '';
-    const metaLine = isData
-      ? `${kindTag}${c.description||'—'} · ${resolveSwitchboardLabel(c)}<br>${c.cable||'—'}`
-      : `${c.description||'—'} · ${resolveSwitchboardLabel(c)}<br>${c.cable||'—'} · ${p?p.label:'—'} (${fmt(cost)})`;
+    const metaLine = `${c.description||'—'} · ${resolveSwitchboardLabel(c)}<br>${c.cable||'—'} · ${p?p.label:'—'} (${fmt(cost)})`;
     const isolated = state.isolatedCircuitId === c.id;
     row.innerHTML = `
       <div style="flex:1; cursor:pointer;" data-edit-circuit="${c.id}">
@@ -3219,13 +3374,7 @@ function renderCircuits(){
     });
   }));
 }
-document.getElementById('btnAddCircuit').addEventListener('click', () => {
-  openFormModal('New circuit or comms connection', [
-    { id:'kind', label:'Type', type:'select', value:'electrical', options:[{value:'electrical',label:'Electrical circuit'},{value:'data',label:'Data / comms connection'}] },
-  ], (vals) => {
-    if(vals.kind==='data') openNewDataCircuitForm(); else openNewElectricalCircuitForm();
-  }, 'Next');
-});
+document.getElementById('btnAddCircuit').addEventListener('click', openNewElectricalCircuitForm);
 function openNewElectricalCircuitForm(){
   const boardOptions = [{value:'',label:'— type board name manually below —'}].concat(
     findBoardObjects('switchboard').map(sb => ({ value:sb.id, label: sb.label || sb.id }))
@@ -3248,47 +3397,21 @@ function openNewElectricalCircuitForm(){
     showToast('Circuit ' + vals.id + ' added');
   }, 'Add circuit');
 }
-function openNewDataCircuitForm(){
-  const rackOptions = [{value:'',label:'— type rack name manually below —'}].concat(
-    findBoardObjects('comms_rack').map(r => ({ value:r.id, label:r.label || r.id }))
-  );
-  openFormModal('New data / comms connection', [
-    { id:'id', label:'Connection ID (e.g. DATA-01)', type:'text', value:'' },
-    { id:'description', label:'Description', type:'text', value:'', placeholder:'e.g. Bedroom data outlet' },
-    { id:'switchboardObjectId', label:'Linked comms rack (optional)', type:'select', value:'', options:rackOptions },
-    { id:'board', label:'Rack name (used if no rack linked)', type:'text', value:'CR-01' },
-    { id:'cable', label:'Cable', type:'select', value:'Cat6', options:[{value:'Cat6',label:'Cat6'},{value:'Cat6A',label:'Cat6A'},{value:'Coax',label:'Coax'},{value:'Fibre',label:'Fibre'}] },
-  ], (vals) => {
-    if(!vals.id){ showToast('Connection needs an ID'); return; }
-    state.circuits.push({
-      id:vals.id, description:vals.description, kind:'data',
-      switchboardObjectId: vals.switchboardObjectId || null, board:vals.board,
-      cable:vals.cable, protectionId:null, protectionCostOverride:null,
-    });
-    pushHistory(); renderCircuits(); updateQuote();
-    showToast('Connection ' + vals.id + ' added');
-  }, 'Add connection');
-}
 function openEditCircuitForm(circuitId){
   const c = state.circuits.find(x=>x.id===circuitId);
   if(!c) return;
-  const isData = c.kind==='data';
   const boardOptions = [{value:'',label:'— type name manually below —'}].concat(
-    findBoardObjects(isData ? 'comms_rack' : 'switchboard').map(sb => ({ value:sb.id, label: sb.label || sb.id }))
+    findBoardObjects('switchboard').map(sb => ({ value:sb.id, label: sb.label || sb.id }))
   );
   const fields = [
-    { id:'id', label:isData?'Connection ID':'Circuit ID', type:'text', value:c.id },
+    { id:'id', label:'Circuit ID', type:'text', value:c.id },
     { id:'description', label:'Description', type:'text', value:c.description||'' },
-    { id:'switchboardObjectId', label: isData?'Linked comms rack (optional)':'Linked switchboard (optional)', type:'select', value:c.switchboardObjectId||'', options:boardOptions },
-    { id:'board', label: isData?'Rack name (fallback)':'Board name (fallback)', type:'text', value:c.board||'' },
-    { id:'cable', label:'Cable', type:'select', value:c.cable||'', options: isData
-        ? [{value:'Cat6',label:'Cat6'},{value:'Cat6A',label:'Cat6A'},{value:'Coax',label:'Coax'},{value:'Fibre',label:'Fibre'}]
-        : CABLE_SIZES.map(cs=>({value:cs.size,label:cs.size})) },
+    { id:'switchboardObjectId', label:'Linked switchboard (optional)', type:'select', value:c.switchboardObjectId||'', options:boardOptions },
+    { id:'board', label:'Board name (fallback)', type:'text', value:c.board||'' },
+    { id:'cable', label:'Cable', type:'select', value:c.cable||'', options:CABLE_SIZES.map(cs=>({value:cs.size,label:cs.size})) },
+    { id:'protectionId', label:'Protection device', type:'select', value:c.protectionId||'rcbo20', options:PROTECTION_LIBRARY.map(p=>({value:p.id,label:p.label+' — $'+p.cost})) },
   ];
-  if(!isData){
-    fields.push({ id:'protectionId', label:'Protection device', type:'select', value:c.protectionId||'rcbo20', options:PROTECTION_LIBRARY.map(p=>({value:p.id,label:p.label+' — $'+p.cost})) });
-  }
-  openFormModal('Edit ' + (isData?'connection':'circuit') + ' ' + c.id, fields, (vals) => {
+  openFormModal('Edit circuit ' + c.id, fields, (vals) => {
     if(!vals.id){ showToast('ID cannot be empty'); return; }
     const oldId = c.id;
     if(vals.id !== oldId){
@@ -3298,11 +3421,122 @@ function openEditCircuitForm(circuitId){
       state.floors.forEach(f => f.objects.forEach(o => { if(o.circuit===oldId) o.circuit = vals.id; }));
     }
     c.id = vals.id; c.description = vals.description; c.switchboardObjectId = vals.switchboardObjectId || null;
-    c.board = vals.board; c.cable = vals.cable;
-    if(!isData) c.protectionId = vals.protectionId;
+    c.board = vals.board; c.cable = vals.cable; c.protectionId = vals.protectionId;
     pushHistory(); renderCircuits(); updateQuote(); renderSchedule();
     showToast('Updated ' + vals.id);
   }, 'Save changes');
+}
+
+// ===================================================================
+// COMMS RACKS SHEET — separate UI from Circuits above, matching the
+// separate data model (see the COMMS RACKS + PORTS block near
+// computeGpoChains). Every rack on every floor gets its own card; ports
+// are fixed slots you fill or clear, never delete, mirroring a real
+// patch panel. focusRackId scrolls straight to that rack's card, used
+// when opened from a device's own "Manage ports" button.
+// ===================================================================
+function commsDeviceOptionsForPort(floorIndex, port){
+  const floor = state.floors[floorIndex];
+  const takenIds = new Set();
+  floor.objects.filter(o=>o.symbolId==='comms_rack').forEach(r => (r.commsPorts||[]).forEach(p => { if(p.deviceId && p.id!==port.id) takenIds.add(p.deviceId); }));
+  let html = '<option value="">— unassigned —</option>';
+  floor.objects.filter(o => o.symbolId!=='comms_rack' && (SYMBOL_LIBRARY.find(s=>s.id===o.symbolId)||{}).category==='data').forEach(o => {
+    if(takenIds.has(o.id) && o.id!==port.deviceId) return;
+    html += `<option value="${o.id}" ${port.deviceId===o.id?'selected':''}>${deviceDisplayName(o)}</option>`;
+  });
+  return html;
+}
+function renderCommsRacksSheet(focusRackId){
+  const el = document.getElementById('commsRacksBody');
+  const racks = allCommsRacks();
+  if(!racks.length && !state.unassignedCommsPorts.length){
+    el.innerHTML = '<div style="color:var(--text-dim); font-size:12.5px; padding:10px 0;">No comms racks placed yet — place a Comms Rack from the device library, then come back here to manage its ports.</div>';
+    return;
+  }
+  const cableOptions = ['Cat6','Cat6A','Coax','Fibre'];
+  el.innerHTML = racks.map(({ rack, floorIndex }) => {
+    const ports = rack.commsPorts || [];
+    const used = ports.filter(p=>p.deviceId).length;
+    return `<div id="commsRackCard-${rack.id}" style="border:1px solid var(--line-soft); border-radius:8px; padding:10px; margin-bottom:14px;">
+      <div style="font-weight:700; font-size:13.5px; margin-bottom:2px;">${deviceDisplayName(rack)}</div>
+      <div style="font-size:10.5px; color:var(--text-dim); margin-bottom:8px;">${state.floors[floorIndex].name} · ${used} of ${ports.length} ports in use</div>
+      ${ports.map(port => `
+        <div style="border-top:1px solid var(--line-soft); padding:10px 2px; display:flex; flex-direction:column; gap:6px;">
+          <div style="display:flex; align-items:center; gap:8px;">
+            <span style="font-family:var(--mono); font-size:11px; color:var(--text-dim); width:30px; flex-shrink:0;">#${port.number}</span>
+            <input type="text" data-port-label="${port.id}" value="${port.label}" placeholder="Port ${port.number}" style="flex:1; background:var(--panel2); border:1px solid var(--line); color:var(--text); padding:6px 8px; border-radius:6px; font-size:12.5px;">
+          </div>
+          <input type="text" data-port-desc="${port.id}" value="${port.description||''}" placeholder="Description (e.g. Bedroom 2 data outlet)" style="background:var(--panel2); border:1px solid var(--line); color:var(--text-dim); padding:6px 8px; border-radius:6px; font-size:12px;">
+          <div style="display:flex; gap:6px;">
+            <select data-port-cable="${port.id}" style="flex:1; background:var(--panel2); border:1px solid var(--line); color:var(--text); padding:6px 8px; border-radius:6px; font-size:12px;">
+              ${cableOptions.map(c=>`<option value="${c}" ${port.cable===c?'selected':''}>${c}</option>`).join('')}
+            </select>
+            <select data-port-device="${port.id}" data-port-floor="${floorIndex}" style="flex:2; background:var(--panel2); border:1px solid var(--line); color:var(--text); padding:6px 8px; border-radius:6px; font-size:12px;">
+              ${commsDeviceOptionsForPort(floorIndex, port)}
+            </select>
+          </div>
+        </div>
+      `).join('')}
+      <button data-add-port="${rack.id}" style="background:var(--panel2); border:1px solid var(--line); color:var(--text-dim); padding:7px 12px; border-radius:6px; font-size:11.5px; margin-top:8px;">+ Add port</button>
+    </div>`;
+  }).join('') + (state.unassignedCommsPorts.length ? `
+    <div style="font-family:var(--mono); font-size:10px; letter-spacing:1px; text-transform:uppercase; color:var(--amber); margin:16px 0 6px; padding-bottom:4px; border-bottom:1px solid var(--line-soft);">Legacy — needs a rack</div>
+    <div style="font-size:11px; color:var(--text-dim); margin-bottom:10px; line-height:1.5;">Migrated from an old-format save that had no rack linked. Pick a rack to attach each one to.</div>
+    ${state.unassignedCommsPorts.map(p => `
+      <div class="load-row" style="gap:8px;">
+        <span style="flex:1; font-size:12.5px;">${p.label}${p.description?' — '+p.description:''}</span>
+        <select data-assign-legacy="${p.id}" style="background:var(--panel2); border:1px solid var(--line); color:var(--text); padding:6px 8px; border-radius:6px; font-size:12px;">
+          <option value="">— pick a rack —</option>
+          ${racks.map(({rack,floorIndex}) => `<option value="${rack.id}">${deviceDisplayName(rack)} (${state.floors[floorIndex].name})</option>`).join('')}
+        </select>
+      </div>
+    `).join('')}
+  ` : '');
+
+  el.querySelectorAll('[data-port-label]').forEach(inp => inp.addEventListener('change', (e) => {
+    const found = findCommsPort(inp.dataset.portLabel);
+    if(found){ found.port.label = e.target.value.trim() || ('Port '+found.port.number); pushHistory(); markDirty(); renderCommsRacksSheet(); }
+  }));
+  el.querySelectorAll('[data-port-desc]').forEach(inp => inp.addEventListener('change', (e) => {
+    const found = findCommsPort(inp.dataset.portDesc);
+    if(found){ found.port.description = e.target.value; pushHistory(); markDirty(); }
+  }));
+  el.querySelectorAll('[data-port-cable]').forEach(sel => sel.addEventListener('change', (e) => {
+    const found = findCommsPort(sel.dataset.portCable);
+    if(found){ found.port.cable = e.target.value; pushHistory(); markDirty(); }
+  }));
+  el.querySelectorAll('[data-port-device]').forEach(sel => sel.addEventListener('change', (e) => {
+    const portId = sel.dataset.portDevice;
+    const newDeviceId = e.target.value || null;
+    if(newDeviceId){ assignDeviceToPort(newDeviceId, portId); }
+    else { const found = findCommsPort(portId); if(found){ found.port.deviceId = null; pushHistory(); render(); renderSchedule(); updateQuote(); } }
+    renderCommsRacksSheet(focusRackId);
+  }));
+  el.querySelectorAll('[data-add-port]').forEach(btn => btn.addEventListener('click', () => {
+    const found = allCommsRacks().find(r=>r.rack.id===btn.dataset.addPort);
+    if(!found) return;
+    if(!found.rack.commsPorts) found.rack.commsPorts = [];
+    found.rack.commsPorts.push(makeCommsPort(found.rack.id, nextCommsPortNumber(found.rack)));
+    pushHistory(); markDirty();
+    renderCommsRacksSheet(found.rack.id);
+  }));
+  el.querySelectorAll('[data-assign-legacy]').forEach(sel => sel.addEventListener('change', (e) => {
+    const legacyId = sel.dataset.assignLegacy;
+    const rackId = e.target.value;
+    if(!rackId) return;
+    const legacy = state.unassignedCommsPorts.find(p=>p.id===legacyId);
+    const found = allCommsRacks().find(r=>r.rack.id===rackId);
+    if(!legacy || !found) return;
+    if(!found.rack.commsPorts) found.rack.commsPorts = [];
+    found.rack.commsPorts.push({ ...makeCommsPort(found.rack.id, nextCommsPortNumber(found.rack)), label:legacy.label, description:legacy.description, cable:legacy.cable, deviceId:legacy.deviceId });
+    state.unassignedCommsPorts = state.unassignedCommsPorts.filter(p=>p.id!==legacyId);
+    pushHistory(); render(); renderSchedule(); updateQuote();
+    renderCommsRacksSheet(found.rack.id);
+  }));
+  if(focusRackId){
+    const card = document.getElementById('commsRackCard-'+focusRackId);
+    if(card) card.scrollIntoView({ block:'start' });
+  }
 }
 
 // ===================================================================
@@ -3508,6 +3742,13 @@ function openProps(id){
   const lockedLayer = isLayerLocked(obj.layer);
   document.getElementById('propsTitle').textContent = deviceDisplayName(obj);
   const circuitOptions = circuitSelectOptions(obj.circuit);
+  // Comms devices link to a rack PORT (see the new Comms Racks system),
+  // never an electrical circuit -- the rack itself has neither, it's the
+  // distribution point (see commsPortsHtml below), not something that gets
+  // assigned to its own port.
+  let circuitRowHtml = `<div class="prop-row"><label>Circuit</label><select id="p_circuit" ${lockedLayer?'disabled':''}>${circuitOptions}</select></div>`;
+  if(obj.symbolId==='comms_rack') circuitRowHtml = '';
+  else if(sym.category==='data') circuitRowHtml = `<div class="prop-row"><label>Comms port</label><select id="p_comms_port" ${lockedLayer?'disabled':''}>${commsPortOptions(obj.id)}</select></div>`;
   const roomOptions = '<option value="">— none —</option>' + currentFloor().rooms.map(r=>`<option value="${r.id}" ${obj.room===r.id?'selected':''}>${r.name}</option>`).join('');
 
   let linksHtml = '';
@@ -3573,18 +3814,19 @@ function openProps(id){
     </div>`;
   }
 
-  // Distribution view (section 39/46-48): a switchboard or comms rack is a
-  // distribution point, not just an icon — selecting one shows what it feeds.
+  // Distribution view (section 39/46-48): a switchboard is a distribution
+  // point, not just an icon — selecting one shows what it feeds. Comms
+  // racks get their own, separate ports summary just below instead (see
+  // commsPortsHtml) -- a different system entirely, not a variant of this.
   let distributionHtml = '';
-  if(obj.symbolId==='switchboard' || obj.symbolId==='comms_rack'){
+  if(obj.symbolId==='switchboard'){
     const fed = state.circuits.filter(c => c.switchboardObjectId === obj.id);
-    const heading = obj.symbolId==='switchboard' ? 'Feeds these circuits' : 'Feeds these connections';
     if(fed.length){
-      distributionHtml = `<div class="prop-row"><label>${heading}</label><div style="font-size:12px; line-height:1.8;">${sortedCircuits().filter(c=>c.switchboardObjectId===obj.id).map(c => {
+      distributionHtml = `<div class="prop-row"><label>Feeds these circuits</label><div style="font-size:12px; line-height:1.8;">${sortedCircuits().filter(c=>c.switchboardObjectId===obj.id).map(c => {
         const onC = allObjects().filter(o=>o.circuit===c.id);
         const count = onC.length;
         const p = PROTECTION_LIBRARY.find(x=>x.id===c.protectionId);
-        const detail = c.kind==='data' ? (c.cable||'') : `${c.cable||''} · ${p?p.label:''}`;
+        const detail = `${c.cable||''} · ${p?p.label:''}`;
         // Prefer bank/group names for lights, custom names for GPOs
         const names = [];
         const seenBanks = new Set();
@@ -3605,8 +3847,19 @@ function openProps(id){
         return `<div>${c.id} — ${c.description||''} · ${detail} · ${count} device${count===1?'':'s'}${nameLine}</div>`;
       }).join('')}</div></div>`;
     } else {
-      distributionHtml = `<div class="prop-row"><label>${heading}</label><span style="color:var(--text-dim); font-size:12px;">Nothing linked yet — create a circuit/connection and link it to ${deviceDisplayName(obj)} from the Circuits sheet.</span></div>`;
+      distributionHtml = `<div class="prop-row"><label>Feeds these circuits</label><span style="color:var(--text-dim); font-size:12px;">Nothing linked yet — create a circuit and link it to ${deviceDisplayName(obj)} from the Circuits sheet.</span></div>`;
     }
+  }
+  // Comms rack: its own ports summary, separate from the circuit/switchboard
+  // system above -- full management (add/rename/describe a port, assign a
+  // device) lives in the dedicated Comms Racks sheet, not crammed in here.
+  let commsPortsHtml = '';
+  if(obj.symbolId==='comms_rack'){
+    const ports = obj.commsPorts || [];
+    const used = ports.filter(p=>p.deviceId).length;
+    commsPortsHtml = `<div class="prop-row"><label>Ports</label><div style="font-size:12.5px; color:var(--text-dim); margin-bottom:6px;">${used} of ${ports.length} in use</div>
+      <button id="btnManageCommsPorts" style="background:var(--panel2); border:1px solid var(--line); color:var(--text); padding:8px 12px; border-radius:6px; font-size:12px;">Manage ports</button>
+    </div>`;
   }
 
   // cable routes whose endpoint sits at this device (drawn starting/ending here)
@@ -3627,12 +3880,13 @@ function openProps(id){
   document.getElementById('propsBody').innerHTML = `
     ${lockedLayer ? '<div style="font-size:12px; color:var(--amber); margin-bottom:10px;">🔒 This layer is locked — device is read-only until unlocked in Layers.</div>' : ''}
     <div class="prop-row"><label>Name</label><input id="p_customName" value="${obj.props.customName||''}" placeholder="${sym.label}" ${lockedLayer?'disabled':''}></div>
-    <div class="prop-row"><label>Circuit</label><select id="p_circuit" ${lockedLayer?'disabled':''}>${circuitOptions}</select></div>
+    ${circuitRowHtml}
     <div class="prop-row hidden-feature"><label>Room</label><select id="p_room">${roomOptions}</select></div>
     ${linksHtml}
     ${cablesHtml}
     ${switchConfigHtml}
     ${distributionHtml}
+    ${commsPortsHtml}
     <div class="prop-grid2">
       <div class="prop-row"><label>Manufacturer</label><input id="p_manufacturer" value="${obj.props.manufacturer}" ${lockedLayer?'disabled':''}></div>
       <div class="prop-row"><label>Model</label><input id="p_model" value="${obj.props.model}" ${lockedLayer?'disabled':''}></div>
@@ -3671,6 +3925,20 @@ function openProps(id){
       pushHistory(); renderSchedule(); updateQuote(); render();
     });
   });
+  // Comms port isn't a plain field on the device (fieldMap above) -- it's a
+  // two-sided link, so it goes through assignDeviceToPort to keep the
+  // port's own deviceId in sync rather than just setting something on obj.
+  const commsPortEl = document.getElementById('p_comms_port');
+  if(commsPortEl && !commsPortEl.disabled){
+    commsPortEl.addEventListener('change', (e) => {
+      assignDeviceToPort(obj.id, e.target.value || null);
+      openProps(obj.id);
+    });
+  }
+  const managePortsBtn = document.getElementById('btnManageCommsPorts');
+  if(managePortsBtn){
+    managePortsBtn.addEventListener('click', () => { renderCommsRacksSheet(obj.id); openSheet('sheetCommsRacks'); });
+  }
   const nameEl = document.getElementById('p_customName');
   if(nameEl && !nameEl.disabled){
     nameEl.addEventListener('change', (e) => {
@@ -4034,6 +4302,7 @@ function buildProjectData(){
     customSymbols: state.customSymbols, symbolSize: state.symbolSize, gridOverlay: !!state.gridOverlay,
     priceListOverrides: SYMBOL_LIBRARY.map(s => ({ id:s.id, label:s.label, material_cost:s.defaultProps.material_cost, labour_hours:s.defaultProps.labour_hours, watts:s.defaultProps.watts })),
     boardMainSwitchAmps: state.boardMainSwitchAmps,
+    unassignedCommsPorts: state.unassignedCommsPorts,
     floors: state.floors.map(f => ({
       id: f.id, name: f.name, scale: f.scale, gridSpacingMM: f.gridSpacingMM, snapEnabled: f.snapEnabled,
       gridOriginX: f.gridOriginX || 0, gridOriginY: f.gridOriginY || 0,
@@ -4212,7 +4481,12 @@ function applyLoadedProject(d){
   document.getElementById('costEquipment').value = d.costEquipment || 0;
   document.getElementById('costTravel').value = d.costTravel || 0;
   state.layers = normalizeLayers(d.layers);
-  state.circuits = d.circuits || [];
+  // Converts any leftover old-format data connections (kind:'data' circuits)
+  // into ports on their rack -- mutates d.floors in place, so this must run
+  // before the floor-construction below reads from it.
+  const migratedComms = migrateLegacyCommsData(d);
+  state.circuits = migratedComms.circuits;
+  state.unassignedCommsPorts = migratedComms.unassigned;
   state.elevations = d.elevations || [];
   state.symbolSize = d.symbolSize || 16;
   state.gridOverlay = !!d.gridOverlay;
@@ -4272,6 +4546,9 @@ function applyLoadedProject(d){
     clearTimeout(autosaveTimer);
     state.saveStatus = 'saved'; updateSaveStatusUI();
     render();
+    if(migratedComms.unassigned.length && migratedComms.unassigned.some(p => !(d.unassignedCommsPorts||[]).includes(p))){
+      showToast('Migrated ' + migratedComms.unassigned.length + ' legacy comms connection(s) with no linked rack — assign them from Comms Racks');
+    }
   });
 }
 // state.nextId starts at 1 on every page load and was never resynced when a
@@ -5329,6 +5606,7 @@ function clearCurrentProject(name){
   state.circuits = [];
   state.elevations = [];
   state.boardMainSwitchAmps = {};
+  state.unassignedCommsPorts = [];
   state.layers = LAYER_DEFS.map(l => ({ ...l, visible: true }));
   state.selectedObjectId = null;
   state.selectedCableId = null;
@@ -5378,7 +5656,7 @@ document.querySelectorAll('.dtb-btn[data-dtool]').forEach(btn => {
 document.getElementById('dtbCircuits').addEventListener('click', () => { renderCircuits(); openSheet('sheetCircuits'); });
 document.getElementById('dtbGrid').addEventListener('click', () => { openGridSheet(); openSheet('sheetGrid'); });
 document.getElementById('dtbPriceList').addEventListener('click', () => { renderPriceList(); openSheet('sheetPriceList'); });
-document.getElementById('dtbCommsRacks').addEventListener('click', () => { renderCircuits(); openSheet('sheetCircuits'); });
+document.getElementById('dtbCommsRacks').addEventListener('click', () => { renderCommsRacksSheet(); openSheet('sheetCommsRacks'); });
 document.getElementById('dtbVersions').addEventListener('click', () => { renderVersionHistory(); openSheet('sheetVersions'); });
 document.getElementById('dtbDuplicates').addEventListener('click', () => { renderDuplicatesReport(); openSheet('sheetDuplicates'); });
 document.getElementById('dtbPanelSchedule').addEventListener('click', () => { renderPanelSchedule(); openSheet('sheetPanelSchedule'); });
