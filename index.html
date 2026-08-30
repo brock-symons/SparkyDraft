@@ -1333,17 +1333,60 @@ function computeBankAttachPoints(floor, bank, order){
     return { switchObj: swObj, attachTo: nearest };
   }).filter(Boolean);
 }
-// Power circuit daisy-chains — same physical-routing idea as lighting banks,
-// but grouped by *circuit assignment* (not switch links). Each electrical
-// circuit gets: one feed from its switchboard to the first device, then
-// device → device → device. Different circuits never share a chain.
+// Max cables that may physically meet at one power/hard-active device —
+// beyond this a junction isn't realistic, so growth stops feeding through
+// it even if it's the nearest point. The switchboard itself is always
+// capped at exactly 1 within a single circuit's tree (one feed out per
+// circuit, same as a real board terminal), regardless of this constant.
+const CIRCUIT_JUNCTION_MAX_CABLES = 3;
+// Degree-constrained nearest-neighbour tree, used for power/hard-active
+// circuit runs: rather than a strict single-tail chain (computeChainOrder,
+// used for lighting control loops), each device can be fed from *whichever*
+// already-connected device is closest — not just the most recently added
+// one — so the run can branch. A device stops accepting new feeds once it
+// hits maxCables. Returns the actual edges to draw, since the result may
+// no longer be a single sequential path.
+function computeChainEdges(floor, ids, seedObj, maxCables){
+  const nodes = ids.map(id => floor.objects.find(o=>o.id===id)).filter(Boolean);
+  if(!nodes.length) return { edges: [] };
+  const cap = new Map(), degree = new Map();
+  nodes.forEach(n => { cap.set(n, maxCables); degree.set(n, 0); });
+  const remaining = nodes.slice();
+  let root = seedObj;
+  if(root){ cap.set(root, 1); degree.set(root, 0); }
+  else { root = remaining.shift(); }
+  const inTree = [root];
+  const edges = [];
+  while(remaining.length){
+    let bestU=null, bestVIdx=-1, bestDist=Infinity;
+    inTree.forEach(u => {
+      if(degree.get(u) >= cap.get(u)) return;
+      remaining.forEach((v,i) => {
+        const d = Math.hypot(u.x-v.x, u.y-v.y);
+        if(d < bestDist){ bestDist=d; bestU=u; bestVIdx=i; }
+      });
+    });
+    if(!bestU) break; // every in-tree node is at its cable cap — shouldn't happen with maxCables>=2
+    const v = remaining.splice(bestVIdx,1)[0];
+    degree.set(bestU, degree.get(bestU)+1);
+    degree.set(v, degree.get(v)+1);
+    inTree.push(v);
+    edges.push({ from: bestU, to: v });
+  }
+  return { edges };
+}
+// Power circuit runs — same physical-routing idea as lighting banks, but
+// grouped by *circuit assignment* (not switch links) and using the
+// degree-constrained tree above instead of a strict chain, since a real
+// power circuit commonly feeds whichever nearby point is closest rather
+// than always the last one wired. Different circuits never share a run.
 // Covers every device on the Power layer (GPOs, isolators, HWS, ovens,
 // etc.) — not just GPO-shaped symbols — so a circuit that mixes device
 // types still shows a complete run, which matters for "isolate circuit".
 // A switch with its own circuit assigned ("hard active" — fed straight from
-// the switchboard rather than looped off its light) joins the same chain
-// system even though it lives on the Lighting layer, so its run gets drawn
-// too; chains flagged hardActive are what the caller draws in red.
+// the switchboard rather than looped off its light) joins the same run
+// system even though it lives on the Lighting layer; circuits flagged
+// hardActive are what the caller draws in red.
 function computeGpoChains(floor){
   const byCircuit = {};
   floor.objects.forEach(o => {
@@ -1368,10 +1411,9 @@ function computeGpoChains(floor){
     if(!boardObj){
       boardObj = floor.objects.find(o => o.symbolId === 'switchboard' || o.symbolId === 'dist_board') || null;
     }
-    const seed = boardObj || floor.objects.find(o => o.id === gpoIds[0]) || { x:0, y:0 };
-    const order = computeChainOrder(floor, gpoIds, seed);
+    const { edges } = computeChainEdges(floor, gpoIds, boardObj, CIRCUIT_JUNCTION_MAX_CABLES);
     const hardActive = gpoIds.some(id => isSwitchSymbol(floor.objects.find(o=>o.id===id)?.symbolId));
-    return { circuitId, gpoIds, order, boardObj, hardActive };
+    return { circuitId, gpoIds, edges, boardObj, hardActive };
   });
 }
 // A switch fed directly from the switchboard (hard active — has its own
@@ -1690,9 +1732,11 @@ function render(){
       });
     }
   }
-  // GPO circuit daisy-chains — one switchboard feed per circuit, then GPO→GPO.
-  // Separate from lighting banks; only power outlets on the same circuit share a chain.
-  // A chain that includes a hard-active switch (its own circuit, fed straight
+  // Power circuit runs — one switchboard feed per circuit, then branching
+  // to whichever device is closest (up to CIRCUIT_JUNCTION_MAX_CABLES per
+  // junction — see computeChainEdges). Separate from lighting banks; only
+  // power outlets/hard-active switches on the same circuit share a run.
+  // A run that includes a hard-active switch (its own circuit, fed straight
   // from the switchboard rather than looped off its light) draws in red so
   // it reads as a distinct feed from a normal power circuit; visibility for
   // those follows the Lighting layer instead of Power, since that's the
@@ -1701,7 +1745,7 @@ function render(){
     const powerLayer = state.layers.find(l=>l.id==='power');
     const lightingLayer = state.layers.find(l=>l.id==='lighting');
     computeGpoChains(currentFloor()).forEach(chain => {
-      if(!chain.order.length) return;
+      if(!chain.edges.length) return;
       const layer = chain.hardActive ? lightingLayer : powerLayer;
       if(!layer || !layer.visible) return;
       const relevantIds = new Set(chain.gpoIds);
@@ -1714,18 +1758,10 @@ function render(){
           || [...state.multiSelectedIds].some(id => relevantIds.has(id));
       if(!isRelevant) return;
       ctx.strokeStyle = chain.hardActive ? '#ff4d4dcc' : '#4fb3ffcc'; ctx.lineWidth = 2.5; ctx.setLineDash([4,4]);
-      // single feed from switchboard to the first device in the physical order
-      if(chain.boardObj && chain.order[0]){
-        const p1 = worldToScreen(chain.boardObj.x, chain.boardObj.y);
-        const p2 = worldToScreen(chain.order[0].x, chain.order[0].y);
+      chain.edges.forEach(({from,to}) => {
+        const p1 = worldToScreen(from.x, from.y), p2 = worldToScreen(to.x, to.y);
         ctx.beginPath(); ctx.moveTo(p1.x,p1.y); ctx.lineTo(p2.x,p2.y); ctx.stroke();
-      }
-      // daisy chain through the remaining devices on this circuit only
-      for(let i=0;i<chain.order.length-1;i++){
-        const p1 = worldToScreen(chain.order[i].x, chain.order[i].y);
-        const p2 = worldToScreen(chain.order[i+1].x, chain.order[i+1].y);
-        ctx.beginPath(); ctx.moveTo(p1.x,p1.y); ctx.lineTo(p2.x,p2.y); ctx.stroke();
-      }
+      });
       ctx.setLineDash([]);
     });
   }
@@ -4388,23 +4424,18 @@ function estimateCircuitCableLength(circuit, ceilingMm, slackPct){
   const otherFloorCount = allDevices.length - sameFloor.length;
   if(!sameFloor.length) return { ok:false, reason:'No devices assigned to this circuit on the switchboard\'s floor', otherFloorCount };
 
-  let current = { x: board.x, y: board.y, heightMm: deviceHeightMm(board) };
-  const remaining = sameFloor.slice();
+  // Same degree-constrained tree used for the on-plan run (computeChainEdges)
+  // so the metres reported here match what's actually drawn, rather than a
+  // separately-computed strict chain that could disagree with it.
+  const { edges } = computeChainEdges(floor, sameFloor.map(o=>o.id), board, CIRCUIT_JUNCTION_MAX_CABLES);
   let totalMm = 0;
-  while(remaining.length){
-    let nearestIdx = 0, nearestDistPx = Infinity;
-    remaining.forEach((o,i) => {
-      const d = Math.hypot(o.x-current.x, o.y-current.y);
-      if(d < nearestDistPx){ nearestDistPx = d; nearestIdx = i; }
-    });
-    const next = remaining.splice(nearestIdx,1)[0];
-    const nextHeightMm = deviceHeightMm(next);
-    const horizontalMm = (nearestDistPx / floor.scale) * 1000;
-    const riseMm = Math.max(ceilingMm - current.heightMm, 0);
-    const dropMm = Math.max(ceilingMm - nextHeightMm, 0);
+  edges.forEach(({from,to}) => {
+    const distPx = Math.hypot(from.x-to.x, from.y-to.y);
+    const horizontalMm = (distPx / floor.scale) * 1000;
+    const riseMm = Math.max(ceilingMm - deviceHeightMm(from), 0);
+    const dropMm = Math.max(ceilingMm - deviceHeightMm(to), 0);
     totalMm += riseMm + horizontalMm + dropMm;
-    current = { x: next.x, y: next.y, heightMm: nextHeightMm };
-  }
+  });
   const meters = (totalMm * (1 + (slackPct||0)/100)) / 1000;
   return { ok:true, meters, deviceCount: sameFloor.length, otherFloorCount };
 }
