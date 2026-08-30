@@ -771,6 +771,10 @@ html.force-desktop{
   <div class="sheet-header"><div class="sheet-title">Panel schedule</div><div class="sheet-close" data-close>✕</div></div>
   <div class="sheet-body">
     <div style="font-size:11.5px; color:var(--text-dim); margin-bottom:10px; line-height:1.5;">A circuit directory and simplified load estimate per board, built from your circuits and placed devices. <b>Estimate for planning only</b> — always verify against AS/NZS 3000 and your own professional judgement.</div>
+    <div class="prop-grid2" style="margin-bottom:10px;">
+      <div class="prop-row"><label>Ceiling height (mm)</label><input type="number" id="cableCeilingHeight" value="3000"></div>
+      <div class="prop-row"><label>Route allowance %</label><input type="number" id="cableSlackPct" value="15"></div>
+    </div>
     <div id="panelScheduleBody"></div>
     <button class="add-btn" id="btnExportPanelSchedule" style="background:var(--panel2); border-color:var(--line); color:var(--text);">📋 Export summary (copy text)</button>
   </div>
@@ -4326,7 +4330,59 @@ function diversifiedWatts(connectedW, type){
   return connectedW;
 }
 const MAINS_VOLTAGE = 230; // nominal AU single-phase — three-phase circuits are shown at their single-phase-equivalent current, a simplification flagged in the UI
+
+function findObjectAnywhere(id){
+  for(const f of state.floors){ const o = f.objects.find(x=>x.id===id); if(o) return { obj:o, floor:f }; }
+  return null;
+}
+function deviceHeightMm(obj){
+  const sym = SYMBOL_LIBRARY.find(s=>s.id===obj.symbolId);
+  const v = obj.props.height_mm;
+  return (v!=null && v!=='') ? Number(v) : (sym && sym.defaultProps.height_mm!=null ? sym.defaultProps.height_mm : 1200);
+}
+// Estimated cable length for a circuit: a nearest-neighbour loop starting at
+// the linked switchboard, running through the roof space and down to each
+// device in turn (closest to furthest, then looping on to the next) --
+// the same principle a real daisy-chained circuit run uses, rather than a
+// separate home run per device. Only devices on the switchboard's own
+// floor have usable geometry; anything on another floor is left out of the
+// length and reported separately so it's never silently dropped.
+function estimateCircuitCableLength(circuit, ceilingMm, slackPct){
+  if(!circuit.switchboardObjectId) return { ok:false, reason:'No switchboard placed on the plan for this circuit yet' };
+  const found = findObjectAnywhere(circuit.switchboardObjectId);
+  if(!found) return { ok:false, reason:'Linked switchboard could not be found' };
+  const { obj: board, floor } = found;
+  if(!floor.scale) return { ok:false, reason: floor.name + ' isn\'t calibrated — use Calibrate for a real-world estimate' };
+
+  const allDevices = allObjects().filter(o => o.circuit===circuit.id);
+  const sameFloor = allDevices.filter(o => o.__floorName === floor.name);
+  const otherFloorCount = allDevices.length - sameFloor.length;
+  if(!sameFloor.length) return { ok:false, reason:'No devices assigned to this circuit on the switchboard\'s floor', otherFloorCount };
+
+  let current = { x: board.x, y: board.y, heightMm: deviceHeightMm(board) };
+  const remaining = sameFloor.slice();
+  let totalMm = 0;
+  while(remaining.length){
+    let nearestIdx = 0, nearestDistPx = Infinity;
+    remaining.forEach((o,i) => {
+      const d = Math.hypot(o.x-current.x, o.y-current.y);
+      if(d < nearestDistPx){ nearestDistPx = d; nearestIdx = i; }
+    });
+    const next = remaining.splice(nearestIdx,1)[0];
+    const nextHeightMm = deviceHeightMm(next);
+    const horizontalMm = (nearestDistPx / floor.scale) * 1000;
+    const riseMm = Math.max(ceilingMm - current.heightMm, 0);
+    const dropMm = Math.max(ceilingMm - nextHeightMm, 0);
+    totalMm += riseMm + horizontalMm + dropMm;
+    current = { x: next.x, y: next.y, heightMm: nextHeightMm };
+  }
+  const meters = (totalMm * (1 + (slackPct||0)/100)) / 1000;
+  return { ok:true, meters, deviceCount: sameFloor.length, otherFloorCount };
+}
+
 function buildPanelScheduleData(){
+  const ceilingMm = parseFloat(document.getElementById('cableCeilingHeight').value) || 3000;
+  const slackPct = parseFloat(document.getElementById('cableSlackPct').value) || 0;
   const boards = {};
   sortedCircuits().filter(c=>c.kind!=='data').forEach(c => {
     const boardLabel = resolveSwitchboardLabel(c);
@@ -4338,8 +4394,9 @@ function buildPanelScheduleData(){
     const prot = PROTECTION_LIBRARY.find(p=>p.id===c.protectionId);
     const protectionA = prot ? prot.amps : null;
     const overRated = protectionA!=null && connectedA > protectionA;
+    const cableEstimate = estimateCircuitCableLength(c, ceilingMm, slackPct);
     if(!boards[boardLabel]) boards[boardLabel] = { boardLabel, circuits:[], connectedW:0, demandW:0 };
-    boards[boardLabel].circuits.push({ circuit:c, deviceCount:devices.length, connectedW, connectedA, demandW, protectionA, protectionLabel: prot?prot.label:'—', overRated, diversityType });
+    boards[boardLabel].circuits.push({ circuit:c, deviceCount:devices.length, connectedW, connectedA, demandW, protectionA, protectionLabel: prot?prot.label:'—', overRated, diversityType, cableEstimate });
     boards[boardLabel].connectedW += connectedW;
     boards[boardLabel].demandW += demandW;
   });
@@ -4357,7 +4414,13 @@ function renderPanelSchedule(){
     const mainAmps = state.boardMainSwitchAmps[b.boardLabel];
     const demandA = b.demandW / MAINS_VOLTAGE;
     const pctOfMain = (mainAmps && mainAmps>0) ? (demandA/mainAmps*100) : null;
-    const rows = b.circuits.map(row => `
+    const rows = b.circuits.map(row => {
+      const ce = row.cableEstimate;
+      const otherFloorNote = ce.otherFloorCount ? ` <span title="${ce.otherFloorCount} device(s) on another floor not included">(+${ce.otherFloorCount} elsewhere)</span>` : '';
+      const cableCell = ce.ok
+        ? `~${ce.meters.toFixed(1)}m${otherFloorNote}`
+        : `<span style="color:var(--text-dim);" title="${ce.reason}">—</span>`;
+      return `
       <tr>
         <td>${row.circuit.id}${row.overRated?' ⚠':''}</td>
         <td>${row.circuit.description||'—'}</td>
@@ -4366,7 +4429,9 @@ function renderPanelSchedule(){
         <td>${row.deviceCount}</td>
         <td>${row.connectedW.toFixed(0)}W / ${row.connectedA.toFixed(1)}A</td>
         <td title="${DIVERSITY_TYPE_LABELS[row.diversityType]}">${row.demandW.toFixed(0)}W</td>
-      </tr>`).join('');
+        <td>${cableCell}</td>
+      </tr>`;
+    }).join('');
     const overRatedNote = b.circuits.some(r=>r.overRated)
       ? `<div style="color:var(--red); font-size:11.5px; margin-top:6px;">⚠ One or more circuits' connected load exceeds their protection device's rating — review before relying on this board.</div>` : '';
     return `
@@ -4374,7 +4439,7 @@ function renderPanelSchedule(){
         <div style="font-weight:700; font-size:13.5px; margin-bottom:6px;">${b.boardLabel}</div>
         <div style="overflow-x:auto;">
           <table style="width:100%; font-size:11.5px; border-collapse:collapse;">
-            <thead><tr style="color:var(--text-dim); text-align:left;"><th>Circuit</th><th>Description</th><th>Cable</th><th>Protection</th><th>Qty</th><th>Connected</th><th>Est. demand</th></tr></thead>
+            <thead><tr style="color:var(--text-dim); text-align:left;"><th>Circuit</th><th>Description</th><th>Cable</th><th>Protection</th><th>Qty</th><th>Connected</th><th>Est. demand</th><th>Est. cable run</th></tr></thead>
             <tbody>${rows}</tbody>
           </table>
         </div>
@@ -4388,7 +4453,7 @@ function renderPanelSchedule(){
         ${pctOfMain!=null ? `<div style="font-size:12px; color:${pctOfMain>100?'var(--red)':'var(--text-dim)'}; margin-top:4px;">${pctOfMain.toFixed(0)}% of main switch capacity used (estimate)${pctOfMain>100?' — exceeds rating':''}</div>` : ''}
         ${overRatedNote}
       </div>`;
-  }).join('') + `<div style="font-size:10.5px; color:var(--text-dim); margin-top:4px; line-height:1.5;">Connected load uses each device's typical load from the Device Library (editable per device and per type). Demand load applies a simplified diversity estimate for early planning only — always verify against AS/NZS 3000 and your own professional judgement before relying on it for a real installation.</div>`;
+  }).join('') + `<div style="font-size:10.5px; color:var(--text-dim); margin-top:4px; line-height:1.5;">Connected load uses each device's typical load from the Device Library (editable per device and per type). Demand load applies a simplified diversity estimate for early planning only — always verify against AS/NZS 3000 and your own professional judgement before relying on it for a real installation. Est. cable run assumes a straight-line route from the switchboard through the roof space to each device in turn (closest to furthest), dropping to each device's mounted height — a rough planning figure, not a substitute for a real takeoff.</div>`;
   el.querySelectorAll('[data-main-amps]').forEach(inp => inp.addEventListener('change', (e) => {
     const val = parseFloat(e.target.value);
     if(!val || val<=0) delete state.boardMainSwitchAmps[e.target.dataset.mainAmps];
@@ -4396,6 +4461,9 @@ function renderPanelSchedule(){
     pushHistory(); markDirty(); renderPanelSchedule();
   }));
 }
+['cableCeilingHeight','cableSlackPct'].forEach(id => {
+  document.getElementById(id).addEventListener('input', () => { renderPanelSchedule(); markDirty(); });
+});
 document.getElementById('btnExportPanelSchedule').addEventListener('click', () => {
   const boards = buildPanelScheduleData();
   const lines = [];
@@ -4406,7 +4474,9 @@ document.getElementById('btnExportPanelSchedule').addEventListener('click', () =
   boards.forEach(b => {
     lines.push('', b.boardLabel.toUpperCase());
     b.circuits.forEach(row => {
-      lines.push(`  ${row.circuit.id}  ${row.circuit.description||''}  |  ${row.circuit.cable||'-'}  |  ${row.protectionLabel}  |  ${row.deviceCount} device(s)  |  connected ${row.connectedW.toFixed(0)}W / ${row.connectedA.toFixed(1)}A  |  est. demand ${row.demandW.toFixed(0)}W${row.overRated?'  ⚠ EXCEEDS PROTECTION RATING':''}`);
+      const ce = row.cableEstimate;
+      const cableTxt = ce.ok ? `~${ce.meters.toFixed(1)}m est. cable${ce.otherFloorCount?` (+${ce.otherFloorCount} device(s) on another floor not included)`:''}` : `est. cable: n/a (${ce.reason})`;
+      lines.push(`  ${row.circuit.id}  ${row.circuit.description||''}  |  ${row.circuit.cable||'-'}  |  ${row.protectionLabel}  |  ${row.deviceCount} device(s)  |  connected ${row.connectedW.toFixed(0)}W / ${row.connectedA.toFixed(1)}A  |  est. demand ${row.demandW.toFixed(0)}W  |  ${cableTxt}${row.overRated?'  ⚠ EXCEEDS PROTECTION RATING':''}`);
     });
     const mainAmps = state.boardMainSwitchAmps[b.boardLabel];
     const demandA = b.demandW / MAINS_VOLTAGE;
