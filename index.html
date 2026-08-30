@@ -782,7 +782,7 @@ html.force-desktop{
     </div>
     <div class="tool-row">
       <div class="tool-card" id="moreCircuits"><span class="icon">⏚</span><span class="lbl">Circuits</span></div>
-      <div class="tool-card hidden-feature" id="moreElevation"><span class="icon">▯</span><span class="lbl">Elevation</span></div>
+      <div class="tool-card" id="moreElevation"><span class="icon">▯</span><span class="lbl">Elevation</span></div>
       <div class="tool-card" id="moreScale"><span class="icon">⚖</span><span class="lbl">Calibrate</span></div>
     </div>
     <div class="tool-row">
@@ -888,6 +888,7 @@ html.force-desktop{
   <div class="sheet-body">
     <div class="prop-row"><label>Elevation</label><select id="elevSelect"></select></div>
     <button class="add-btn" id="btnNewElevation">+ New elevation</button>
+    <button class="add-btn" id="btnDeleteElevation" style="background:rgba(248,113,113,0.1); border-color:#5c2626; color:var(--red);">Delete this elevation</button>
     <canvas id="elevCanvas" height="180"></canvas>
     <button class="add-btn" id="btnAddElevItem" style="background:var(--panel2); border-color:var(--line); color:var(--text);">+ Add device to this elevation</button>
     <div id="elevItemList"></div>
@@ -2554,7 +2555,8 @@ function renderPriceList(){
 function deleteCustomFitting(id){
   const sym = SYMBOL_LIBRARY.find(s => s.id === id);
   if(!sym) return;
-  const inUse = state.floors.reduce((n, f) => n + f.objects.filter(o => o.symbolId === id).length, 0);
+  const inUse = state.floors.reduce((n, f) => n + f.objects.filter(o => o.symbolId === id).length, 0)
+    + state.elevations.reduce((n, e) => n + e.items.filter(it => it.symbolId === id).length, 0);
   if(inUse > 0){
     showToast(inUse + ' device' + (inUse===1?'':'s') + ' on your plan use this fitting — remove or change them first.');
     return;
@@ -3362,6 +3364,16 @@ function renderElevationSelect(){
   renderElevItemList();
 }
 document.getElementById('elevSelect').addEventListener('change', (e) => { state.activeElevationId = e.target.value; drawElevation(); renderElevItemList(); });
+document.getElementById('btnDeleteElevation').addEventListener('click', () => {
+  const elev = state.elevations.find(e=>e.id===state.activeElevationId);
+  if(!elev){ showToast('No elevation selected'); return; }
+  openConfirmModal('Delete "' + elev.name + '"?', 'This elevation and its device markers will be removed. This cannot be undone.', () => {
+    state.elevations = state.elevations.filter(e=>e.id!==elev.id);
+    state.activeElevationId = state.elevations.length ? state.elevations[0].id : null;
+    pushHistory(); renderElevationSelect();
+    showToast('Deleted "' + elev.name + '"');
+  }, 'Delete');
+});
 document.getElementById('btnNewElevation').addEventListener('click', () => {
   openFormModal('New elevation', [
     { id:'name', label:'Name (e.g. Kitchen north wall)', type:'text', value:'' },
@@ -4218,6 +4230,7 @@ function applyLoadedProject(d){
   state.layers = normalizeLayers(d.layers);
   state.circuits = d.circuits || [];
   state.elevations = d.elevations || [];
+  state.activeElevationId = null;
   state.symbolSize = d.symbolSize || 16;
   state.gridOverlay = !!d.gridOverlay;
   state.selectedObjectId = null;
@@ -5332,6 +5345,7 @@ function clearCurrentProject(name){
   state.activeFloorIndex = 0;
   state.circuits = [];
   state.elevations = [];
+  state.activeElevationId = null;
   state.boardMainSwitchAmps = {};
   state.layers = LAYER_DEFS.map(l => ({ ...l, visible: true }));
   state.selectedObjectId = null;
