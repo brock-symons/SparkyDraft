@@ -632,6 +632,7 @@ html.force-desktop{
   <button class="dtb-btn" id="dtbQuote">💲 Quote</button>
   <button class="dtb-btn" id="dtbVersions">🕐 History</button>
   <button class="dtb-btn" id="dtbDuplicates">🧹 Find duplicates</button>
+  <button class="dtb-btn" id="dtbPanelSchedule">🧮 Panel schedule</button>
 </div>
 
 <div id="recoveryBanner" class="hidden">
@@ -756,8 +757,18 @@ html.force-desktop{
 
 <div class="sheet" id="sheetExport">
   <div class="sheet-handle"></div>
-  <div class="sheet-header"><div class="sheet-title">Quote summary — tap and hold to copy</div><div class="sheet-close" data-close>✕</div></div>
+  <div class="sheet-header"><div class="sheet-title" id="exportTextTitle">Summary — tap and hold to copy</div><div class="sheet-close" data-close>✕</div></div>
   <div class="sheet-body"><textarea id="exportText" readonly style="width:100%; min-height:55vh; font-family:var(--mono); font-size:11.5px; background:var(--panel2); border:1px solid var(--line); border-radius:8px; padding:10px; color:var(--text);"></textarea></div>
+</div>
+
+<div class="sheet" id="sheetPanelSchedule">
+  <div class="sheet-handle"></div>
+  <div class="sheet-header"><div class="sheet-title">Panel schedule</div><div class="sheet-close" data-close>✕</div></div>
+  <div class="sheet-body">
+    <div style="font-size:11.5px; color:var(--text-dim); margin-bottom:10px; line-height:1.5;">A circuit directory and simplified load estimate per board, built from your circuits and placed devices. <b>Estimate for planning only</b> — always verify against AS/NZS 3000 and your own professional judgement.</div>
+    <div id="panelScheduleBody"></div>
+    <button class="add-btn" id="btnExportPanelSchedule" style="background:var(--panel2); border-color:var(--line); color:var(--text);">📋 Export summary (copy text)</button>
+  </div>
 </div>
 
 <div class="sheet" id="sheetMore">
@@ -787,6 +798,7 @@ html.force-desktop{
     <div class="tool-row">
       <div class="tool-card hidden-feature" id="moreWall"><span class="icon">▬</span><span class="lbl">Mark wall</span></div>
       <div class="tool-card" id="moreDuplicates"><span class="icon">🧹</span><span class="lbl">Find duplicates</span></div>
+      <div class="tool-card" id="morePanelSchedule"><span class="icon">🧮</span><span class="lbl">Panel schedule</span></div>
     </div>
   </div>
 </div>
@@ -944,69 +956,77 @@ html.force-desktop{
 // ===================================================================
 // SYMBOL LIBRARY
 // ===================================================================
+// `watts` on each entry is a typical/nominal connected load used only by
+// the panel schedule's load estimate (see effectiveWatts() / Panel Schedule
+// sheet) -- a starting point, editable per-device and in the Device
+// Library, same as price and labour. Not a rated/certified figure.
 const SYMBOL_LIBRARY = [
   // POWER
-  { id:'gpo_single', label:'Single GPO', abbr:'S', color:'#4fb3ff', category:'power', defaultProps:{ height_mm:300, cable:'1.5mm² TPS', protection:'20A RCBO', material_cost:6.50, labour_hours:0.2 } },
-  { id:'gpo_double', label:'Double GPO', abbr:'D', color:'#4fb3ff', category:'power', defaultProps:{ height_mm:300, cable:'2.5mm² TPS', protection:'20A RCBO', material_cost:8.50, labour_hours:0.25 } },
-  { id:'gpo_quad', label:'Quad GPO', abbr:'Q', color:'#4fb3ff', category:'power', defaultProps:{ height_mm:300, cable:'2.5mm² TPS', protection:'20A RCBO', material_cost:24.00, labour_hours:0.35 } },
-  { id:'gpo_wp', label:'Weatherproof GPO', abbr:'WP', color:'#4fb3ff', category:'power', defaultProps:{ height_mm:300, cable:'2.5mm² TPS', protection:'20A RCBO', material_cost:22.00, labour_hours:0.4 } },
-  { id:'gpo_dedicated', label:'Dedicated GPO', abbr:'DG', color:'#4fb3ff', category:'power', defaultProps:{ height_mm:300, cable:'2.5mm² TPS', protection:'20A RCBO', material_cost:9.50, labour_hours:0.3 } },
-  { id:'outlet_15a', label:'15A outlet', abbr:'15', color:'#4fb3ff', category:'power', defaultProps:{ height_mm:300, cable:'2.5mm² TPS', protection:'20A RCBO', material_cost:18.00, labour_hours:0.3 } },
-  { id:'outlet_20a', label:'20A outlet', abbr:'20', color:'#4fb3ff', category:'power', defaultProps:{ height_mm:300, cable:'4mm² TPS', protection:'25A RCBO', material_cost:28.00, labour_hours:0.35 } },
-  { id:'outlet_32a', label:'32A outlet', abbr:'32', color:'#4fb3ff', category:'power', defaultProps:{ height_mm:300, cable:'6mm² TPS', protection:'32A RCBO', material_cost:45.00, labour_hours:0.5 } },
-  { id:'outlet_1ph', label:'Single-phase outlet', abbr:'1P', color:'#4fb3ff', category:'power', defaultProps:{ height_mm:300, cable:'2.5mm² TPS', protection:'20A RCBO', material_cost:20.00, labour_hours:0.3 } },
-  { id:'outlet_3ph', label:'Three-phase outlet', abbr:'3P', color:'#4fb3ff', category:'power', defaultProps:{ height_mm:300, cable:'6mm² 4C+E', protection:'32A RCBO', material_cost:65.00, labour_hours:0.7 } },
-  { id:'isolator', label:'Isolation switch / Isolator', abbr:'ISO', color:'#4fb3ff', category:'power', defaultProps:{ height_mm:1500, cable:'2.5mm² TPS', protection:'-', material_cost:15.00, labour_hours:0.3 } },
+  { id:'gpo_single', label:'Single GPO', abbr:'S', color:'#4fb3ff', category:'power', defaultProps:{ height_mm:300, cable:'1.5mm² TPS', protection:'20A RCBO', material_cost:6.50, labour_hours:0.2, watts:150 } },
+  { id:'gpo_double', label:'Double GPO', abbr:'D', color:'#4fb3ff', category:'power', defaultProps:{ height_mm:300, cable:'2.5mm² TPS', protection:'20A RCBO', material_cost:8.50, labour_hours:0.25, watts:200 } },
+  { id:'gpo_quad', label:'Quad GPO', abbr:'Q', color:'#4fb3ff', category:'power', defaultProps:{ height_mm:300, cable:'2.5mm² TPS', protection:'20A RCBO', material_cost:24.00, labour_hours:0.35, watts:300 } },
+  { id:'gpo_wp', label:'Weatherproof GPO', abbr:'WP', color:'#4fb3ff', category:'power', defaultProps:{ height_mm:300, cable:'2.5mm² TPS', protection:'20A RCBO', material_cost:22.00, labour_hours:0.4, watts:150 } },
+  { id:'gpo_dedicated', label:'Dedicated GPO', abbr:'DG', color:'#4fb3ff', category:'power', defaultProps:{ height_mm:300, cable:'2.5mm² TPS', protection:'20A RCBO', material_cost:9.50, labour_hours:0.3, watts:500 } },
+  { id:'outlet_15a', label:'15A outlet', abbr:'15', color:'#4fb3ff', category:'power', defaultProps:{ height_mm:300, cable:'2.5mm² TPS', protection:'20A RCBO', material_cost:18.00, labour_hours:0.3, watts:1000 } },
+  { id:'outlet_20a', label:'20A outlet', abbr:'20', color:'#4fb3ff', category:'power', defaultProps:{ height_mm:300, cable:'4mm² TPS', protection:'25A RCBO', material_cost:28.00, labour_hours:0.35, watts:1500 } },
+  { id:'outlet_32a', label:'32A outlet', abbr:'32', color:'#4fb3ff', category:'power', defaultProps:{ height_mm:300, cable:'6mm² TPS', protection:'32A RCBO', material_cost:45.00, labour_hours:0.5, watts:3000 } },
+  { id:'outlet_1ph', label:'Single-phase outlet', abbr:'1P', color:'#4fb3ff', category:'power', defaultProps:{ height_mm:300, cable:'2.5mm² TPS', protection:'20A RCBO', material_cost:20.00, labour_hours:0.3, watts:1000 } },
+  { id:'outlet_3ph', label:'Three-phase outlet', abbr:'3P', color:'#4fb3ff', category:'power', defaultProps:{ height_mm:300, cable:'6mm² 4C+E', protection:'32A RCBO', material_cost:65.00, labour_hours:0.7, watts:5000 } },
+  { id:'isolator', label:'Isolation switch / Isolator', abbr:'ISO', color:'#4fb3ff', category:'power', defaultProps:{ height_mm:1500, cable:'2.5mm² TPS', protection:'-', material_cost:15.00, labour_hours:0.3, watts:0 } },
 
   // LIGHTING
-  { id:'downlight', label:'Downlight', abbr:'DL', color:'#f2a93b', category:'lighting', defaultProps:{ height_mm:0, cable:'1.5mm² TPS', protection:'10A', material_cost:14.00, labour_hours:0.3 } },
-  { id:'batten', label:'Batten light', abbr:'BL', color:'#f2a93b', category:'lighting', defaultProps:{ height_mm:0, cable:'1.5mm² TPS', protection:'10A', material_cost:9.00, labour_hours:0.2 } },
-  { id:'pendant', label:'Pendant light', abbr:'PD', color:'#f2a93b', category:'lighting', defaultProps:{ height_mm:0, cable:'1.5mm² TPS', protection:'10A', material_cost:35.00, labour_hours:0.35 } },
-  { id:'wall_light', label:'Wall light', abbr:'WL', color:'#f2a93b', category:'lighting', defaultProps:{ height_mm:1800, cable:'1.5mm² TPS', protection:'10A', material_cost:40.00, labour_hours:0.35 } },
-  { id:'sensor_light', label:'Sensor light', abbr:'SL', color:'#f2a93b', category:'lighting', defaultProps:{ height_mm:2400, cable:'1.5mm² TPS', protection:'10A', material_cost:38.00, labour_hours:0.4 } },
-  { id:'flood_light', label:'Flood light', abbr:'FL', color:'#f2a93b', category:'lighting', defaultProps:{ height_mm:2400, cable:'1.5mm² TPS', protection:'10A', material_cost:55.00, labour_hours:0.45 } },
-  { id:'led_strip', label:'LED strip', abbr:'LS', color:'#f2a93b', category:'lighting', defaultProps:{ height_mm:0, cable:'1.5mm² TPS', protection:'10A', material_cost:25.00, labour_hours:0.5 } },
-  { id:'ceiling_light', label:'Ceiling light', abbr:'CL', color:'#f2a93b', category:'lighting', defaultProps:{ height_mm:0, cable:'1.5mm² TPS', protection:'10A', material_cost:45.00, labour_hours:0.3 } },
-  { id:'exit_light', label:'Exit light', abbr:'EX', color:'#f2a93b', category:'lighting', defaultProps:{ height_mm:2100, cable:'1.5mm² TPS', protection:'10A', material_cost:65.00, labour_hours:0.5 } },
-  { id:'emergency_light', label:'Emergency light', abbr:'EM', color:'#f2a93b', category:'lighting', defaultProps:{ height_mm:2400, cable:'1.5mm² TPS', protection:'10A', material_cost:75.00, labour_hours:0.5 } },
-  { id:'exhaust_fan', label:'Exhaust fan', abbr:'EF', color:'#f2a93b', category:'lighting', defaultProps:{ height_mm:0, cable:'1.5mm² TPS', protection:'10A', material_cost:45.00, labour_hours:0.6 } },
-  { id:'ceiling_fan', label:'Ceiling fan', abbr:'CF', color:'#f2a93b', category:'lighting', defaultProps:{ height_mm:2400, cable:'1.5mm² TPS', protection:'10A', material_cost:120.00, labour_hours:0.9 } },
+  { id:'downlight', label:'Downlight', abbr:'DL', color:'#f2a93b', category:'lighting', defaultProps:{ height_mm:0, cable:'1.5mm² TPS', protection:'10A', material_cost:14.00, labour_hours:0.3, watts:10 } },
+  { id:'batten', label:'Batten light', abbr:'BL', color:'#f2a93b', category:'lighting', defaultProps:{ height_mm:0, cable:'1.5mm² TPS', protection:'10A', material_cost:9.00, labour_hours:0.2, watts:20 } },
+  { id:'pendant', label:'Pendant light', abbr:'PD', color:'#f2a93b', category:'lighting', defaultProps:{ height_mm:0, cable:'1.5mm² TPS', protection:'10A', material_cost:35.00, labour_hours:0.35, watts:15 } },
+  { id:'wall_light', label:'Wall light', abbr:'WL', color:'#f2a93b', category:'lighting', defaultProps:{ height_mm:1800, cable:'1.5mm² TPS', protection:'10A', material_cost:40.00, labour_hours:0.35, watts:10 } },
+  { id:'sensor_light', label:'Sensor light', abbr:'SL', color:'#f2a93b', category:'lighting', defaultProps:{ height_mm:2400, cable:'1.5mm² TPS', protection:'10A', material_cost:38.00, labour_hours:0.4, watts:20 } },
+  { id:'flood_light', label:'Flood light', abbr:'FL', color:'#f2a93b', category:'lighting', defaultProps:{ height_mm:2400, cable:'1.5mm² TPS', protection:'10A', material_cost:55.00, labour_hours:0.45, watts:30 } },
+  { id:'led_strip', label:'LED strip', abbr:'LS', color:'#f2a93b', category:'lighting', defaultProps:{ height_mm:0, cable:'1.5mm² TPS', protection:'10A', material_cost:25.00, labour_hours:0.5, watts:15 } },
+  { id:'ceiling_light', label:'Ceiling light', abbr:'CL', color:'#f2a93b', category:'lighting', defaultProps:{ height_mm:0, cable:'1.5mm² TPS', protection:'10A', material_cost:45.00, labour_hours:0.3, watts:20 } },
+  { id:'exit_light', label:'Exit light', abbr:'EX', color:'#f2a93b', category:'lighting', defaultProps:{ height_mm:2100, cable:'1.5mm² TPS', protection:'10A', material_cost:65.00, labour_hours:0.5, watts:5 } },
+  { id:'emergency_light', label:'Emergency light', abbr:'EM', color:'#f2a93b', category:'lighting', defaultProps:{ height_mm:2400, cable:'1.5mm² TPS', protection:'10A', material_cost:75.00, labour_hours:0.5, watts:8 } },
+  { id:'exhaust_fan', label:'Exhaust fan', abbr:'EF', color:'#f2a93b', category:'lighting', defaultProps:{ height_mm:0, cable:'1.5mm² TPS', protection:'10A', material_cost:45.00, labour_hours:0.6, watts:25 } },
+  { id:'ceiling_fan', label:'Ceiling fan', abbr:'CF', color:'#f2a93b', category:'lighting', defaultProps:{ height_mm:2400, cable:'1.5mm² TPS', protection:'10A', material_cost:120.00, labour_hours:0.9, watts:70 } },
 
   // SWITCHING (gang count + two-way chosen at placement for switch_1g/switch_2way)
-  { id:'switch_1g', label:'Light switch', abbr:'SW', color:'#eab308', category:'lighting', defaultProps:{ height_mm:1200, cable:'1.5mm² TPS', protection:'-', material_cost:5.00, labour_hours:0.2 } },
-  { id:'switch_2way', label:'Two-way switch', abbr:'2W', color:'#eab308', category:'lighting', defaultProps:{ height_mm:1200, cable:'1.5mm² TPS', protection:'-', material_cost:7.50, labour_hours:0.25 } },
-  { id:'switch_intermediate', label:'Intermediate switch', abbr:'IM', color:'#eab308', category:'lighting', defaultProps:{ height_mm:1200, cable:'1.5mm² TPS', protection:'-', material_cost:12.00, labour_hours:0.3 } },
-  { id:'dimmer', label:'Dimmer', abbr:'DM', color:'#eab308', category:'lighting', defaultProps:{ height_mm:1200, cable:'1.5mm² TPS', protection:'-', material_cost:22.00, labour_hours:0.25 } },
-  { id:'motion_sensor', label:'Sensor (PIR)', abbr:'PIR', color:'#eab308', category:'lighting', defaultProps:{ height_mm:2400, cable:'1.5mm² TPS', protection:'-', material_cost:18.00, labour_hours:0.3 } },
-  { id:'pe_cell', label:'PE cell', abbr:'PE', color:'#eab308', category:'lighting', defaultProps:{ height_mm:2400, cable:'1.5mm² TPS', protection:'-', material_cost:16.00, labour_hours:0.25 } },
+  // watts:0 -- switches control a lighting circuit's own load, which is
+  // already counted via the light fixtures themselves; counting the switch
+  // too would double up the circuit's connected load.
+  { id:'switch_1g', label:'Light switch', abbr:'SW', color:'#eab308', category:'lighting', defaultProps:{ height_mm:1200, cable:'1.5mm² TPS', protection:'-', material_cost:5.00, labour_hours:0.2, watts:0 } },
+  { id:'switch_2way', label:'Two-way switch', abbr:'2W', color:'#eab308', category:'lighting', defaultProps:{ height_mm:1200, cable:'1.5mm² TPS', protection:'-', material_cost:7.50, labour_hours:0.25, watts:0 } },
+  { id:'switch_intermediate', label:'Intermediate switch', abbr:'IM', color:'#eab308', category:'lighting', defaultProps:{ height_mm:1200, cable:'1.5mm² TPS', protection:'-', material_cost:12.00, labour_hours:0.3, watts:0 } },
+  { id:'dimmer', label:'Dimmer', abbr:'DM', color:'#eab308', category:'lighting', defaultProps:{ height_mm:1200, cable:'1.5mm² TPS', protection:'-', material_cost:22.00, labour_hours:0.25, watts:0 } },
+  { id:'motion_sensor', label:'Sensor (PIR)', abbr:'PIR', color:'#eab308', category:'lighting', defaultProps:{ height_mm:2400, cable:'1.5mm² TPS', protection:'-', material_cost:18.00, labour_hours:0.3, watts:0 } },
+  { id:'pe_cell', label:'PE cell', abbr:'PE', color:'#eab308', category:'lighting', defaultProps:{ height_mm:2400, cable:'1.5mm² TPS', protection:'-', material_cost:16.00, labour_hours:0.25, watts:0 } },
 
   // APPLIANCES / FITTINGS
-  { id:'hws', label:'HWS', abbr:'HWS', color:'#4fb3ff', category:'power', defaultProps:{ height_mm:1500, cable:'4mm² TPS', protection:'20A RCBO', material_cost:25.00, labour_hours:0.6 } },
-  { id:'oven', label:'Oven', abbr:'OV', color:'#4fb3ff', category:'power', defaultProps:{ height_mm:600, cable:'6mm² TPS', protection:'32A RCBO', material_cost:20.00, labour_hours:0.5 } },
-  { id:'cooktop', label:'Cooktop', abbr:'CT', color:'#4fb3ff', category:'power', defaultProps:{ height_mm:600, cable:'6mm² TPS', protection:'32A RCBO', material_cost:20.00, labour_hours:0.5 } },
-  { id:'tastic_2h', label:'2-heat Tastic', abbr:'T2', color:'#f2a93b', category:'lighting', defaultProps:{ height_mm:0, cable:'2.5mm² TPS', protection:'20A RCBO', material_cost:95.00, labour_hours:0.7 } },
-  { id:'tastic_4h', label:'4-heat Tastic', abbr:'T4', color:'#f2a93b', category:'lighting', defaultProps:{ height_mm:0, cable:'2.5mm² TPS', protection:'20A RCBO', material_cost:150.00, labour_hours:0.8 } },
-  { id:'towel_rail', label:'Heated towel rail', abbr:'TR', color:'#4fb3ff', category:'power', defaultProps:{ height_mm:1400, cable:'1.5mm² TPS', protection:'10A', material_cost:85.00, labour_hours:0.4 } },
-  { id:'led_mirror', label:'LED mirror', abbr:'MR', color:'#f2a93b', category:'lighting', defaultProps:{ height_mm:1600, cable:'1.5mm² TPS', protection:'10A', material_cost:120.00, labour_hours:0.5 } },
-  { id:'elec_heater', label:'Electric heater', abbr:'HT', color:'#4fb3ff', category:'power', defaultProps:{ height_mm:1800, cable:'2.5mm² TPS', protection:'20A RCBO', material_cost:110.00, labour_hours:0.5 } },
-  { id:'solar_inverter', label:'Solar inverter', abbr:'INV', color:'#4fb3ff', category:'power', defaultProps:{ height_mm:1500, cable:'6mm² TPS', protection:'32A RCBO', material_cost:0.00, labour_hours:1.5 } },
+  { id:'hws', label:'HWS', abbr:'HWS', color:'#4fb3ff', category:'power', defaultProps:{ height_mm:1500, cable:'4mm² TPS', protection:'20A RCBO', material_cost:25.00, labour_hours:0.6, watts:3600 } },
+  { id:'oven', label:'Oven', abbr:'OV', color:'#4fb3ff', category:'power', defaultProps:{ height_mm:600, cable:'6mm² TPS', protection:'32A RCBO', material_cost:20.00, labour_hours:0.5, watts:3000 } },
+  { id:'cooktop', label:'Cooktop', abbr:'CT', color:'#4fb3ff', category:'power', defaultProps:{ height_mm:600, cable:'6mm² TPS', protection:'32A RCBO', material_cost:20.00, labour_hours:0.5, watts:7000 } },
+  { id:'tastic_2h', label:'2-heat Tastic', abbr:'T2', color:'#f2a93b', category:'lighting', defaultProps:{ height_mm:0, cable:'2.5mm² TPS', protection:'20A RCBO', material_cost:95.00, labour_hours:0.7, watts:1200 } },
+  { id:'tastic_4h', label:'4-heat Tastic', abbr:'T4', color:'#f2a93b', category:'lighting', defaultProps:{ height_mm:0, cable:'2.5mm² TPS', protection:'20A RCBO', material_cost:150.00, labour_hours:0.8, watts:2400 } },
+  { id:'towel_rail', label:'Heated towel rail', abbr:'TR', color:'#4fb3ff', category:'power', defaultProps:{ height_mm:1400, cable:'1.5mm² TPS', protection:'10A', material_cost:85.00, labour_hours:0.4, watts:150 } },
+  { id:'led_mirror', label:'LED mirror', abbr:'MR', color:'#f2a93b', category:'lighting', defaultProps:{ height_mm:1600, cable:'1.5mm² TPS', protection:'10A', material_cost:120.00, labour_hours:0.5, watts:15 } },
+  { id:'elec_heater', label:'Electric heater', abbr:'HT', color:'#4fb3ff', category:'power', defaultProps:{ height_mm:1800, cable:'2.5mm² TPS', protection:'20A RCBO', material_cost:110.00, labour_hours:0.5, watts:2400 } },
+  { id:'solar_inverter', label:'Solar inverter', abbr:'INV', color:'#4fb3ff', category:'power', defaultProps:{ height_mm:1500, cable:'6mm² TPS', protection:'32A RCBO', material_cost:0.00, labour_hours:1.5, watts:0 } },
 
   // SAFETY
-  { id:'smoke_alarm', label:'Smoke alarm', abbr:'SA', color:'#f87171', category:'safety', defaultProps:{ height_mm:0, cable:'1.5mm² TPS', protection:'-', material_cost:28.00, labour_hours:0.3 } },
+  { id:'smoke_alarm', label:'Smoke alarm', abbr:'SA', color:'#f87171', category:'safety', defaultProps:{ height_mm:0, cable:'1.5mm² TPS', protection:'-', material_cost:28.00, labour_hours:0.3, watts:0 } },
 
-  // COMMUNICATIONS
-  { id:'tv_outlet', label:'TV outlet', abbr:'TV', color:'#4ade80', category:'data', defaultProps:{ height_mm:300, cable:'RG6 Coax', protection:'-', material_cost:9.00, labour_hours:0.25 } },
-  { id:'data_rj45', label:'Data outlet', abbr:'RJ', color:'#4ade80', category:'data', defaultProps:{ height_mm:300, cable:'Cat6', protection:'-', material_cost:11.00, labour_hours:0.25 } },
-  { id:'wap', label:'WAP', abbr:'WAP', color:'#4ade80', category:'data', defaultProps:{ height_mm:2400, cable:'Cat6', protection:'-', material_cost:95.00, labour_hours:0.35 } },
-  { id:'cctv', label:'CCTV camera', abbr:'CC', color:'#4ade80', category:'data', defaultProps:{ height_mm:2700, cable:'Cat6', protection:'-', material_cost:120.00, labour_hours:0.5 } },
-  { id:'intercom', label:'Intercom', abbr:'IC', color:'#4ade80', category:'data', defaultProps:{ height_mm:1400, cable:'Cat6', protection:'-', material_cost:150.00, labour_hours:0.4 } },
-  { id:'fibre_outlet', label:'Fibre outlet', abbr:'FB', color:'#4ade80', category:'data', defaultProps:{ height_mm:300, cable:'Fibre', protection:'-', material_cost:35.00, labour_hours:0.3 } },
-  { id:'comms_rack', label:'Comms rack', abbr:'RK', color:'#4ade80', category:'data', defaultProps:{ height_mm:1800, cable:'-', protection:'-', material_cost:350.00, labour_hours:2.0 } },
-  { id:'patch_panel', label:'Patch panel', abbr:'PP', color:'#4ade80', category:'data', defaultProps:{ height_mm:1500, cable:'Cat6', protection:'-', material_cost:65.00, labour_hours:0.75 } },
+  // COMMUNICATIONS (low-voltage/negligible draw, and always on a `data`-kind
+  // circuit that's already excluded from the electrical panel schedule)
+  { id:'tv_outlet', label:'TV outlet', abbr:'TV', color:'#4ade80', category:'data', defaultProps:{ height_mm:300, cable:'RG6 Coax', protection:'-', material_cost:9.00, labour_hours:0.25, watts:0 } },
+  { id:'data_rj45', label:'Data outlet', abbr:'RJ', color:'#4ade80', category:'data', defaultProps:{ height_mm:300, cable:'Cat6', protection:'-', material_cost:11.00, labour_hours:0.25, watts:0 } },
+  { id:'wap', label:'WAP', abbr:'WAP', color:'#4ade80', category:'data', defaultProps:{ height_mm:2400, cable:'Cat6', protection:'-', material_cost:95.00, labour_hours:0.35, watts:0 } },
+  { id:'cctv', label:'CCTV camera', abbr:'CC', color:'#4ade80', category:'data', defaultProps:{ height_mm:2700, cable:'Cat6', protection:'-', material_cost:120.00, labour_hours:0.5, watts:0 } },
+  { id:'intercom', label:'Intercom', abbr:'IC', color:'#4ade80', category:'data', defaultProps:{ height_mm:1400, cable:'Cat6', protection:'-', material_cost:150.00, labour_hours:0.4, watts:0 } },
+  { id:'fibre_outlet', label:'Fibre outlet', abbr:'FB', color:'#4ade80', category:'data', defaultProps:{ height_mm:300, cable:'Fibre', protection:'-', material_cost:35.00, labour_hours:0.3, watts:0 } },
+  { id:'comms_rack', label:'Comms rack', abbr:'RK', color:'#4ade80', category:'data', defaultProps:{ height_mm:1800, cable:'-', protection:'-', material_cost:350.00, labour_hours:2.0, watts:0 } },
+  { id:'patch_panel', label:'Patch panel', abbr:'PP', color:'#4ade80', category:'data', defaultProps:{ height_mm:1500, cable:'Cat6', protection:'-', material_cost:65.00, labour_hours:0.75, watts:0 } },
 
-  // DISTRIBUTION
-  { id:'switchboard', label:'Switchboard', abbr:'SB', color:'#e879f9', category:'board', defaultProps:{ height_mm:1500, cable:'-', protection:'-', material_cost:180.00, labour_hours:2.5 } },
-  { id:'dist_board', label:'Distribution board', abbr:'DB', color:'#e879f9', category:'board', defaultProps:{ height_mm:1500, cable:'-', protection:'-', material_cost:220.00, labour_hours:2.0 } },
+  // DISTRIBUTION (the board itself isn't a load)
+  { id:'switchboard', label:'Switchboard', abbr:'SB', color:'#e879f9', category:'board', defaultProps:{ height_mm:1500, cable:'-', protection:'-', material_cost:180.00, labour_hours:2.5, watts:0 } },
+  { id:'dist_board', label:'Distribution board', abbr:'DB', color:'#e879f9', category:'board', defaultProps:{ height_mm:1500, cable:'-', protection:'-', material_cost:220.00, labour_hours:2.0, watts:0 } },
 ];
 const LAYER_DEFS = [
   { id:'architectural', name:'Architectural', color:'#7d8fa3', locked:false },
@@ -1061,16 +1081,19 @@ const CABLE_SIZES = [
 ];
 // Protection devices as real priced entities (section 21-22 of the revision
 // brief). Costs are editable defaults, same override pattern as product pricing.
+// `amps` is the breaker's own rating, used by the panel schedule to flag a
+// circuit whose connected load exceeds its protection device. null where a
+// numeric rating doesn't apply (RCD/main switch/custom).
 const PROTECTION_LIBRARY = [
-  { id:'mcb16', label:'16A MCB', cost:14 },
-  { id:'mcb20', label:'20A MCB', cost:15 },
-  { id:'rcbo16', label:'16A RCBO', cost:32 },
-  { id:'rcbo20', label:'20A RCBO', cost:35 },
-  { id:'rcbo32', label:'32A RCBO', cost:42 },
-  { id:'rcbo40', label:'40A RCBO', cost:48 },
-  { id:'rcd', label:'RCD (safety switch)', cost:55 },
-  { id:'mainswitch', label:'Main switch', cost:65 },
-  { id:'other', label:'Other / custom', cost:0 },
+  { id:'mcb16', label:'16A MCB', cost:14, amps:16 },
+  { id:'mcb20', label:'20A MCB', cost:15, amps:20 },
+  { id:'rcbo16', label:'16A RCBO', cost:32, amps:16 },
+  { id:'rcbo20', label:'20A RCBO', cost:35, amps:20 },
+  { id:'rcbo32', label:'32A RCBO', cost:42, amps:32 },
+  { id:'rcbo40', label:'40A RCBO', cost:48, amps:40 },
+  { id:'rcd', label:'RCD (safety switch)', cost:55, amps:null },
+  { id:'mainswitch', label:'Main switch', cost:65, amps:null },
+  { id:'other', label:'Other / custom', cost:0, amps:null },
 ];
 
 // ===================================================================
@@ -1117,6 +1140,7 @@ let state = {
   showSwitchRuns:false,
   isolatedCircuitId:null, // when set, only this circuit's cabling is drawn — lets a user see one circuit's run at a time
   gridOverlay:false, // when true, grid is drawn above the plan (still semi-transparent)
+  boardMainSwitchAmps:{}, // board display label -> main switch/incoming supply rating (A), for the Panel Schedule's capacity-used estimate
 };
 // Product default price + object-level override (section 17-18 of the
 // revision brief). If no override, always resolve to the CURRENT product
@@ -1131,6 +1155,15 @@ function effectiveLabour(obj){
   const sym = SYMBOL_LIBRARY.find(s=>s.id===obj.symbolId);
   const ov = obj.props.labourOverride;
   return (ov!=null && ov!=='') ? Number(ov) : (sym ? sym.defaultProps.labour_hours : 0);
+}
+// obj.props.watts is copied from the library default at placement time
+// (same mechanism as props.cable/props.protection) and directly editable
+// per device in its properties panel -- so unlike price/labour there's no
+// separate override field, this just falls back to the library default for
+// devices placed before this field existed.
+function effectiveWatts(obj){
+  const sym = SYMBOL_LIBRARY.find(s=>s.id===obj.symbolId);
+  return obj.props.watts!=null ? Number(obj.props.watts) : (sym ? (sym.defaultProps.watts||0) : 0);
 }
 function effectiveProtectionCost(circuit){
   const ov = circuit.protectionCostOverride;
@@ -2286,7 +2319,7 @@ document.getElementById('multiAssignSwitch').addEventListener('click', () => {
 // BOTTOM TOOLBAR + SHEETS
 // ===================================================================
 const backdrop = document.getElementById('backdrop');
-const sheets = ['sheetSymbols','sheetLayers','sheetProps','sheetQuote','sheetMore','sheetCableSize','sheetCircuits','sheetElevation','sheetFloors','sheetExport','sheetGrid','sheetAssignSwitch','sheetPriceList','sheetVersions','sheetRooms','sheetDuplicates','sheetAccount','sheetSaveOptions','sheetOrg'].map(id=>document.getElementById(id));
+const sheets = ['sheetSymbols','sheetLayers','sheetProps','sheetQuote','sheetMore','sheetCableSize','sheetCircuits','sheetElevation','sheetFloors','sheetExport','sheetGrid','sheetAssignSwitch','sheetPriceList','sheetVersions','sheetRooms','sheetDuplicates','sheetAccount','sheetSaveOptions','sheetOrg','sheetPanelSchedule'].map(id=>document.getElementById(id));
 function closeSheets(){ sheets.forEach(s=>s.classList.remove('open')); backdrop.classList.remove('open'); }
 // Layers/Symbols/Properties are permanently docked side panels on desktop
 // (not floating dialogs), so the backdrop shouldn't cover the canvas for
@@ -2415,6 +2448,7 @@ document.getElementById('morePriceList').addEventListener('click', () => { rende
 document.getElementById('moreVersions').addEventListener('click', () => { renderVersionHistory(); openSheet('sheetVersions'); });
 document.getElementById('moreRooms').addEventListener('click', () => { renderRooms(); openSheet('sheetRooms'); });
 document.getElementById('moreDuplicates').addEventListener('click', () => { renderDuplicatesReport(); openSheet('sheetDuplicates'); });
+document.getElementById('morePanelSchedule').addEventListener('click', () => { renderPanelSchedule(); openSheet('sheetPanelSchedule'); });
 
 // ===================================================================
 // DUPLICATE DEVICE FINDER
@@ -2486,13 +2520,14 @@ function renderPriceList(){
       <div class="circuit-row" style="align-items:center;">
         <input type="text" data-name-id="${sym.id}" value="${sym.label}" style="flex:1; min-width:0; background:transparent; border:none; color:${sym.color}; font-weight:700; font-size:13px; font-family:var(--mono); padding:6px 4px;">
         <div style="display:flex; gap:6px; flex-shrink:0; align-items:center;">
-          <input type="number" step="0.01" data-price-id="${sym.id}" value="${sym.defaultProps.material_cost}" style="width:66px; background:var(--panel2); border:1px solid var(--line); color:var(--text); padding:6px 6px; border-radius:6px; font-size:12px;">
-          <input type="number" step="0.05" data-labour-id="${sym.id}" value="${sym.defaultProps.labour_hours}" style="width:54px; background:var(--panel2); border:1px solid var(--line); color:var(--text); padding:6px 6px; border-radius:6px; font-size:12px;">
+          <input type="number" step="0.01" data-price-id="${sym.id}" value="${sym.defaultProps.material_cost}" style="width:60px; background:var(--panel2); border:1px solid var(--line); color:var(--text); padding:6px 6px; border-radius:6px; font-size:12px;">
+          <input type="number" step="0.05" data-labour-id="${sym.id}" value="${sym.defaultProps.labour_hours}" style="width:48px; background:var(--panel2); border:1px solid var(--line); color:var(--text); padding:6px 6px; border-radius:6px; font-size:12px;">
+          <input type="number" step="1" data-watts-id="${sym.id}" value="${sym.defaultProps.watts||0}" style="width:52px; background:var(--panel2); border:1px solid var(--line); color:var(--text); padding:6px 6px; border-radius:6px; font-size:12px;">
           ${sym.id.startsWith('custom_') ? `<div class="lock-btn" data-del-fitting="${sym.id}" title="Delete this fitting" style="opacity:1; color:var(--red);">🗑</div>` : ''}
         </div>
       </div>
     `).join('')}
-  `).join('') + '<div style="display:flex; justify-content:flex-end; gap:6px; font-size:10px; color:var(--text-dim); padding:6px 4px 0;"><span style="width:66px; text-align:center;">Price $</span><span style="width:54px; text-align:center;">Labour hrs</span></div>';
+  `).join('') + '<div style="display:flex; justify-content:flex-end; gap:6px; font-size:10px; color:var(--text-dim); padding:6px 4px 0;"><span style="width:60px; text-align:center;">Price $</span><span style="width:48px; text-align:center;">Labour hrs</span><span style="width:52px; text-align:center;">Watts</span></div>';
   el.querySelectorAll('[data-name-id]').forEach(inp => inp.addEventListener('change', (e) => {
     const sym = SYMBOL_LIBRARY.find(s=>s.id===e.target.dataset.nameId);
     sym.label = e.target.value || sym.label;
@@ -2507,6 +2542,11 @@ function renderPriceList(){
     const sym = SYMBOL_LIBRARY.find(s=>s.id===e.target.dataset.labourId);
     sym.defaultProps.labour_hours = parseFloat(e.target.value)||0;
     renderSchedule(); updateQuote(); markDirty();
+  }));
+  el.querySelectorAll('[data-watts-id]').forEach(inp => inp.addEventListener('change', (e) => {
+    const sym = SYMBOL_LIBRARY.find(s=>s.id===e.target.dataset.wattsId);
+    sym.defaultProps.watts = parseFloat(e.target.value)||0;
+    markDirty();
   }));
   el.querySelectorAll('[data-del-fitting]').forEach(btn => btn.addEventListener('click', () => deleteCustomFitting(btn.dataset.delFitting)));
 }
@@ -2995,6 +3035,7 @@ document.getElementById('btnExportQuote').addEventListener('click', () => {
   lines.push('Margin: ' + document.getElementById('qMargin').textContent);
   lines.push('GST: ' + document.getElementById('qGst').textContent);
   lines.push('TOTAL: ' + document.getElementById('qTotal').textContent);
+  document.getElementById('exportTextTitle').textContent = 'Quote summary — tap and hold to copy';
   document.getElementById('exportText').value = lines.join('\n');
   openSheet('sheetExport');
   document.getElementById('exportText').focus();
@@ -3604,6 +3645,9 @@ function openProps(id){
       <div class="prop-row"><label>Cable</label><input id="p_cable" value="${obj.props.cable}" ${lockedLayer?'disabled':''}></div>
       <div class="prop-row"><label>Protection</label><input id="p_protection" value="${obj.props.protection}" ${lockedLayer?'disabled':''}></div>
     </div>
+    <div class="prop-grid2">
+      <div class="prop-row"><label>Load (W) <span style="font-weight:400; color:var(--text-dim);">— for panel schedule</span></label><input id="p_watts" type="number" value="${obj.props.watts!=null?obj.props.watts:0}" ${lockedLayer?'disabled':''}></div>
+    </div>
     <div class="prop-row"><label>Quantity</label><input id="p_quantity" type="number" min="1" value="${obj.props.quantity}" ${lockedLayer?'disabled':''}></div>
     <div class="prop-grid2">
       <div class="prop-row"><label>Default price</label><input value="$${sym.defaultProps.material_cost.toFixed(2)}" disabled></div>
@@ -3617,7 +3661,7 @@ function openProps(id){
     <button class="add-btn" id="btnSaveDevice">💾 Save device</button>
     <button class="danger-btn" id="btnDeleteObj">Delete device</button>
   `;
-  const fieldMap = { p_circuit:'circuit', p_room:'room', p_manufacturer:'props.manufacturer', p_model:'props.model', p_colour:'props.colour', p_height_mm:'props.height_mm', p_cable:'props.cable', p_protection:'props.protection', p_quantity:'props.quantity', p_notes:'props.notes' };
+  const fieldMap = { p_circuit:'circuit', p_room:'room', p_manufacturer:'props.manufacturer', p_model:'props.model', p_colour:'props.colour', p_height_mm:'props.height_mm', p_cable:'props.cable', p_protection:'props.protection', p_watts:'props.watts', p_quantity:'props.quantity', p_notes:'props.notes' };
   Object.entries(fieldMap).forEach(([elId,path]) => {
     const el = document.getElementById(elId);
     if(!el || el.disabled) return;
@@ -3789,6 +3833,133 @@ function renderSchedule(){
 }
 
 // ===================================================================
+// PANEL SCHEDULE + LOAD ESTIMATE
+//
+// Builds a per-board circuit directory (id, description, cable,
+// protection, connected devices) plus a simplified connected-load and
+// diversified-demand-load estimate, grouped the same way circuits already
+// group by switchboard (resolveSwitchboardLabel/findBoardObjects).
+//
+// The diversity factors below are a common simplified approximation used
+// for planning (lighting: 66% of the first 3kW + 40% of the remainder;
+// general power: 100% of the first ~10A + 75% of the remainder; anything
+// else -- fixed appliances, mixed circuits -- gets no reduction, which is
+// the conservative default). This is NOT a reproduction of the AS/NZS 3000
+// diversity tables, which are copyrighted and considerably more detailed
+// (occupancy type, number of circuits, etc.) -- it's a deliberately
+// transparent estimate for early planning, clearly labelled as such
+// everywhere it's shown. Always verify against AS/NZS 3000 and your own
+// professional judgement before relying on it.
+// ===================================================================
+const FIXED_LOAD_SYMBOL_IDS = new Set(['hws','oven','cooktop','tastic_2h','tastic_4h','elec_heater','gpo_dedicated','outlet_3ph','outlet_32a','solar_inverter','towel_rail']);
+function classifyCircuitDiversity(devices){
+  if(!devices.length) return 'none';
+  if(devices.some(d => FIXED_LOAD_SYMBOL_IDS.has(d.symbolId))) return 'fixed';
+  const categories = devices.map(d => (SYMBOL_LIBRARY.find(s=>s.id===d.symbolId)||{}).category);
+  if(categories.every(c => c==='lighting')) return 'lighting';
+  if(categories.every(c => c==='power')) return 'power';
+  return 'fixed'; // mixed / safety-only / other: no reduction, conservative default
+}
+function diversifiedWatts(connectedW, type){
+  if(type==='lighting') return connectedW<=3000 ? connectedW*0.66 : 3000*0.66 + (connectedW-3000)*0.40;
+  if(type==='power'){ const cap=2300; return connectedW<=cap ? connectedW : cap + (connectedW-cap)*0.75; }
+  return connectedW;
+}
+const MAINS_VOLTAGE = 230; // nominal AU single-phase — three-phase circuits are shown at their single-phase-equivalent current, a simplification flagged in the UI
+function buildPanelScheduleData(){
+  const boards = {};
+  sortedCircuits().filter(c=>c.kind!=='data').forEach(c => {
+    const boardLabel = resolveSwitchboardLabel(c);
+    const devices = allObjects().filter(o=>o.circuit===c.id);
+    const connectedW = devices.reduce((sum,o) => sum + effectiveWatts(o)*(o.props.quantity||1), 0);
+    const diversityType = classifyCircuitDiversity(devices);
+    const demandW = diversifiedWatts(connectedW, diversityType);
+    const connectedA = connectedW / MAINS_VOLTAGE;
+    const prot = PROTECTION_LIBRARY.find(p=>p.id===c.protectionId);
+    const protectionA = prot ? prot.amps : null;
+    const overRated = protectionA!=null && connectedA > protectionA;
+    if(!boards[boardLabel]) boards[boardLabel] = { boardLabel, circuits:[], connectedW:0, demandW:0 };
+    boards[boardLabel].circuits.push({ circuit:c, deviceCount:devices.length, connectedW, connectedA, demandW, protectionA, protectionLabel: prot?prot.label:'—', overRated, diversityType });
+    boards[boardLabel].connectedW += connectedW;
+    boards[boardLabel].demandW += demandW;
+  });
+  return Object.keys(boards).sort(naturalCompare).map(k => boards[k]);
+}
+const DIVERSITY_TYPE_LABELS = { lighting:'Lighting (66%/40%)', power:'General power (100%/75%)', fixed:'Fixed load (no reduction)', none:'—' };
+function renderPanelSchedule(){
+  const el = document.getElementById('panelScheduleBody');
+  const boards = buildPanelScheduleData();
+  if(!boards.length){
+    el.innerHTML = '<div style="color:var(--text-dim); font-size:12.5px; padding:10px 0;">No electrical circuits yet — add circuits and assign devices to them first (Circuits & Comms Racks).</div>';
+    return;
+  }
+  el.innerHTML = boards.map(b => {
+    const mainAmps = state.boardMainSwitchAmps[b.boardLabel];
+    const demandA = b.demandW / MAINS_VOLTAGE;
+    const pctOfMain = (mainAmps && mainAmps>0) ? (demandA/mainAmps*100) : null;
+    const rows = b.circuits.map(row => `
+      <tr>
+        <td>${row.circuit.id}${row.overRated?' ⚠':''}</td>
+        <td>${row.circuit.description||'—'}</td>
+        <td>${row.circuit.cable||'—'}</td>
+        <td>${row.protectionLabel}</td>
+        <td>${row.deviceCount}</td>
+        <td>${row.connectedW.toFixed(0)}W / ${row.connectedA.toFixed(1)}A</td>
+        <td title="${DIVERSITY_TYPE_LABELS[row.diversityType]}">${row.demandW.toFixed(0)}W</td>
+      </tr>`).join('');
+    const overRatedNote = b.circuits.some(r=>r.overRated)
+      ? `<div style="color:var(--red); font-size:11.5px; margin-top:6px;">⚠ One or more circuits' connected load exceeds their protection device's rating — review before relying on this board.</div>` : '';
+    return `
+      <div style="margin-bottom:18px; border:1px solid var(--line-soft); border-radius:8px; padding:10px;">
+        <div style="font-weight:700; font-size:13.5px; margin-bottom:6px;">${b.boardLabel}</div>
+        <div style="overflow-x:auto;">
+          <table style="width:100%; font-size:11.5px; border-collapse:collapse;">
+            <thead><tr style="color:var(--text-dim); text-align:left;"><th>Circuit</th><th>Description</th><th>Cable</th><th>Protection</th><th>Qty</th><th>Connected</th><th>Est. demand</th></tr></thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>
+        <div class="prop-grid2" style="margin-top:10px;">
+          <div class="prop-row"><label>Connected load</label><input value="${(b.connectedW/1000).toFixed(2)} kW" disabled></div>
+          <div class="prop-row"><label>Est. demand load</label><input value="${(b.demandW/1000).toFixed(2)} kW (${demandA.toFixed(1)}A)" disabled></div>
+        </div>
+        <div class="prop-row"><label>Main switch / supply rating (A) <span style="font-weight:400; color:var(--text-dim);">— optional, for the capacity check below</span></label>
+          <input type="number" data-main-amps="${b.boardLabel}" value="${mainAmps||''}" placeholder="e.g. 63">
+        </div>
+        ${pctOfMain!=null ? `<div style="font-size:12px; color:${pctOfMain>100?'var(--red)':'var(--text-dim)'}; margin-top:4px;">${pctOfMain.toFixed(0)}% of main switch capacity used (estimate)${pctOfMain>100?' — exceeds rating':''}</div>` : ''}
+        ${overRatedNote}
+      </div>`;
+  }).join('') + `<div style="font-size:10.5px; color:var(--text-dim); margin-top:4px; line-height:1.5;">Connected load uses each device's typical load from the Device Library (editable per device and per type). Demand load applies a simplified diversity estimate for early planning only — always verify against AS/NZS 3000 and your own professional judgement before relying on it for a real installation.</div>`;
+  el.querySelectorAll('[data-main-amps]').forEach(inp => inp.addEventListener('change', (e) => {
+    const val = parseFloat(e.target.value);
+    if(!val || val<=0) delete state.boardMainSwitchAmps[e.target.dataset.mainAmps];
+    else state.boardMainSwitchAmps[e.target.dataset.mainAmps] = val;
+    pushHistory(); markDirty(); renderPanelSchedule();
+  }));
+}
+document.getElementById('btnExportPanelSchedule').addEventListener('click', () => {
+  const boards = buildPanelScheduleData();
+  const lines = [];
+  lines.push(document.getElementById('projName').value + ' — Panel Schedule');
+  lines.push('Generated ' + new Date().toLocaleDateString('en-AU'));
+  lines.push('Estimate for planning only — verify against AS/NZS 3000 and your own professional judgement.');
+  if(!boards.length) lines.push('', '(no electrical circuits defined)');
+  boards.forEach(b => {
+    lines.push('', b.boardLabel.toUpperCase());
+    b.circuits.forEach(row => {
+      lines.push(`  ${row.circuit.id}  ${row.circuit.description||''}  |  ${row.circuit.cable||'-'}  |  ${row.protectionLabel}  |  ${row.deviceCount} device(s)  |  connected ${row.connectedW.toFixed(0)}W / ${row.connectedA.toFixed(1)}A  |  est. demand ${row.demandW.toFixed(0)}W${row.overRated?'  ⚠ EXCEEDS PROTECTION RATING':''}`);
+    });
+    const mainAmps = state.boardMainSwitchAmps[b.boardLabel];
+    const demandA = b.demandW / MAINS_VOLTAGE;
+    lines.push(`  TOTAL — connected ${(b.connectedW/1000).toFixed(2)}kW, est. demand ${(b.demandW/1000).toFixed(2)}kW (${demandA.toFixed(1)}A)` + (mainAmps ? `, ${(demandA/mainAmps*100).toFixed(0)}% of ${mainAmps}A main switch` : ''));
+  });
+  document.getElementById('exportTextTitle').textContent = 'Panel schedule — tap and hold to copy';
+  document.getElementById('exportText').value = lines.join('\n');
+  openSheet('sheetExport');
+  document.getElementById('exportText').focus();
+  document.getElementById('exportText').select();
+});
+
+// ===================================================================
 // IMPORT PLAN
 // ===================================================================
 const fileImport = document.getElementById('fileImport');
@@ -3861,7 +4032,8 @@ function buildProjectData(){
     name: document.getElementById('projName').value,
     activeFloorIndex: state.activeFloorIndex,
     customSymbols: state.customSymbols, symbolSize: state.symbolSize, gridOverlay: !!state.gridOverlay,
-    priceListOverrides: SYMBOL_LIBRARY.map(s => ({ id:s.id, label:s.label, material_cost:s.defaultProps.material_cost, labour_hours:s.defaultProps.labour_hours })),
+    priceListOverrides: SYMBOL_LIBRARY.map(s => ({ id:s.id, label:s.label, material_cost:s.defaultProps.material_cost, labour_hours:s.defaultProps.labour_hours, watts:s.defaultProps.watts })),
+    boardMainSwitchAmps: state.boardMainSwitchAmps,
     floors: state.floors.map(f => ({
       id: f.id, name: f.name, scale: f.scale, gridSpacingMM: f.gridSpacingMM, snapEnabled: f.snapEnabled,
       gridOriginX: f.gridOriginX || 0, gridOriginY: f.gridOriginY || 0,
@@ -4067,8 +4239,12 @@ function applyLoadedProject(d){
     if(sym){
       if(po.label) sym.label = po.label;
       sym.defaultProps.material_cost = po.material_cost; sym.defaultProps.labour_hours = po.labour_hours;
+      // watts predates this field in older saves -- keep the library's own
+      // default rather than overwriting it with undefined in that case
+      if(po.watts!=null) sym.defaultProps.watts = po.watts;
     }
   });
+  state.boardMainSwitchAmps = d.boardMainSwitchAmps || {};
   renderSymbolGrid();
   const floorPromises = (d.floors && d.floors.length ? d.floors : [{ name:'Ground Floor' }]).map(fd => new Promise(resolve => {
     const floor = {
@@ -5152,6 +5328,7 @@ function clearCurrentProject(name){
   state.activeFloorIndex = 0;
   state.circuits = [];
   state.elevations = [];
+  state.boardMainSwitchAmps = {};
   state.layers = LAYER_DEFS.map(l => ({ ...l, visible: true }));
   state.selectedObjectId = null;
   state.selectedCableId = null;
@@ -5204,6 +5381,7 @@ document.getElementById('dtbPriceList').addEventListener('click', () => { render
 document.getElementById('dtbCommsRacks').addEventListener('click', () => { renderCircuits(); openSheet('sheetCircuits'); });
 document.getElementById('dtbVersions').addEventListener('click', () => { renderVersionHistory(); openSheet('sheetVersions'); });
 document.getElementById('dtbDuplicates').addEventListener('click', () => { renderDuplicatesReport(); openSheet('sheetDuplicates'); });
+document.getElementById('dtbPanelSchedule').addEventListener('click', () => { renderPanelSchedule(); openSheet('sheetPanelSchedule'); });
 document.getElementById('dtbQuote').addEventListener('click', () => { updateQuote(); renderSchedule(); openSheet('sheetQuote'); });
 
 // ===================================================================
