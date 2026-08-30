@@ -72,7 +72,6 @@ input,select{font-family:var(--sans); user-select:text;}
   font-size:17px; color:var(--text-dim); flex-shrink:0;
 }
 .icon-btn:active{background:var(--panel2); color:var(--text);}
-#btnLayoutToggle.on{background:var(--blue-dim); color:var(--blue);}
 .file-btn-wrap{position:relative; width:38px; height:38px; flex-shrink:0;}
 .file-btn-wrap input[type=file]{
   position:absolute; inset:0; opacity:0; width:100%; height:100%;
@@ -457,6 +456,41 @@ td{padding:6px; border-bottom:1px solid var(--line-soft);}
 .auth-toggle{ text-align:center; font-size:11.5px; color:var(--text-dim); margin-top:14px; }
 .auth-toggle a{ color:var(--blue); text-decoration:none; }
 
+/* ===== LAYOUT CHOOSER — asked once, right after sign-in, before the
+   project picker. Like the login screen and the project picker, this sits
+   on the permanently-dark var(--bg) and can be showing while the desktop
+   class is already applied to <html>, so every colour here is fixed
+   light-on-dark rather than var(--text)/var(--text-dim) — those flip to
+   dark-on-light in the desktop theme and would vanish against it. ===== */
+#layoutGate{ position:fixed; inset:0; z-index:110; background:var(--bg); display:none; align-items:center; justify-content:center; padding:20px; }
+#layoutGate.open{ display:flex; }
+.layout-card{ width:100%; max-width:460px; text-align:center; }
+.layout-title{ font-size:17px; font-weight:600; color:#eef3f9; margin-bottom:7px; }
+.layout-sub{ font-size:12.5px; color:#9fb0c4; line-height:1.6; margin-bottom:22px; }
+.layout-opts{ display:flex; gap:12px; justify-content:center; flex-wrap:wrap; }
+.layout-opt{
+  flex:1 1 190px; min-width:170px; background:#141a22; border:1.5px solid #2a3340; border-radius:13px;
+  padding:20px 16px 18px; cursor:pointer; text-align:center; color:#eef3f9;
+  transition:border-color .14s, background .14s, transform .14s;
+}
+.layout-opt:hover{ border-color:#3d7fd6; background:#18202a; transform:translateY(-2px); }
+.layout-opt:focus-visible{ outline:2px solid #8fd0ff; outline-offset:2px; }
+.layout-opt .glyph{ font-size:30px; line-height:1; margin-bottom:11px; }
+.layout-opt .name{ font-size:14px; font-weight:600; margin-bottom:5px; }
+.layout-opt .desc{ font-size:11.5px; color:#9fb0c4; line-height:1.55; }
+/* marks the option that matches the screen they're actually on, so the
+   obvious choice is obvious without pre-selecting it for them */
+.layout-opt .suggested{
+  display:inline-block; margin-top:10px; font-size:10px; font-weight:600; letter-spacing:.4px;
+  text-transform:uppercase; color:#8fd0ff; background:rgba(61,127,214,0.16);
+  border:1px solid rgba(61,127,214,0.4); border-radius:99px; padding:3px 9px;
+}
+/* the display above outranks the [hidden] attribute's built-in display:none,
+   so without this the badge shows on BOTH options regardless of which one
+   is actually being suggested */
+.layout-opt .suggested[hidden]{ display:none; }
+.layout-foot{ font-size:11px; color:#7d8b9e; margin-top:20px; line-height:1.6; }
+
 /* ===== PROJECT PICKER — full-screen project browser, shown right after
    login and reopenable any time from the 📂 button ===== */
 /* This overlay's own background stays permanently dark (var(--bg) never
@@ -564,164 +598,20 @@ html.panel-resizing #sheetLayers, html.panel-resizing #sheetSymbols, html.panel-
 html.panel-resizing #canvas-wrap, html.panel-resizing #backdrop, html.panel-resizing .dock-toggle{
   transition:none !important;
 }
-@media (min-width:1400px){
-  :root{
-    --panel:#ffffff; --panel2:#f5f7f9; --panel3:#ffffff; --line:#dde3ea; --line-soft:#edf0f4;
-    /* --text-dim was #65728a (~4.9:1 on white) — a touch light for 10–11px
-       labels, which is most of this UI. Nudged darker for comfortable
-       small-text reading without turning it into full-strength body text. */
-    --text:#16202e; --text-dim:#5a6880;
-    /* --blue is tuned for the dark theme and only hits ~2.1:1 on white, so
-       the light theme needs its own accent for anything that is text or a
-       border rather than a large filled area */
-    --blue-strong:#1f5aa8;
-    --shadow-sm:0 1px 2px rgba(15,23,42,0.07); --shadow-md:0 8px 24px rgba(15,23,42,0.10);
-  }
-  /* expand/minimize is a mobile bottom-sheet affordance — desktop sheets
-     are either docked sidebars or centred dialogs with the canvas already
-     visible around them, so the extra controls would have nothing useful
-     to do here */
-  .sheet-size-btn{ display:none; }
-  body{ background:#f4f6f9; }
-  #topbar{ height:44px; box-shadow:0 1px 0 rgba(0,0,0,0.04); }
-  .btn, .icon-btn, .file-btn-wrap .visual{ color:var(--text-dim); }
-
-  #desktopToolbar{
-    display:flex; align-items:center; gap:5px; flex-wrap:wrap;
-    background:var(--panel); border-bottom:1px solid var(--line); padding:6px 12px;
-  }
-  .dtb-btn{
-    background:var(--panel); border:1px solid var(--line); color:var(--text);
-    padding:6px 11px; border-radius:var(--r-sm); font-size:12px; font-weight:500;
-    transition:background .12s, border-color .12s, color .12s, box-shadow .12s;
-  }
-  .dtb-btn:hover{ border-color:#b9c6d6; background:var(--panel2); }
-  .dtb-btn.active{ background:#e7f1fe; color:var(--blue-strong); border-color:#bcd9f7; font-weight:600; }
-  .dtb-sep{ width:1px; height:22px; background:var(--line); margin:0 4px; }
-
-  #bottombar, #multiActionBar ~ #hud #tool-hint{ }
-  #bottombar{ display:none; }
-  #hud-topright, #multiActionBar{ top:10px; }
-
-  /* hot-task rail: the tools used constantly (select/pan/place/measure/
-     link/calibrate) pinned as one-click icons at the far left, instead of
-     living in the horizontal toolbar where they can end up wrapped onto a
-     second row and jumping around as the window resizes */
-  #desktopRail{
-    display:flex; flex-direction:column; align-items:center; gap:6px;
-    position:fixed; left:0; top:calc(44px + var(--safe-t) + var(--dtb-h, 40px)); bottom:0; width:var(--rail-w);
-    background:var(--panel); border-right:1px solid var(--line); padding:10px 0; z-index:8; overflow-y:auto;
-  }
-  .rail-btn{
-    /* padding:0 overrides .dtb-btn's — the rail buttons carry both classes
-       so the tool-active sync can find them with one selector */
-    position:relative; width:38px; height:38px; padding:0; border-radius:var(--r-md); flex-shrink:0;
-    background:transparent; border:1px solid transparent; color:var(--text-dim);
-    font-size:16px; display:flex; align-items:center; justify-content:center;
-    transition:background .12s, border-color .12s, color .12s;
-  }
-  .rail-btn:hover{ background:var(--panel2); color:var(--text); }
-  .rail-btn.active{ background:#e7f1fe; color:var(--blue-strong); border-color:#bcd9f7; }
-  /* left accent bar marks the live tool at a glance, the way VS Code and
-     most CAD rails do — clearer than colour alone at this icon size */
-  .rail-btn.active::before{
-    content:''; position:absolute; left:-10px; top:50%; transform:translateY(-50%);
-    width:3px; height:20px; border-radius:0 2px 2px 0; background:var(--blue-strong);
-  }
-  .rail-sep{ width:24px; height:1px; background:var(--line); margin:3px 0; flex-shrink:0; }
-
-  /* drag either docked panel's inner edge to resize it — clamped in JS */
-  .resize-handle{ display:block; position:absolute; top:0; bottom:0; width:6px; cursor:col-resize; z-index:10; }
-  .resize-handle-right{ right:-3px; }
-  .resize-handle-left{ left:-3px; }
-  .resize-handle:hover, .resize-handle.dragging{ background:var(--blue); opacity:0.35; }
-
-  /* dock Layers as a permanent left sidebar — full column height now that
-     Symbols has moved to the right, so it no longer needs to share space
-     with (or squeeze out) another panel */
-  #sheetLayers{
-    position:fixed; left:var(--rail-w); right:auto; bottom:0; width:var(--layers-w);
-    top:calc(44px + var(--safe-t) + var(--dtb-h, 40px));
-    transform:none; border-radius:0; max-height:none; box-shadow:2px 0 8px rgba(0,0,0,0.04);
-    border-right:1px solid var(--line); z-index:8;
-    transition:width .2s ease;
-  }
-  #sheetLayers .sheet-body{ overflow-y:auto; }
-  #sheetLayers .sheet-handle, #sheetLayers .sheet-close{ display:none; }
-  #sheetLayers .sheet-header{ border-bottom:1px solid var(--line-soft); }
-
-  /* dock Symbols ("Place a device") and Properties ("Device settings") in
-     the SAME right-hand slot. Properties overlays Symbols (covers it
-     completely) while a device/cable is selected — toggled by the
-     props-active class on <html>, see setDeviceEditorActive() — and hands
-     back to Symbols on Save/Delete/deselect. */
-  #sheetSymbols, #sheetProps{
-    position:fixed; right:0; left:auto; bottom:0; width:var(--symbols-w);
-    /* --dtb-h tracks the desktop toolbar's real (possibly wrapped) height —
-       see syncDesktopToolbarHeight() — so this panel starts right below it
-       instead of overhanging into it when the toolbar wraps to two rows */
-    top:calc(44px + var(--safe-t) + var(--dtb-h, 40px)); max-height:none;
-    transform:none; border-radius:0; box-shadow:-2px 0 8px rgba(0,0,0,0.04);
-    border-left:1px solid var(--line); z-index:8; display:flex; flex-direction:column;
-    transition:width .2s ease;
-  }
-  #sheetSymbols .sheet-body, #sheetProps .sheet-body{ flex:1; overflow-y:auto; }
-  #sheetSymbols .sheet-handle, #sheetProps .sheet-handle,
-  #sheetSymbols .sheet-close, #sheetProps .sheet-close{ display:none; }
-  #sheetSymbols .sheet-header, #sheetProps .sheet-header{ border-bottom:1px solid var(--line-soft); }
-  #sheetProps{ display:none; }
-  html.props-active #sheetProps{ display:flex; }
-  html.props-active #sheetSymbols{ display:none; }
-
-  #canvas-wrap{
-    left:calc(var(--layers-w) + var(--rail-w)); right:var(--symbols-w); top:calc(44px + var(--safe-t) + var(--dtb-h, 40px)); bottom:0;
-    transition:left .2s ease, right .2s ease;
-  }
-  #recoveryBanner{ left:calc(var(--layers-w) + var(--rail-w) + 10px); right:calc(var(--symbols-w) + 10px); }
-
-  /* backdrop shouldn't dim the whole screen for the always-open docked panels */
-  #backdrop{ left:calc(var(--layers-w) + var(--rail-w)); right:var(--symbols-w); }
-
-  /* collapsing a docked panel: shrink it to nothing and let the canvas
-     reclaim the space, rather than leaving an empty column */
-  .dock-toggle{
-    display:flex; align-items:center; justify-content:center;
-    position:fixed; top:50%; transform:translateY(-50%); width:18px; height:52px; z-index:9;
-    background:var(--panel); border:1px solid var(--line); color:var(--text-dim);
-    cursor:pointer; font-size:13px; padding:0; transition:left .2s ease, right .2s ease;
-  }
-  .dock-toggle-left{ left:calc(var(--layers-w) + var(--rail-w)); border-radius:0 6px 6px 0; border-left:none; }
-  .dock-toggle-right{ right:var(--symbols-w); border-radius:6px 0 0 6px; border-right:none; }
-  html.layers-collapsed #sheetLayers{ width:0; border-right:none; overflow:hidden; }
-  html.layers-collapsed #canvas-wrap{ left:var(--rail-w); }
-  html.layers-collapsed #recoveryBanner{ left:calc(var(--rail-w) + 10px); }
-  html.layers-collapsed #backdrop{ left:var(--rail-w); }
-  html.layers-collapsed .dock-toggle-left{ left:var(--rail-w); }
-  html.symbols-collapsed #sheetSymbols, html.symbols-collapsed #sheetProps{ width:0; border-left:none; overflow:hidden; }
-  html.symbols-collapsed #canvas-wrap{ right:0; }
-  html.symbols-collapsed #recoveryBanner{ right:10px; }
-  html.symbols-collapsed #backdrop{ right:0; }
-  html.symbols-collapsed .dock-toggle-right{ right:0; }
-
-  /* the rest of the sheets (Quote, Circuits, Elevation, Floors, Grid,
-     Price list, Load, Export, Assign switch, Cable size) still behave as
-     real overlay dialogs on desktop, just centred instead of bottom-anchored */
-  .sheet:not(#sheetLayers):not(#sheetSymbols):not(#sheetProps){
-    left:50%; right:auto; bottom:auto; top:50%; width:420px; max-width:90vw;
-    transform:translate(-50%,-50%) scale(0.96); border-radius:14px; max-height:80vh;
-    opacity:0; pointer-events:none;
-  }
-  .sheet:not(#sheetLayers):not(#sheetSymbols):not(#sheetProps).open{
-    transform:translate(-50%,-50%) scale(1);
-    opacity:1; pointer-events:all;
-  }
-}
 
 /* ===================================================================
-   MANUAL DESKTOP LAYOUT OVERRIDE
-   Same rules as the >=1400px auto layout above, but triggered by a
-   class on <html> instead of window width, so the bright desktop
-   layout can be forced on at any screen size via the toggle button.
+   DESKTOP LAYOUT
+   Driven purely by this class on <html>, which the layout chooser sets
+   from the answer given after sign-in (see initLayoutPref). There used
+   to be a duplicate copy of every one of these rules inside a
+   "@media (min-width:1400px)" block that switched the layout on by
+   screen width alone. That's gone, for two reasons: a window-width rule
+   can't be overridden, so someone on a big screen who prefers the
+   simpler touch layout was stuck with desktop; and keeping two copies
+   of the same 150 rules in sync by hand was a standing bug factory —
+   every desktop tweak had to be written twice or the two layouts
+   silently drifted apart. Screen width now only picks which option the
+   chooser pre-selects.
    =================================================================== */
 html.force-desktop{
     --panel:#ffffff; --panel2:#f5f7f9; --panel3:#ffffff; --line:#dde3ea; --line-soft:#edf0f4;
@@ -852,10 +742,36 @@ html.force-desktop{
     <div id="authGateBody"></div>
   </div>
 </div>
+<!-- Asked once after sign-in, before the project picker: which layout to
+     use. Sits above #authGate (z-index 110 vs 100) so it can never end up
+     behind the login card if the two are ever open at the same time. -->
+<div id="layoutGate">
+  <div class="layout-card">
+    <div class="brand" style="margin-bottom:20px; justify-content:center;"><div class="dot"></div>SPARKY DRAFT</div>
+    <div class="layout-title">How are you using Sparky Draft?</div>
+    <div class="layout-sub">Pick the layout that suits your device. You can change this any time from the projects screen.</div>
+    <div class="layout-opts">
+      <button class="layout-opt" id="layoutPickDesktop">
+        <div class="glyph">🖥</div>
+        <div class="name">Desktop</div>
+        <div class="desc">Bright theme, docked side panels and a hot-task tool rail. Built for a mouse and keyboard.</div>
+        <span class="suggested" data-for="desktop" hidden>Suggested for this screen</span>
+      </button>
+      <button class="layout-opt" id="layoutPickMobile">
+        <div class="glyph">📱</div>
+        <div class="name">Mobile / tablet</div>
+        <div class="desc">Dark theme with large touch targets and slide-up sheets. Built for on-site use.</div>
+        <span class="suggested" data-for="mobile" hidden>Suggested for this screen</span>
+      </button>
+    </div>
+    <div class="layout-foot">Whichever you choose, it's the same project — only the interface changes.</div>
+  </div>
+</div>
 <div id="projectPicker">
   <div class="picker-top">
     <div class="brand"><div class="dot"></div>SPARKY DRAFT</div>
     <div class="picker-top-actions">
+      <button class="icon-btn" id="pickerLayout" title="Change layout (desktop or mobile)">🖥</button>
       <button class="icon-btn" id="pickerOrg" title="Organization">👥</button>
       <button class="icon-btn" id="pickerAccount" title="Account &amp; cloud">☁</button>
       <button class="icon-btn" id="pickerClose" title="Close">✕</button>
@@ -885,7 +801,10 @@ html.force-desktop{
   </div>
   <button class="icon-btn" id="btnSave" title="Save now" style="position:relative;">💾<span id="saveStatusDot"></span></button>
   <button class="icon-btn" id="btnLoad">📂</button>
-  <button class="icon-btn" id="btnLayoutToggle" title="Switch between bright desktop layout and dark mobile layout">🖥</button>
+  <!-- The layout toggle that used to live here has moved: the layout is now
+       chosen once after sign-in, and changed from the projects screen. It's a
+       per-device setting, not a per-project one, so it doesn't belong in the
+       toolbar of an open drawing. -->
 </div>
 
 <div id="desktopRail">
@@ -2671,7 +2590,11 @@ function closeSheets(){ sheets.forEach(s=>{ s.classList.remove('open'); if(s._re
 // backdrop element, not the canvas, was what actually received the event.
 const DOCKED_SHEET_IDS = ['sheetLayers','sheetSymbols','sheetProps'];
 function isDesktopDocked(){
-  return document.documentElement.classList.contains('force-desktop') || window.matchMedia('(min-width:1400px)').matches;
+  // The class is now the single source of truth for which layout is live —
+  // the old width check would have kept reporting "docked" for someone on a
+  // wide screen who chose the mobile layout, leaving the backdrop wrongly
+  // suppressed behind their floating sheets.
+  return document.documentElement.classList.contains('force-desktop');
 }
 // A minimized sheet stays visually "open" (so a tap on its header can
 // restore it) but shouldn't dim/block the canvas behind it — that's the
@@ -4513,35 +4436,83 @@ function buildProjectData(){
 })();
 
 // ---------------------------------------------------------------------
-// Manual layout toggle: the bright "desktop" layout used to only turn
-// on automatically above 1400px window width, which meant two people
-// on different screen sizes could see completely different interfaces
-// with no way to control it. This lets anyone force the bright desktop
-// layout on (or back off to the default dark/mobile layout) regardless
-// of their screen size, and remembers the choice for next time.
+// LAYOUT PREFERENCE
+// Desktop vs mobile is an explicit, remembered choice, asked once as a
+// plain question right after sign-in (before the project picker) rather
+// than being inferred from window width or buried in a toolbar button
+// inside an open drawing. Which interface you want is a fact about the
+// device you're holding, so it's asked once per device and applies to
+// every project, instead of being a control you stumble onto mid-job.
+//
+// Exposed on window because the auth/picker code further down the file
+// needs to ask whether the question still needs answering, and needs to
+// reopen it from the projects screen.
 // ---------------------------------------------------------------------
-(function initLayoutToggle(){
-  const btn = document.getElementById('btnLayoutToggle');
-  const STORAGE_KEY = 'sparkydraft_layout_pref'; // 'desktop' | 'auto'
+(function initLayoutPref(){
+  const STORAGE_KEY = 'sparkydraft_layout_pref'; // 'desktop' | 'mobile'
+  const gate = document.getElementById('layoutGate');
+  let pending = null; // callback to run once a choice is made
 
-  function applyLayout(pref){
-    document.documentElement.classList.toggle('force-desktop', pref === 'desktop');
-    btn.classList.toggle('on', pref === 'desktop');
-    btn.title = pref === 'desktop'
-      ? 'Bright desktop layout is forced on — click to go back to automatic (screen-size based)'
-      : 'Switch between bright desktop layout and dark mobile layout';
+  // Only a deliberate answer counts. The old version of this setting also
+  // stored 'auto' (meaning "decide by screen width"), which no longer
+  // exists as a layout — anyone carrying that value gets asked properly.
+  function stored(){
+    let v = null;
+    try { v = localStorage.getItem(STORAGE_KEY); } catch(e) {}
+    return (v === 'desktop' || v === 'mobile') ? v : null;
   }
 
-  let pref = 'auto';
-  try { pref = localStorage.getItem(STORAGE_KEY) || 'auto'; } catch(e) {}
-  applyLayout(pref);
+  // Which option to flag as the likely one. Width alone isn't enough — a
+  // big touchscreen is still a touch device, and the mobile layout's large
+  // targets and slide-up sheets are what actually works there.
+  function suggested(){
+    let coarse = false;
+    try { coarse = window.matchMedia('(pointer:coarse)').matches; } catch(e) {}
+    return (window.innerWidth >= 1400 && !coarse) ? 'desktop' : 'mobile';
+  }
 
-  btn.addEventListener('click', () => {
-    pref = pref === 'desktop' ? 'auto' : 'desktop';
+  function apply(pref){
+    document.documentElement.classList.toggle('force-desktop', pref === 'desktop');
+    // Switching layouts moves the docked panels, so the canvas element's
+    // box changes size — without this it keeps its old pixel dimensions
+    // and the drawing ends up stretched or clipped. Fired twice: once now,
+    // once after the .2s panel width transition has settled.
+    try {
+      window.dispatchEvent(new Event('resize'));
+      setTimeout(() => window.dispatchEvent(new Event('resize')), 260);
+    } catch(e) {}
+  }
+
+  function choose(pref){
     try { localStorage.setItem(STORAGE_KEY, pref); } catch(e) {}
-    applyLayout(pref);
-    showToast(pref === 'desktop' ? 'Desktop layout forced on' : 'Back to automatic layout (based on screen size)');
-  });
+    apply(pref);
+    gate.classList.remove('open');
+    const next = pending; pending = null;
+    if(next) next();
+  }
+
+  document.getElementById('layoutPickDesktop').addEventListener('click', () => choose('desktop'));
+  document.getElementById('layoutPickMobile').addEventListener('click', () => choose('mobile'));
+
+  // Apply whatever is already known before anything paints. With no answer
+  // yet, fall back to the suggestion so the app behind the chooser isn't
+  // sitting in an obviously wrong layout while the question is on screen.
+  apply(stored() || suggested());
+
+  window.__layoutPref = {
+    needsChoice(){ return stored() === null; },
+    current(){ return stored() || suggested(); },
+    // onDone runs after a choice is made, so the caller can carry on with
+    // whatever it was going to do (showing the project picker).
+    show(onDone){
+      pending = onDone || null;
+      const pick = suggested();
+      gate.querySelectorAll('.suggested').forEach(el => {
+        el.hidden = el.getAttribute('data-for') !== pick;
+      });
+      gate.classList.add('open');
+    }
+  };
 })();
 
 // ---------------------------------------------------------------------
@@ -4977,6 +4948,13 @@ let pickerAutoShown = false;
 function maybeShowPickerAfterLogin(){
   if(pickerAutoShown) return;
   pickerAutoShown = true;
+  // First sign-in on this device: ask desktop-or-mobile before anything
+  // else, so the projects screen they land on is already in the layout
+  // they asked for rather than switching out from under them.
+  if(window.__layoutPref && window.__layoutPref.needsChoice()){
+    window.__layoutPref.show(showProjectPicker);
+    return;
+  }
   showProjectPicker();
 }
 function showProjectPicker(){
@@ -5355,6 +5333,12 @@ function pickerDeleteCloud(id){
 document.getElementById('btnLoad').addEventListener('click', () => showProjectPicker());
 document.getElementById('pickerClose').addEventListener('click', () => hideProjectPicker());
 document.getElementById('pickerOrg').addEventListener('click', () => { renderOrgSheet(); openSheet('sheetOrg'); });
+// Reopening the layout question from the projects screen — outside any
+// open drawing, which is the only place changing it makes sense. The
+// chooser overlays this screen and hands control straight back to it.
+document.getElementById('pickerLayout').addEventListener('click', () => {
+  if(window.__layoutPref) window.__layoutPref.show(null);
+});
 document.getElementById('pickerAccount').addEventListener('click', () => { renderAccountSheet(); openSheet('sheetAccount'); });
 document.getElementById('pickerTabMine').addEventListener('click', () => { pickerTab = 'mine'; renderProjectPicker(); });
 document.getElementById('pickerTabOrg').addEventListener('click', () => { pickerTab = 'org'; renderProjectPicker(); });
