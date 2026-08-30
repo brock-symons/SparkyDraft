@@ -608,7 +608,7 @@ html.force-desktop{
 <div id="topbar">
   <div class="brand"><div class="dot"></div>SD</div>
   <input id="projName" value="Smith Residence">
-  <button class="floor-badge hidden-feature" id="floorBadge">🏢 Ground Floor</button>
+  <button class="floor-badge" id="floorBadge">🏢 Ground Floor</button>
   <div class="file-btn-wrap">
     <div class="visual">⬆</div>
     <input type="file" id="fileImport" accept="image/png,image/jpeg,image/webp,image/gif,application/pdf,.pdf,.png,.jpg,.jpeg,.webp,.gif">
@@ -672,7 +672,7 @@ html.force-desktop{
       <button data-dist="v">≡ Space V</button>
       <button id="multiAssignSwitch">🔗 Assign switch</button>
       <button id="multiAssignCircuit">⏚ Assign circuit</button>
-      <button id="multiAssignRoom" class="hidden-feature">▭ Assign room</button>
+      <button id="multiAssignRoom">▭ Assign room</button>
       <button id="multiDuplicate">⧉ Duplicate</button>
       <button id="multiDelete" class="danger">🗑 Delete</button>
     </div>
@@ -776,24 +776,24 @@ html.force-desktop{
   <div class="sheet-header"><div class="sheet-title">More tools</div><div class="sheet-close" data-close>✕</div></div>
   <div class="sheet-body">
     <div class="tool-row">
-      <div class="tool-card hidden-feature" id="moreCable"><span class="icon">╱</span><span class="lbl">Cable route</span></div>
+      <div class="tool-card" id="moreCable"><span class="icon">╱</span><span class="lbl">Cable route</span></div>
       <div class="tool-card" id="moreMeasure"><span class="icon">📏</span><span class="lbl">Measure</span></div>
       <div class="tool-card" id="moreLink"><span class="icon">🔗</span><span class="lbl">Link switch</span></div>
     </div>
     <div class="tool-row">
       <div class="tool-card" id="moreCircuits"><span class="icon">⏚</span><span class="lbl">Circuits</span></div>
-      <div class="tool-card hidden-feature" id="moreElevation"><span class="icon">▯</span><span class="lbl">Elevation</span></div>
+      <div class="tool-card" id="moreElevation"><span class="icon">▯</span><span class="lbl">Elevation</span></div>
       <div class="tool-card" id="moreScale"><span class="icon">⚖</span><span class="lbl">Calibrate</span></div>
     </div>
     <div class="tool-row">
-      <div class="tool-card hidden-feature" id="moreFloors"><span class="icon">🏢</span><span class="lbl">Floors</span></div>
+      <div class="tool-card" id="moreFloors"><span class="icon">🏢</span><span class="lbl">Floors</span></div>
       <div class="tool-card" id="moreQuote"><span class="icon">💲</span><span class="lbl">Quote</span></div>
       <div class="tool-card" id="moreGrid"><span class="icon">▦</span><span class="lbl">Grid &amp; snap</span></div>
     </div>
     <div class="tool-row">
       <div class="tool-card" id="morePriceList"><span class="icon">🏷</span><span class="lbl">Device library</span></div>
       <div class="tool-card" id="moreVersions"><span class="icon">🕐</span><span class="lbl">History</span></div>
-      <div class="tool-card hidden-feature" id="moreRooms"><span class="icon">▭</span><span class="lbl">Rooms</span></div>
+      <div class="tool-card" id="moreRooms"><span class="icon">▭</span><span class="lbl">Rooms</span></div>
     </div>
     <div class="tool-row">
       <div class="tool-card hidden-feature" id="moreWall"><span class="icon">▬</span><span class="lbl">Mark wall</span></div>
@@ -858,6 +858,7 @@ html.force-desktop{
     <div id="gridAlignStatus" style="font-size:11.5px; color:var(--green); margin-bottom:10px; display:none;"></div>
     <button class="add-btn" id="btnDetectWalls" style="background:var(--panel2); border-color:var(--line); color:var(--text); margin-top:0;">Detect walls from plan</button>
     <button class="add-btn" id="btnMarkWall" style="background:var(--panel2); border-color:var(--line); color:var(--text);">Mark wall manually</button>
+    <button class="add-btn" id="btnCableRouteShortcut" style="background:var(--panel2); border-color:var(--line); color:var(--text);">Draw a cable route</button>
     <button class="add-btn" id="btnAlignGridWall" style="background:var(--panel2); border-color:var(--line); color:var(--text);">Align grid to a wall</button>
     <button class="add-btn" id="btnResetGridOrigin" style="background:var(--panel2); border-color:var(--line); color:var(--text-dim);">Reset grid origin</button>
     <div style="font-family:var(--mono); font-size:10px; letter-spacing:1px; text-transform:uppercase; color:var(--text-dim); margin:14px 0 6px; padding-bottom:4px; border-bottom:1px solid var(--line-soft);">Walls on this floor</div>
@@ -899,6 +900,7 @@ html.force-desktop{
   <div class="sheet-body">
     <div class="prop-row"><label>Elevation</label><select id="elevSelect"></select></div>
     <button class="add-btn" id="btnNewElevation">+ New elevation</button>
+    <button class="add-btn" id="btnDeleteElevation" style="background:rgba(248,113,113,0.1); border-color:#5c2626; color:var(--red);">Delete this elevation</button>
     <canvas id="elevCanvas" height="180"></canvas>
     <button class="add-btn" id="btnAddElevItem" style="background:var(--panel2); border-color:var(--line); color:var(--text);">+ Add device to this elevation</button>
     <div id="elevItemList"></div>
@@ -2752,7 +2754,8 @@ function renderPriceList(){
 function deleteCustomFitting(id){
   const sym = SYMBOL_LIBRARY.find(s => s.id === id);
   if(!sym) return;
-  const inUse = state.floors.reduce((n, f) => n + f.objects.filter(o => o.symbolId === id).length, 0);
+  const inUse = state.floors.reduce((n, f) => n + f.objects.filter(o => o.symbolId === id).length, 0)
+    + state.elevations.reduce((n, e) => n + e.items.filter(it => it.symbolId === id).length, 0);
   if(inUse > 0){
     showToast(inUse + ' device' + (inUse===1?'':'s') + ' on your plan use this fitting — remove or change them first.');
     return;
@@ -2859,6 +2862,9 @@ document.getElementById('symbolSizeSelect').addEventListener('change', (e) => {
 });
 document.getElementById('btnMarkWall').addEventListener('click', () => {
   setTool('wall'); closeSheets();
+});
+document.getElementById('btnCableRouteShortcut').addEventListener('click', () => {
+  closeSheets(); openSheet('sheetCableSize');
 });
 document.getElementById('btnResetGridOrigin').addEventListener('click', () => {
   const f = currentFloor();
@@ -3637,6 +3643,16 @@ function renderElevationSelect(){
   renderElevItemList();
 }
 document.getElementById('elevSelect').addEventListener('change', (e) => { state.activeElevationId = e.target.value; drawElevation(); renderElevItemList(); });
+document.getElementById('btnDeleteElevation').addEventListener('click', () => {
+  const elev = state.elevations.find(e=>e.id===state.activeElevationId);
+  if(!elev){ showToast('No elevation selected'); return; }
+  openConfirmModal('Delete "' + elev.name + '"?', 'This elevation and its device markers will be removed. This cannot be undone.', () => {
+    state.elevations = state.elevations.filter(e=>e.id!==elev.id);
+    state.activeElevationId = state.elevations.length ? state.elevations[0].id : null;
+    pushHistory(); renderElevationSelect();
+    showToast('Deleted "' + elev.name + '"');
+  }, 'Delete');
+});
 document.getElementById('btnNewElevation').addEventListener('click', () => {
   openFormModal('New elevation', [
     { id:'name', label:'Name (e.g. Kitchen north wall)', type:'text', value:'' },
@@ -3932,7 +3948,7 @@ function openProps(id){
     ${lockedLayer ? '<div style="font-size:12px; color:var(--amber); margin-bottom:10px;">🔒 This layer is locked — device is read-only until unlocked in Layers.</div>' : ''}
     <div class="prop-row"><label>Name</label><input id="p_customName" value="${obj.props.customName||''}" placeholder="${sym.label}" ${lockedLayer?'disabled':''}></div>
     ${circuitRowHtml}
-    <div class="prop-row hidden-feature"><label>Room</label><select id="p_room">${roomOptions}</select></div>
+    <div class="prop-row"><label>Room</label><select id="p_room" ${lockedLayer?'disabled':''}>${roomOptions}</select></div>
     ${linksHtml}
     ${cablesHtml}
     ${switchConfigHtml}
@@ -4558,6 +4574,7 @@ function applyLoadedProject(d){
   state.circuits = migratedComms.circuits;
   state.unassignedCommsPorts = migratedComms.unassigned;
   state.elevations = d.elevations || [];
+  state.activeElevationId = null;
   state.symbolSize = d.symbolSize || 16;
   state.gridOverlay = !!d.gridOverlay;
   state.selectedObjectId = null;
@@ -5675,6 +5692,7 @@ function clearCurrentProject(name){
   state.activeFloorIndex = 0;
   state.circuits = [];
   state.elevations = [];
+  state.activeElevationId = null;
   state.boardMainSwitchAmps = {};
   state.unassignedCommsPorts = [];
   state.layers = LAYER_DEFS.map(l => ({ ...l, visible: true }));
