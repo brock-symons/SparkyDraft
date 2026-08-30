@@ -1363,6 +1363,11 @@ function render(){
     if(!layer || !layer.visible) return;
     if(state.isolatedCircuitId && obj.circuit !== state.isolatedCircuitId && obj.id !== isolatedBoardId) return;
     const sym = SYMBOL_LIBRARY.find(s=>s.id===obj.symbolId);
+    // A symbolId that doesn't resolve (corrupted save data, or a custom
+    // fitting whose definition failed to restore) used to throw here and
+    // take the whole render loop down with it -- every device on the plan
+    // would stop drawing, not just this one. Skip just this device instead.
+    if(!sym) return;
     const p = worldToScreen(obj.x,obj.y);
     const r = state.symbolSize;
     const isMultiSelected = state.multiSelectedIds.has(obj.id);
@@ -3484,7 +3489,8 @@ function openProps(id){
         const counts = {};
         groupLinks.forEach(l => {
           const lt = currentFloor().objects.find(o=>o.id===l.lightId);
-          const label = lt ? SYMBOL_LIBRARY.find(s=>s.id===lt.symbolId).label : '?';
+          const sym = lt ? SYMBOL_LIBRARY.find(s=>s.id===lt.symbolId) : null;
+          const label = sym ? sym.label : '?';
           counts[label] = (counts[label]||0) + 1;
         });
         const summary = Object.entries(counts).map(([label,n]) => `${n} × ${label}`).join(', ');
