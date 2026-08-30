@@ -573,6 +573,44 @@ html.force-desktop{
     opacity:1; pointer-events:all;
   }
 
+/* ===================================================================
+   PRINT / PDF EXPORT VIEW
+   A white-page preview of the plan + legend, shown as a fullscreen
+   overlay on screen and used as-is when the browser's own Print
+   dialog ("Save as PDF") is invoked — no PDF library needed.
+   =================================================================== */
+#printView{ display:none; position:fixed; inset:0; z-index:90; background:#525659; overflow-y:auto; }
+#printView.open{ display:block; }
+#printViewBar{ position:sticky; top:0; z-index:2; display:flex; align-items:center; gap:10px; padding:10px 16px; background:var(--panel); border-bottom:1px solid var(--line); }
+#printViewBar .pv-title{ flex:1; font-weight:600; font-size:14px; color:var(--text); }
+.pv-btn{ background:var(--accent); color:#0c1116; border:none; padding:9px 16px; border-radius:8px; font-size:13px; font-weight:600; cursor:pointer; }
+.pv-btn.pv-close{ background:var(--panel2); color:var(--text); border:1px solid var(--line); }
+#printViewPages{ padding:24px; display:flex; flex-direction:column; align-items:center; gap:24px; }
+.print-page{ background:#ffffff; color:#111; width:1122px; height:794px; box-shadow:0 4px 24px rgba(0,0,0,0.4); display:flex; flex-direction:column; padding:20px 24px; box-sizing:border-box; font-family:'Public Sans',Arial,sans-serif; flex-shrink:0; }
+.print-page-header{ display:flex; justify-content:space-between; align-items:baseline; border-bottom:2px solid #111; padding-bottom:8px; margin-bottom:12px; }
+.print-page-header .ph-name{ font-size:18px; font-weight:700; }
+.print-page-header .ph-meta{ font-size:11px; color:#555; text-align:right; line-height:1.5; }
+.print-page-body{ flex:1; display:flex; gap:18px; min-height:0; }
+.print-plan-col{ flex:1; min-width:0; display:flex; align-items:center; justify-content:center; border:1px solid #ccc; background:#fafafa; }
+.print-plan-col img{ max-width:100%; max-height:100%; object-fit:contain; }
+.print-plan-col .pv-empty{ color:#888; font-size:12px; }
+.print-legend-col{ width:260px; flex-shrink:0; overflow-y:auto; }
+.print-legend-col h3{ font-size:11px; text-transform:uppercase; letter-spacing:0.5px; color:#555; margin:0 0 8px; border-bottom:1px solid #ccc; padding-bottom:4px; }
+.print-legend-table{ width:100%; border-collapse:collapse; font-size:11px; }
+.print-legend-table td{ padding:4px 2px; border-bottom:1px solid #eee; vertical-align:middle; }
+.print-legend-table .pl-swatch{ width:16px; height:16px; border-radius:50%; display:inline-block; text-align:center; line-height:16px; font-size:8px; font-weight:700; color:#111; margin-right:6px; }
+.print-legend-table .pl-qty{ text-align:right; font-weight:600; }
+.print-legend-total{ margin-top:8px; font-size:11px; font-weight:700; text-align:right; }
+@media print{
+  body *{ visibility:hidden; }
+  #printView, #printView *{ visibility:visible; }
+  #printView{ position:static; background:#fff; overflow:visible; }
+  #printViewBar{ display:none; }
+  #printViewPages{ padding:0; gap:0; }
+  .print-page{ box-shadow:none; width:auto; height:auto; page-break-after:always; }
+  .print-page:last-child{ page-break-after:auto; }
+  @page{ size:landscape; margin:10mm; }
+}
 </style>
 </head>
 <body>
@@ -633,6 +671,7 @@ html.force-desktop{
   <button class="dtb-btn" id="dtbVersions">🕐 History</button>
   <button class="dtb-btn" id="dtbDuplicates">🧹 Find duplicates</button>
   <button class="dtb-btn" id="dtbPanelSchedule">🧮 Panel schedule</button>
+  <button class="dtb-btn" id="dtbPrintExport">🖨 Print / PDF export</button>
   <div class="dtb-sep"></div>
   <button class="dtb-btn" id="dtbReportProblem">🚩 Report a problem</button>
 </div>
@@ -813,6 +852,9 @@ html.force-desktop{
       <div class="tool-card" id="moreCommsRacks"><span class="icon">🗄</span><span class="lbl">Comms racks</span></div>
       <div class="tool-card" id="moreReportProblem"><span class="icon">🚩</span><span class="lbl">Report a problem</span></div>
     </div>
+    <div class="tool-row">
+      <div class="tool-card" id="morePrintExport"><span class="icon">🖨</span><span class="lbl">Print / PDF export</span></div>
+    </div>
   </div>
 </div>
 
@@ -962,6 +1004,15 @@ html.force-desktop{
   <div class="sheet-handle"></div>
   <div class="sheet-header"><div class="sheet-title" id="projectAccessTitle">Project access</div><div class="sheet-close" data-close>✕</div></div>
   <div class="sheet-body" id="projectAccessBody"></div>
+</div>
+
+<div id="printView">
+  <div id="printViewBar">
+    <div class="pv-title">Print / PDF export</div>
+    <button class="pv-btn" id="btnDoPrint">🖨 Print / Save as PDF</button>
+    <button class="pv-btn pv-close" id="btnClosePrintView">✕ Close</button>
+  </div>
+  <div id="printViewPages"></div>
 </div>
 
 <div class="modal-backdrop" id="modalBackdrop"></div>
@@ -1179,6 +1230,7 @@ let state = {
   showCircuitLabels:false,
   showSwitchRuns:false,
   quoteItemized:false, // false = quantity summary grouped by type, true = one row per device
+  printMode:false, // true only while capturing a white-background snapshot for the Print/PDF export view
   isolatedCircuitId:null, // when set, only this circuit's cabling is drawn — lets a user see one circuit's run at a time
   gridOverlay:false, // when true, grid is drawn above the plan (still semi-transparent)
   boardMainSwitchAmps:{}, // board display label -> main switch/incoming supply rating (A), for the Panel Schedule's capacity-used estimate
@@ -1582,9 +1634,10 @@ function worldToScreen(x,y){ return { x: x*currentFloor().view.zoom + currentFlo
 function screenToWorld(x,y){ return { x: (x-currentFloor().view.offsetX)/currentFloor().view.zoom, y: (y-currentFloor().view.offsetY)/currentFloor().view.zoom }; }
 
 function render(){
-  ctx.fillStyle = '#0c1116'; ctx.fillRect(0,0,canvas.width,canvas.height);
-  // Underlay grid (default): drawn beneath the plan so it doesn't obscure lines
-  if(currentFloor().gridVisible !== false && !state.gridOverlay) drawGrid(false);
+  ctx.fillStyle = state.printMode ? '#ffffff' : '#0c1116'; ctx.fillRect(0,0,canvas.width,canvas.height);
+  // Underlay grid (default): drawn beneath the plan so it doesn't obscure lines --
+  // skipped entirely in print mode, since a design grid has no place on a printed drawing
+  if(currentFloor().gridVisible !== false && !state.gridOverlay && !state.printMode) drawGrid(false);
   // Architectural layer toggles the floor-plan image on/off
   const archLayer = state.layers.find(l=>l.id==='architectural');
   const showPlan = !archLayer || archLayer.visible !== false;
@@ -3892,16 +3945,14 @@ document.getElementById('switchRunsToggle').addEventListener('click', () => {
 // a raw object list. Lives in the Layers panel (renderSchedule() already
 // runs after every add/delete/duplicate/floor-switch/undo, so hooking in
 // there keeps this in sync everywhere without touching each call site).
-function renderLegend(){
-  const el = document.getElementById('legendList');
-  if(!el) return;
-  const sectionHeaderStyle = 'font-family:var(--mono); font-size:10px; letter-spacing:1px; text-transform:uppercase; color:var(--text-dim); margin:14px 0 6px; padding-bottom:4px; border-bottom:1px solid var(--line-soft);';
-  // Switches are bucketed by gang count too, not just symbolId -- a 1-gang
-  // and a 4-gang switch are different plate hardware and read as one
-  // undifferentiated "Light switch" line otherwise, which is exactly the
-  // ambiguity a legend is supposed to remove.
+// Switches are bucketed by gang count too, not just symbolId -- a 1-gang
+// and a 4-gang switch are different plate hardware and read as one
+// undifferentiated "Light switch" line otherwise, which is exactly the
+// ambiguity a legend is supposed to remove. Shared by the Legend panel and
+// the Print/PDF export view's legend table, so both stay in sync.
+function computeLegendEntries(floor){
   const buckets = {};
-  currentFloor().objects.forEach(o => {
+  floor.objects.forEach(o => {
     const sym = SYMBOL_LIBRARY.find(s=>s.id===o.symbolId);
     if(!sym) return;
     const gang = isSwitchSymbol(o.symbolId) ? (o.props.gang||1) : null;
@@ -3911,20 +3962,26 @@ function renderLegend(){
   });
   // Patch panels aren't placed -- derived from each rack's port count on
   // this floor (legend is per-floor, same as everything else here).
-  currentFloor().objects.filter(o=>o.symbolId==='comms_rack').forEach(rack => {
+  floor.objects.filter(o=>o.symbolId==='comms_rack').forEach(rack => {
     const units = patchPanelUnitsForRack(rack);
     if(units){
       if(!buckets.patch_panel) buckets.patch_panel = { sym: SYMBOL_LIBRARY.find(s=>s.id==='patch_panel'), gang:null, count:0 };
       buckets.patch_panel.count += units;
     }
   });
-  const entries = Object.values(buckets)
+  return Object.values(buckets)
     .filter(e => e.sym)
     .sort((a,b) => {
       if(a.sym.category !== b.sym.category) return a.sym.category.localeCompare(b.sym.category);
       if(a.sym.label !== b.sym.label) return a.sym.label.localeCompare(b.sym.label);
       return (a.gang||0) - (b.gang||0);
     });
+}
+function renderLegend(){
+  const el = document.getElementById('legendList');
+  if(!el) return;
+  const sectionHeaderStyle = 'font-family:var(--mono); font-size:10px; letter-spacing:1px; text-transform:uppercase; color:var(--text-dim); margin:14px 0 6px; padding-bottom:4px; border-bottom:1px solid var(--line-soft);';
+  const entries = computeLegendEntries(currentFloor());
   if(!entries.length){
     el.innerHTML = `<div style="${sectionHeaderStyle}">Legend</div><div style="color:var(--text-dim); font-size:12px; padding:2px 0 6px;">Nothing placed on this floor yet.</div>`;
     return;
@@ -3939,6 +3996,99 @@ function renderLegend(){
       </div>
     `).join('');
 }
+
+// ===================================================================
+// PRINT / PDF EXPORT VIEW
+// Redraws each floor onto the existing plan canvas with a white
+// background (no separate renderer to maintain -- reuses render() as-is,
+// just with state.printMode on and selection/interaction state cleared),
+// captures it as an image, and lays it out on a white page next to a
+// legend table. Printing/saving as PDF is just the browser's own Print
+// dialog against this view -- no PDF library needed.
+// ===================================================================
+function fitViewToContent(floor){
+  const margin = 30;
+  if(floor.planImage){
+    const sX = (canvas.width-margin*2)/floor.planImage.width, sY = (canvas.height-margin*2)/floor.planImage.height;
+    floor.view.zoom = Math.min(sX,sY,4);
+    floor.view.offsetX = (canvas.width - floor.planImage.width*floor.view.zoom)/2;
+    floor.view.offsetY = (canvas.height - floor.planImage.height*floor.view.zoom)/2;
+    return;
+  }
+  if(!floor.objects.length){ floor.view.zoom = 1; floor.view.offsetX = canvas.width/2; floor.view.offsetY = canvas.height/2; return; }
+  let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;
+  floor.objects.forEach(o => { minX=Math.min(minX,o.x); minY=Math.min(minY,o.y); maxX=Math.max(maxX,o.x); maxY=Math.max(maxY,o.y); });
+  const w = Math.max(maxX-minX, 200), h = Math.max(maxY-minY, 200);
+  const sX = (canvas.width-margin*2)/w, sY = (canvas.height-margin*2)/h;
+  floor.view.zoom = Math.min(sX,sY,4);
+  floor.view.offsetX = (canvas.width - (minX+maxX)*floor.view.zoom)/2;
+  floor.view.offsetY = (canvas.height - (minY+maxY)*floor.view.zoom)/2;
+}
+// Renders one floor onto the real plan canvas (temporarily, at export
+// resolution, with a white background) and returns a PNG data URL.
+// Everything mutated here -- canvas size, that floor's view, selection/
+// interaction state -- is saved by the caller and restored afterward, so
+// the user's live editing session is completely unaffected.
+function captureFloorSnapshot(floorIndex){
+  const floor = state.floors[floorIndex];
+  const savedView = { ...floor.view };
+  state.activeFloorIndex = floorIndex;
+  fitViewToContent(floor);
+  render();
+  const dataUrl = canvas.toDataURL('image/png');
+  floor.view = savedView;
+  return dataUrl;
+}
+function openPrintView(){
+  const savedFloorIndex = state.activeFloorIndex;
+  const savedSelected = state.selectedObjectId, savedMulti = state.multiSelectedIds, savedMultiMode = state.multiSelectMode;
+  const savedCanvasW = canvas.width, savedCanvasH = canvas.height;
+  state.selectedObjectId = null; state.multiSelectedIds = new Set(); state.multiSelectMode = false;
+  state.printMode = true;
+  canvas.width = 1600; canvas.height = 1131; // ~A4 landscape ratio, high enough res to print cleanly
+
+  const projName = document.getElementById('projName').value || 'Untitled';
+  const dateStr = new Date().toLocaleDateString('en-AU');
+  const pagesHtml = state.floors.map((floor, i) => {
+    const imgSrc = captureFloorSnapshot(i);
+    const entries = computeLegendEntries(floor);
+    const total = entries.reduce((s,e) => s+e.count, 0);
+    const legendRows = entries.map(e => `
+      <tr>
+        <td><span class="pl-swatch" style="background:${e.sym.color};">${e.gang ? e.gang+'G' : e.sym.abbr}</span>${e.sym.label}${e.gang ? ' — '+e.gang+' gang' : ''}</td>
+        <td class="pl-qty">× ${e.count}</td>
+      </tr>`).join('');
+    return `
+      <div class="print-page">
+        <div class="print-page-header">
+          <div class="ph-name">${projName} — ${floor.name}</div>
+          <div class="ph-meta">${dateStr}${floor.scale ? '<br>Calibrated' : '<br>Not calibrated'}</div>
+        </div>
+        <div class="print-page-body">
+          <div class="print-plan-col">${floor.planImage || floor.objects.length ? `<img src="${imgSrc}">` : '<span class="pv-empty">Nothing on this floor yet</span>'}</div>
+          <div class="print-legend-col">
+            <h3>Legend</h3>
+            ${entries.length ? `<table class="print-legend-table">${legendRows}</table><div class="print-legend-total">${total} device${total===1?'':'s'} total</div>` : '<div class="pv-empty" style="font-size:11px; color:#888;">Nothing placed on this floor yet.</div>'}
+          </div>
+        </div>
+      </div>`;
+  }).join('');
+  document.getElementById('printViewPages').innerHTML = pagesHtml;
+
+  // restore the live editing session exactly as it was before capture
+  state.activeFloorIndex = savedFloorIndex;
+  state.selectedObjectId = savedSelected; state.multiSelectedIds = savedMulti; state.multiSelectMode = savedMultiMode;
+  state.printMode = false;
+  canvas.width = savedCanvasW; canvas.height = savedCanvasH;
+  render();
+
+  document.getElementById('printView').classList.add('open');
+}
+function closePrintView(){ document.getElementById('printView').classList.remove('open'); }
+document.getElementById('dtbPrintExport').addEventListener('click', openPrintView);
+document.getElementById('morePrintExport').addEventListener('click', () => { closeSheets(); openPrintView(); });
+document.getElementById('btnClosePrintView').addEventListener('click', closePrintView);
+document.getElementById('btnDoPrint').addEventListener('click', () => window.print());
 
 // ===================================================================
 // PROPERTIES SHEET
