@@ -711,7 +711,7 @@ html.force-desktop{
   <div class="sheet-handle"></div>
   <div class="sheet-header"><div class="sheet-title">Layers</div><div class="sheet-close" data-close>✕</div></div>
   <div class="sheet-body">
-    <div class="prop-row" style="margin-bottom:12px;"><label>Show circuit labels on plan</label>
+    <div class="prop-row" style="margin-bottom:12px;"><label>Show circuit/port IDs on plan</label>
       <div class="toggle" id="circuitLabelToggle"><div class="knob"></div></div>
     </div>
     <div class="prop-row" style="margin-bottom:12px;"><label>Show cable runs on plan</label>
@@ -888,7 +888,7 @@ html.force-desktop{
   <div class="sheet-handle"></div>
   <div class="sheet-header"><div class="sheet-title">Comms Racks</div><div class="sheet-close" data-close>✕</div></div>
   <div class="sheet-body">
-    <div style="font-size:11px; color:var(--text-dim); margin-bottom:12px; line-height:1.5;">Every comms/data device gets its own dedicated cable ("home run") straight back to one numbered port on a rack — separate from electrical circuits entirely. Place a Comms Rack device on the plan to get one with 8 ports, ready to assign.</div>
+    <div style="font-size:11px; color:var(--text-dim); margin-bottom:12px; line-height:1.5;">Every comms/data device gets its own dedicated cable ("home run") straight back to one numbered port on a rack — separate from electrical circuits entirely. Place a Comms Rack device on the plan to get one with 24 ports (a patch panel), ready to assign. Patch panels aren't placed separately — go over 24 ports and the quote/legend automatically account for a 2nd (48 for a 3rd, and so on).</div>
     <div id="commsRacksBody"></div>
   </div>
 </div>
@@ -1369,12 +1369,43 @@ function computeGpoChains(floor){
 // hold at most one linked device. See migrateLegacyCommsData() for how an
 // old-format save's data circuits become ports here on load.
 // ===================================================================
-const DEFAULT_COMMS_PORT_COUNT = 8;
+const DEFAULT_COMMS_PORT_COUNT = 24; // a standard patch panel
 function makeCommsPort(rackId, number){
-  return { id: rackId+'-P'+number, number, label:'Port '+number, description:'', cable:'Cat6', deviceId:null };
+  return { id: rackId+'-P'+number, number, label:String(number), description:'', cable:'Cat6', deviceId:null };
 }
 function defaultCommsPorts(rackId){
   return Array.from({ length: DEFAULT_COMMS_PORT_COUNT }, (_, i) => makeCommsPort(rackId, i+1));
+}
+// Patch panel isn't its own placed device any more -- a rack physically
+// needs one 24-port patch panel per 24 ports it has (2 once you go past
+// 24, 3 past 48, and so on), so its cost/legend count is derived straight
+// from port count instead of the sparky having to separately place and
+// keep a patch_panel object in sync with however many ports they've
+// actually added. SYMBOL_LIBRARY still carries 'patch_panel' (so its price
+// stays editable in the Device Library) -- it's just hidden from the
+// placement grid, see renderSymbolGrid().
+const PATCH_PANEL_PORTS_PER_UNIT = 24;
+function patchPanelUnitsForRack(rack){
+  const portCount = (rack.commsPorts||[]).length;
+  return portCount > 0 ? Math.ceil(portCount / PATCH_PANEL_PORTS_PER_UNIT) : 0;
+}
+function allPatchPanelLines(){
+  const lines = [];
+  allCommsRacks().forEach(({ rack, floorIndex }) => {
+    const units = patchPanelUnitsForRack(rack);
+    if(units > 0) lines.push({ rack, floorIndex, floorName: state.floors[floorIndex].name, units });
+  });
+  return lines;
+}
+// The port a device currently occupies, if any -- used to show the
+// sparky's own port label (they usually just number data points 1, 2, 3…)
+// on the plan instead of a circuit id, which comms devices don't have.
+function portForDevice(deviceId){
+  for(const rack of currentFloor().objects.filter(o=>o.symbolId==='comms_rack')){
+    const port = (rack.commsPorts||[]).find(p=>p.deviceId===deviceId);
+    if(port) return port;
+  }
+  return null;
 }
 function allCommsRacks(){
   // Cross-floor by design -- unlike findBoardObjects (current floor only),
@@ -1554,13 +1585,22 @@ function render(){
     ctx.fillStyle='#0c1116'; ctx.font='bold 11px JetBrains Mono'; ctx.textAlign='center'; ctx.textBaseline='middle';
     const abbrText = (isSwitchSymbol(obj.symbolId) && obj.props.gang) ? (obj.props.gang+'G') : sym.abbr;
     ctx.fillText(abbrText, p.x, p.y);
-    // circuit ID label — screen-space font so it stays legible across zoom levels.
-    // Drawn just below the symbol with a high-contrast pill so it doesn't
-    // compete with the device abbreviation inside the circle.
-    if(state.showCircuitLabels && obj.circuit){
+    // circuit/port ID label — screen-space font so it stays legible across
+    // zoom levels. Drawn just below the symbol with a high-contrast pill so
+    // it doesn't compete with the device abbreviation inside the circle.
+    // A comms device has no circuit -- shows its assigned port's own label
+    // instead (sparkies usually just number data points 1, 2, 3…, and the
+    // port label defaults to exactly that, see makeCommsPort).
+    let idLabel = null;
+    if(obj.circuit) idLabel = String(obj.circuit);
+    else if(sym.category==='data' && obj.symbolId!=='comms_rack'){
+      const port = portForDevice(obj.id);
+      if(port) idLabel = port.label || ('Port '+port.number);
+    }
+    if(state.showCircuitLabels && idLabel){
       const fontPx = Math.max(9, Math.min(12, 8 + currentFloor().view.zoom * 1.5));
       ctx.font = 'bold ' + fontPx + 'px JetBrains Mono';
-      const label = String(obj.circuit);
+      const label = idLabel;
       const tw = ctx.measureText(label).width;
       const padX = 3, padY = 1;
       const boxW = tw + padX * 2;
@@ -3241,7 +3281,12 @@ function symbolCardClick(sym){
 function renderSymbolGrid(){
   symbolGrid.innerHTML = '';
   const grouped = {};
-  SYMBOL_LIBRARY.forEach(sym => { (grouped[sym.category]=grouped[sym.category]||[]).push(sym); });
+  // Patch panel isn't placed as its own device -- it's derived from a
+  // comms rack's port count (see PATCH_PANEL_PORTS_PER_UNIT) -- so it's
+  // excluded here but stays in SYMBOL_LIBRARY itself so its price is still
+  // editable in the Device Library and the derived quote/legend lines can
+  // still look its cost up.
+  SYMBOL_LIBRARY.filter(sym=>sym.id!=='patch_panel').forEach(sym => { (grouped[sym.category]=grouped[sym.category]||[]).push(sym); });
   const orderedCats = Object.keys(CATEGORY_LABELS).concat(Object.keys(grouped).filter(k=>!CATEGORY_LABELS[k]));
   orderedCats.filter(cat=>grouped[cat]).forEach(cat => {
     const header = document.createElement('div');
@@ -3712,6 +3757,12 @@ function renderLegend(){
   const sectionHeaderStyle = 'font-family:var(--mono); font-size:10px; letter-spacing:1px; text-transform:uppercase; color:var(--text-dim); margin:14px 0 6px; padding-bottom:4px; border-bottom:1px solid var(--line-soft);';
   const counts = {};
   currentFloor().objects.forEach(o => { counts[o.symbolId] = (counts[o.symbolId]||0) + (o.props.quantity||1); });
+  // Patch panels aren't placed -- derived from each rack's port count on
+  // this floor (legend is per-floor, same as everything else here).
+  currentFloor().objects.filter(o=>o.symbolId==='comms_rack').forEach(rack => {
+    const units = patchPanelUnitsForRack(rack);
+    if(units) counts.patch_panel = (counts.patch_panel||0) + units;
+  });
   const entries = Object.keys(counts)
     .map(id => ({ sym: SYMBOL_LIBRARY.find(s=>s.id===id), count: counts[id] }))
     .filter(e => e.sym)
@@ -4064,6 +4115,16 @@ function updateQuote(){
     materials += effectivePrice(o)*qty;
     labourCost += effectiveLabour(o)*qty*labourRate;
   });
+  // Patch panels are derived from port count, not placed -- see
+  // allPatchPanelLines(). Priced off the same (still editable) Device
+  // Library entry a placed patch_panel would have used.
+  const patchPanelSym = SYMBOL_LIBRARY.find(s=>s.id==='patch_panel');
+  if(patchPanelSym){
+    allPatchPanelLines().forEach(line => {
+      materials += patchPanelSym.defaultProps.material_cost * line.units;
+      labourCost += patchPanelSym.defaultProps.labour_hours * line.units * labourRate;
+    });
+  }
   const protection = state.circuits.filter(c=>c.kind!=='data').reduce((sum,c) => sum + effectiveProtectionCost(c), 0);
   const subtotal = materials+labourCost+protection+equipment+travel;
   const margin = subtotal*marginPct;
@@ -4098,6 +4159,15 @@ function renderSchedule(){
     row.innerHTML = `<td>${o.id}</td><td>${sym.label}${overrideTag}</td><td>${o.__floorName}</td><td>${qty}</td><td>${fmt(lineTotal)}</td>`;
     body.appendChild(row);
   });
+  const patchPanelSym = SYMBOL_LIBRARY.find(s=>s.id==='patch_panel');
+  if(patchPanelSym){
+    allPatchPanelLines().forEach(line => {
+      const lineTotal = (patchPanelSym.defaultProps.material_cost*line.units) + (patchPanelSym.defaultProps.labour_hours*line.units*labourRate);
+      const row = document.createElement('tr');
+      row.innerHTML = `<td>${line.rack.id}</td><td>${patchPanelSym.label} (${deviceDisplayName(line.rack)})</td><td>${line.floorName}</td><td>${line.units}</td><td>${fmt(lineTotal)}</td>`;
+      body.appendChild(row);
+    });
+  }
 }
 
 // ===================================================================
