@@ -4412,6 +4412,19 @@ function deviceHeightMm(obj){
 // separate home run per device. Only devices on the switchboard's own
 // floor have usable geometry; anything on another floor is left out of the
 // length and reported separately so it's never silently dropped.
+//
+// NOTE TO SELF (deliberately not attempted yet, per the user 30 Aug 2026):
+// this only estimates hard-active runs (switchboard -> switch). It does NOT
+// estimate the cable(s) actually needed to switch a light/fan/etc -- that's
+// a genuinely harder problem the user wants added *later*: a single switched
+// point can need more than one cable of different types at once (e.g. a
+// light/fan combo commonly needs a Twin & Earth run as well as a separate
+// SDI/3-core for the fan speed or a second function), so it can't be
+// estimated the same generic way GPOs/hard-actives are. The user's own
+// framing: this will likely need a redesign around a switch's own view --
+// what's actually fed from it, and which cable type feeds which downstream
+// function -- rather than bolting more cases onto this function. Don't
+// build this speculatively; wait for that conversation.
 function estimateCircuitCableLength(circuit, ceilingMm, slackPct){
   if(!circuit.switchboardObjectId) return { ok:false, reason:'No switchboard placed on the plan for this circuit yet' };
   const found = findObjectAnywhere(circuit.switchboardObjectId);
@@ -4513,7 +4526,7 @@ function renderPanelSchedule(){
         ${pctOfMain!=null ? `<div style="font-size:12px; color:${pctOfMain>100?'var(--red)':'var(--text-dim)'}; margin-top:4px;">${pctOfMain.toFixed(0)}% of main switch capacity used (estimate)${pctOfMain>100?' — exceeds rating':''}</div>` : ''}
         ${overRatedNote}
       </div>`;
-  }).join('') + `<div style="font-size:10.5px; color:var(--text-dim); margin-top:4px; line-height:1.5;">Connected load uses each device's typical load from the Device Library (editable per device and per type). Demand load applies a simplified diversity estimate for early planning only — always verify against AS/NZS 3000 and your own professional judgement before relying on it for a real installation. Est. cable run assumes a straight-line route from the switchboard through the roof space to each device in turn (closest to furthest), dropping to each device's mounted height — a rough planning figure, not a substitute for a real takeoff.</div>`;
+  }).join('') + `<div style="font-size:10.5px; color:var(--text-dim); margin-top:4px; line-height:1.5;">Connected load uses each device's typical load from the Device Library (editable per device and per type). Demand load applies a simplified diversity estimate for early planning only — always verify against AS/NZS 3000 and your own professional judgement before relying on it for a real installation.<br><br>Est. cable run is only an estimate, and only covers circuits linked to a switchboard with a visible cable route on the plan — it needs the floor to be Calibrated to work at all. For lighting, it only covers hard-active runs (switch fed straight from the switchboard) — the cable for actually switching the lights/fans themselves is <b>not</b> included and needs to be worked out separately, since too many different cable combinations are possible (e.g. a light/fan combo unit can need a Twin &amp; Earth run as well as a separate SDI/3-core) to estimate generically.</div>`;
   el.querySelectorAll('[data-main-amps]').forEach(inp => inp.addEventListener('change', (e) => {
     const val = parseFloat(e.target.value);
     if(!val || val<=0) delete state.boardMainSwitchAmps[e.target.dataset.mainAmps];
