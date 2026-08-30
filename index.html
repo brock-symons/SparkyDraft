@@ -776,7 +776,7 @@ html.force-desktop{
   <div class="sheet-header"><div class="sheet-title">More tools</div><div class="sheet-close" data-close>✕</div></div>
   <div class="sheet-body">
     <div class="tool-row">
-      <div class="tool-card hidden-feature" id="moreCable"><span class="icon">╱</span><span class="lbl">Cable route</span></div>
+      <div class="tool-card" id="moreCable"><span class="icon">╱</span><span class="lbl">Cable route</span></div>
       <div class="tool-card" id="moreMeasure"><span class="icon">📏</span><span class="lbl">Measure</span></div>
       <div class="tool-card" id="moreLink"><span class="icon">🔗</span><span class="lbl">Link switch</span></div>
     </div>
@@ -855,6 +855,7 @@ html.force-desktop{
     <div id="gridAlignStatus" style="font-size:11.5px; color:var(--green); margin-bottom:10px; display:none;"></div>
     <button class="add-btn" id="btnDetectWalls" style="background:var(--panel2); border-color:var(--line); color:var(--text); margin-top:0;">Detect walls from plan</button>
     <button class="add-btn" id="btnMarkWall" style="background:var(--panel2); border-color:var(--line); color:var(--text);">Mark wall manually</button>
+    <button class="add-btn" id="btnCableRouteShortcut" style="background:var(--panel2); border-color:var(--line); color:var(--text);">Draw a cable route</button>
     <button class="add-btn" id="btnAlignGridWall" style="background:var(--panel2); border-color:var(--line); color:var(--text);">Align grid to a wall</button>
     <button class="add-btn" id="btnResetGridOrigin" style="background:var(--panel2); border-color:var(--line); color:var(--text-dim);">Reset grid origin</button>
     <div style="font-family:var(--mono); font-size:10px; letter-spacing:1px; text-transform:uppercase; color:var(--text-dim); margin:14px 0 6px; padding-bottom:4px; border-bottom:1px solid var(--line-soft);">Walls on this floor</div>
@@ -2660,6 +2661,9 @@ document.getElementById('symbolSizeSelect').addEventListener('change', (e) => {
 });
 document.getElementById('btnMarkWall').addEventListener('click', () => {
   setTool('wall'); closeSheets();
+});
+document.getElementById('btnCableRouteShortcut').addEventListener('click', () => {
+  closeSheets(); openSheet('sheetCableSize');
 });
 document.getElementById('btnResetGridOrigin').addEventListener('click', () => {
   const f = currentFloor();
