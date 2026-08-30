@@ -19,6 +19,9 @@
   --mono:'JetBrains Mono',monospace; --sans:'Inter',-apple-system,sans-serif;
   --safe-b: env(safe-area-inset-bottom, 0px);
   --safe-t: env(safe-area-inset-top, 0px);
+  --rail-w: 56px;
+  --layers-w: 224px;
+  --symbols-w: 308px;
 }
 *{box-sizing:border-box; margin:0; padding:0; -webkit-tap-highlight-color:transparent; user-select:none;}
 html,body{height:100%; overscroll-behavior:none;}
@@ -203,19 +206,39 @@ canvas{display:block; touch-action:none;}
 .sheet{
   position:fixed; left:0; right:0; bottom:0; z-index:56; background:var(--panel);
   border-radius:16px 16px 0 0; border-top:1px solid var(--line);
-  transform:translateY(100%); transition:transform .25s cubic-bezier(.32,.72,0,1);
-  max-height:75vh; display:flex; flex-direction:column;
+  transform:translateY(100%); transition:transform .25s cubic-bezier(.32,.72,0,1), max-height .22s ease;
+  max-height:55vh; display:flex; flex-direction:column;
   padding-bottom:calc(16px + var(--safe-b));
 }
 .sheet.open{transform:translateY(0);}
+/* tap the expand button to grow toward full-screen when a sheet's content
+   needs more room; keeps the canvas as the default focus otherwise */
+.sheet.expanded{max-height:92vh;}
+/* minimized keeps the sheet "open" (still tappable to restore) but shrinks
+   it to just the handle+header, so the plan underneath is fully usable
+   without dismissing whatever the user was doing in the sheet */
+.sheet.minimized{max-height:60px; overflow:hidden;}
+.sheet.minimized .sheet-body{display:none;}
 .sheet-handle{width:36px; height:4px; background:var(--line); border-radius:2px; margin:10px auto 4px;}
 .sheet-header{display:flex; align-items:center; justify-content:space-between; padding:6px 18px 10px;}
 .sheet-title{font-family:var(--mono); font-size:11px; letter-spacing:1px; text-transform:uppercase; color:var(--text-dim); font-weight:700;}
-.sheet-close{width:30px; height:30px; border-radius:15px; background:var(--panel2); color:var(--text-dim); font-size:16px; display:flex; align-items:center; justify-content:center;}
+.sheet-header-actions{display:flex; align-items:center; gap:6px; flex-shrink:0;}
+.sheet-close, .sheet-size-btn{width:30px; height:30px; border-radius:15px; background:var(--panel2); color:var(--text-dim); font-size:14px; display:flex; align-items:center; justify-content:center;}
+.sheet-size-btn{border:none; cursor:pointer; font-family:var(--sans);}
+.sheet-size-btn:active{background:var(--line);}
 .sheet-body{overflow-y:auto; padding:0 18px 10px; -webkit-overflow-scrolling:touch;}
 
 /* symbol grid */
 .symbol-grid{display:grid; grid-template-columns:repeat(3,1fr); gap:8px;}
+.symbol-category{grid-column:1/-1;}
+.symbol-cat-header{
+  display:flex; align-items:center; gap:6px; cursor:pointer; user-select:none;
+  font-family:var(--mono); font-size:10px; letter-spacing:1px; text-transform:uppercase;
+  color:var(--text-dim); margin:10px 0 8px; padding-bottom:4px; border-bottom:1px solid var(--line-soft);
+}
+.symbol-cat-header .chevron{display:inline-block; font-size:9px; transition:transform .15s ease;}
+.symbol-category.collapsed .symbol-cat-header .chevron{transform:rotate(-90deg);}
+.symbol-category.collapsed .symbol-cat-body{display:none;}
 .symbol-card{
   background:var(--panel2); border:1px solid var(--line); border-radius:10px; padding:12px 8px;
   display:flex; flex-direction:column; align-items:center; gap:6px; text-align:center;
@@ -225,14 +248,24 @@ canvas{display:block; touch-action:none;}
 .symbol-card .lbl{font-size:10.5px; color:var(--text-dim); line-height:1.3;}
 
 /* tools sheet */
-.tool-row{display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-bottom:6px;}
+.tool-group{margin-bottom:18px;}
+.tool-group:last-child{margin-bottom:4px;}
+.tool-group-label{font-family:var(--mono); font-size:10px; letter-spacing:1.2px; text-transform:uppercase; color:var(--text-dim); font-weight:700; margin:0 0 8px 2px;}
+.tool-row{display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-bottom:10px;}
+.tool-row:last-child{margin-bottom:0;}
 .tool-card{
-  background:var(--panel2); border:1px solid var(--line); border-radius:10px; padding:14px 8px;
-  display:flex; flex-direction:column; align-items:center; gap:6px; text-align:center;
+  background:var(--panel2); border:1px solid var(--line); border-radius:14px; padding:16px 8px 12px;
+  display:flex; flex-direction:column; align-items:center; gap:8px; text-align:center;
+  transition:border-color .15s, transform .1s, background .15s;
 }
+.tool-card:active{transform:scale(0.96);}
 .tool-card.active{background:var(--blue-dim); border-color:var(--blue);}
-.tool-card .icon{font-size:20px;}
-.tool-card .lbl{font-size:11px; color:var(--text-dim);}
+.tool-card .icon{
+  font-size:18px; width:38px; height:38px; border-radius:50%; background:var(--panel);
+  border:1px solid var(--line-soft); display:flex; align-items:center; justify-content:center;
+}
+.tool-card.active .icon{background:rgba(255,255,255,0.12); border-color:transparent;}
+.tool-card .lbl{font-size:11px; color:var(--text-dim); line-height:1.3;}
 .tool-card.active .lbl{color:#eaf6ff;}
 
 /* layers sheet */
@@ -325,6 +358,52 @@ td{padding:6px; border-bottom:1px solid var(--line-soft);}
 .modal-ok{background:var(--blue-dim); border:1px solid var(--blue); color:#eaf6ff;}
 .modal-ok.danger{background:rgba(248,113,113,0.15); border:1px solid #5c2626; color:var(--red);}
 
+/* command palette — Ctrl+K jumps straight to any tool/sheet by typing,
+   quicker than hunting through menus once you know roughly what you want */
+.cmd-backdrop{
+  position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:70; opacity:0; pointer-events:none; transition:opacity .15s;
+}
+.cmd-backdrop.open{opacity:1; pointer-events:all;}
+.cmd-palette{
+  position:fixed; left:50%; top:16%; transform:translateX(-50%) scale(0.97); width:480px; max-width:90vw;
+  background:var(--panel); border:1px solid var(--line); border-radius:12px; box-shadow:var(--shadow-md);
+  z-index:71; opacity:0; pointer-events:none; transition:opacity .15s, transform .15s; overflow:hidden;
+}
+.cmd-palette.open{opacity:1; pointer-events:all; transform:translateX(-50%) scale(1);}
+.cmd-input{
+  width:100%; padding:14px 16px; font-size:14px; background:transparent; border:none; color:var(--text);
+  border-bottom:1px solid var(--line);
+}
+.cmd-input:focus{outline:none;}
+.cmd-results{max-height:340px; overflow-y:auto; padding:6px;}
+.cmd-item{
+  display:flex; align-items:center; justify-content:space-between; gap:10px; padding:9px 10px;
+  border-radius:7px; font-size:13px; color:var(--text); cursor:pointer;
+}
+.cmd-item.active{background:var(--panel2);}
+.cmd-item .cmd-key{
+  font-family:var(--mono); font-size:10.5px; color:var(--text-dim); background:var(--panel2);
+  border:1px solid var(--line); border-radius:4px; padding:1px 6px; flex-shrink:0;
+}
+.cmd-item.active .cmd-key{background:var(--panel);}
+.cmd-empty{padding:16px; text-align:center; color:var(--text-dim); font-size:12.5px;}
+
+/* right-click context menu — desktop only in practice (canvas suppresses
+   the browser's own menu), instant access to the handful of actions you'd
+   otherwise open the Properties panel just to reach */
+.ctx-menu{
+  position:fixed; z-index:65; background:var(--panel); border:1px solid var(--line);
+  border-radius:8px; box-shadow:var(--shadow-md); padding:4px; display:none; min-width:170px;
+}
+.ctx-menu.open{display:block;}
+.ctx-item{
+  display:flex; align-items:center; justify-content:space-between; gap:14px; padding:8px 10px;
+  border-radius:6px; font-size:13px; color:var(--text); cursor:pointer;
+}
+.ctx-item:hover{background:var(--panel2);}
+.ctx-item.danger{color:var(--red);}
+.ctx-item .ctx-key{font-family:var(--mono); font-size:10px; color:var(--text-dim);}
+
 /* toast (replaces alert) */
 /* ===== AUTH GATE — full-screen, blocks the app until logged in ===== */
 #authGate{ position:fixed; inset:0; z-index:100; background:var(--bg); display:none; align-items:center; justify-content:center; padding:20px; }
@@ -415,12 +494,29 @@ td{padding:6px; border-bottom:1px solid var(--line-soft);}
    Mobile layout (bottom sheets) is completely untouched below 900px.
    =================================================================== */
 #desktopToolbar{ display:none; }
+#desktopRail{ display:none; }
+/* dock-toggle tabs only make sense next to the desktop docked Layers/
+   Symbols/Props sidebars — nothing to collapse on mobile's bottom sheets */
+.dock-toggle{ display:none; }
+/* same story for the panel-width drag handles */
+.resize-handle{ display:none; }
+/* skip the usual open/close transitions while actively dragging a panel's
+   edge, so it tracks the cursor instead of visibly lagging behind it */
+html.panel-resizing #sheetLayers, html.panel-resizing #sheetSymbols, html.panel-resizing #sheetProps,
+html.panel-resizing #canvas-wrap, html.panel-resizing #backdrop, html.panel-resizing .dock-toggle{
+  transition:none !important;
+}
 @media (min-width:1400px){
   :root{
     --panel:#ffffff; --panel2:#f4f6f8; --panel3:#ffffff; --line:#e1e6ec; --line-soft:#eef1f4;
     --text:#1a2332; --text-dim:#65728a;
     --shadow-sm:0 1px 2px rgba(15,23,42,0.06); --shadow-md:0 6px 20px rgba(15,23,42,0.08);
   }
+  /* expand/minimize is a mobile bottom-sheet affordance — desktop sheets
+     are either docked sidebars or centred dialogs with the canvas already
+     visible around them, so the extra controls would have nothing useful
+     to do here */
+  .sheet-size-btn{ display:none; }
   body{ background:#f4f6f9; }
   #topbar{ height:44px; box-shadow:0 1px 0 rgba(0,0,0,0.04); }
   .btn, .icon-btn, .file-btn-wrap .visual{ color:var(--text-dim); }
@@ -442,14 +538,40 @@ td{padding:6px; border-bottom:1px solid var(--line-soft);}
   #bottombar{ display:none; }
   #hud-topright, #multiActionBar{ top:10px; }
 
+  /* hot-task rail: the tools used constantly (select/pan/place/measure/
+     link/calibrate) pinned as one-click icons at the far left, instead of
+     living in the horizontal toolbar where they can end up wrapped onto a
+     second row and jumping around as the window resizes */
+  #desktopRail{
+    display:flex; flex-direction:column; align-items:center; gap:6px;
+    position:fixed; left:0; top:calc(44px + var(--safe-t) + var(--dtb-h, 40px)); bottom:0; width:var(--rail-w);
+    background:var(--panel); border-right:1px solid var(--line); padding:10px 0; z-index:8; overflow-y:auto;
+  }
+  .rail-btn{
+    width:38px; height:38px; border-radius:8px; flex-shrink:0;
+    background:var(--panel2); border:1px solid var(--line); color:var(--text);
+    font-size:16px; display:flex; align-items:center; justify-content:center;
+    transition:background .12s, border-color .12s, color .12s;
+  }
+  .rail-btn:hover{ border-color:var(--blue); }
+  .rail-btn.active{ background:#e7f1fe; color:#1f5aa8; border-color:var(--blue); }
+  .rail-sep{ width:26px; height:1px; background:var(--line); margin:2px 0; flex-shrink:0; }
+
+  /* drag either docked panel's inner edge to resize it — clamped in JS */
+  .resize-handle{ display:block; position:absolute; top:0; bottom:0; width:6px; cursor:col-resize; z-index:10; }
+  .resize-handle-right{ right:-3px; }
+  .resize-handle-left{ left:-3px; }
+  .resize-handle:hover, .resize-handle.dragging{ background:var(--blue); opacity:0.35; }
+
   /* dock Layers as a permanent left sidebar — full column height now that
      Symbols has moved to the right, so it no longer needs to share space
      with (or squeeze out) another panel */
   #sheetLayers{
-    position:fixed; left:0; right:auto; bottom:0; width:224px;
+    position:fixed; left:var(--rail-w); right:auto; bottom:0; width:var(--layers-w);
     top:calc(44px + var(--safe-t) + var(--dtb-h, 40px));
     transform:none; border-radius:0; max-height:none; box-shadow:2px 0 8px rgba(0,0,0,0.04);
     border-right:1px solid var(--line); z-index:8;
+    transition:width .2s ease;
   }
   #sheetLayers .sheet-body{ overflow-y:auto; }
   #sheetLayers .sheet-handle, #sheetLayers .sheet-close{ display:none; }
@@ -461,13 +583,14 @@ td{padding:6px; border-bottom:1px solid var(--line-soft);}
      props-active class on <html>, see setDeviceEditorActive() — and hands
      back to Symbols on Save/Delete/deselect. */
   #sheetSymbols, #sheetProps{
-    position:fixed; right:0; left:auto; bottom:0; width:308px;
+    position:fixed; right:0; left:auto; bottom:0; width:var(--symbols-w);
     /* --dtb-h tracks the desktop toolbar's real (possibly wrapped) height —
        see syncDesktopToolbarHeight() — so this panel starts right below it
        instead of overhanging into it when the toolbar wraps to two rows */
     top:calc(44px + var(--safe-t) + var(--dtb-h, 40px)); max-height:none;
     transform:none; border-radius:0; box-shadow:-2px 0 8px rgba(0,0,0,0.04);
     border-left:1px solid var(--line); z-index:8; display:flex; flex-direction:column;
+    transition:width .2s ease;
   }
   #sheetSymbols .sheet-body, #sheetProps .sheet-body{ flex:1; overflow-y:auto; }
   #sheetSymbols .sheet-handle, #sheetProps .sheet-handle,
@@ -478,12 +601,34 @@ td{padding:6px; border-bottom:1px solid var(--line-soft);}
   html.props-active #sheetSymbols{ display:none; }
 
   #canvas-wrap{
-    left:224px; right:308px; top:calc(44px + var(--safe-t) + var(--dtb-h, 40px)); bottom:0;
+    left:calc(var(--layers-w) + var(--rail-w)); right:var(--symbols-w); top:calc(44px + var(--safe-t) + var(--dtb-h, 40px)); bottom:0;
+    transition:left .2s ease, right .2s ease;
   }
-  #recoveryBanner{ left:calc(224px + 10px); right:calc(308px + 10px); }
+  #recoveryBanner{ left:calc(var(--layers-w) + var(--rail-w) + 10px); right:calc(var(--symbols-w) + 10px); }
 
   /* backdrop shouldn't dim the whole screen for the always-open docked panels */
-  #backdrop{ left:224px; right:308px; }
+  #backdrop{ left:calc(var(--layers-w) + var(--rail-w)); right:var(--symbols-w); }
+
+  /* collapsing a docked panel: shrink it to nothing and let the canvas
+     reclaim the space, rather than leaving an empty column */
+  .dock-toggle{
+    display:flex; align-items:center; justify-content:center;
+    position:fixed; top:50%; transform:translateY(-50%); width:18px; height:52px; z-index:9;
+    background:var(--panel); border:1px solid var(--line); color:var(--text-dim);
+    cursor:pointer; font-size:13px; padding:0; transition:left .2s ease, right .2s ease;
+  }
+  .dock-toggle-left{ left:calc(var(--layers-w) + var(--rail-w)); border-radius:0 6px 6px 0; border-left:none; }
+  .dock-toggle-right{ right:var(--symbols-w); border-radius:6px 0 0 6px; border-right:none; }
+  html.layers-collapsed #sheetLayers{ width:0; border-right:none; overflow:hidden; }
+  html.layers-collapsed #canvas-wrap{ left:var(--rail-w); }
+  html.layers-collapsed #recoveryBanner{ left:calc(var(--rail-w) + 10px); }
+  html.layers-collapsed #backdrop{ left:var(--rail-w); }
+  html.layers-collapsed .dock-toggle-left{ left:var(--rail-w); }
+  html.symbols-collapsed #sheetSymbols, html.symbols-collapsed #sheetProps{ width:0; border-left:none; overflow:hidden; }
+  html.symbols-collapsed #canvas-wrap{ right:0; }
+  html.symbols-collapsed #recoveryBanner{ right:10px; }
+  html.symbols-collapsed #backdrop{ right:0; }
+  html.symbols-collapsed .dock-toggle-right{ right:0; }
 
   /* the rest of the sheets (Quote, Circuits, Elevation, Floors, Grid,
      Price list, Load, Export, Assign switch, Cable size) still behave as
@@ -510,6 +655,7 @@ html.force-desktop{
     --text:#1a2332; --text-dim:#65728a;
     --shadow-sm:0 1px 2px rgba(15,23,42,0.06); --shadow-md:0 6px 20px rgba(15,23,42,0.08);
   }
+  html.force-desktop .sheet-size-btn{ display:none; }
   html.force-desktop body{ background:#f4f6f9; }
   html.force-desktop #topbar{ height:44px; box-shadow:0 1px 0 rgba(0,0,0,0.04); }
   html.force-desktop .btn, html.force-desktop .icon-btn, html.force-desktop .file-btn-wrap .visual{ color:var(--text-dim); }
@@ -528,12 +674,30 @@ html.force-desktop{
   html.force-desktop #bottombar, html.force-desktop #multiActionBar ~ #hud #tool-hint{ }
   html.force-desktop #bottombar{ display:none; }
   html.force-desktop #hud-topright, html.force-desktop #multiActionBar{ top:10px; }
+  html.force-desktop #desktopRail{
+    display:flex; flex-direction:column; align-items:center; gap:6px;
+    position:fixed; left:0; top:calc(44px + var(--safe-t) + var(--dtb-h, 40px)); bottom:0; width:var(--rail-w);
+    background:var(--panel); border-right:1px solid var(--line); padding:10px 0; z-index:8; overflow-y:auto;
+  }
+  html.force-desktop .rail-btn{
+    width:38px; height:38px; border-radius:8px; flex-shrink:0;
+    background:var(--panel2); border:1px solid var(--line); color:var(--text);
+    font-size:16px; display:flex; align-items:center; justify-content:center;
+    transition:background .12s, border-color .12s, color .12s;
+  }
+  html.force-desktop .rail-btn:hover{ border-color:var(--blue); }
+  html.force-desktop .rail-btn.active{ background:#e7f1fe; color:#1f5aa8; border-color:var(--blue); }
+  html.force-desktop .rail-sep{ width:26px; height:1px; background:var(--line); margin:2px 0; flex-shrink:0; }
+  html.force-desktop .resize-handle{ display:block; position:absolute; top:0; bottom:0; width:6px; cursor:col-resize; z-index:10; }
+  html.force-desktop .resize-handle-right{ right:-3px; }
+  html.force-desktop .resize-handle-left{ left:-3px; }
+  html.force-desktop .resize-handle:hover, html.force-desktop .resize-handle.dragging{ background:var(--blue); opacity:0.35; }
   /* dock Layers as a permanent left sidebar — full column height */
   html.force-desktop #sheetLayers{
-    position:fixed; left:0; right:auto; bottom:0; width:224px;
+    position:fixed; left:var(--rail-w); right:auto; bottom:0; width:var(--layers-w);
     top:calc(44px + var(--safe-t) + var(--dtb-h, 40px));
     transform:none; border-radius:0; max-height:none; box-shadow:2px 0 8px rgba(0,0,0,0.04);
-    border-right:1px solid var(--line); z-index:8;
+    border-right:1px solid var(--line); z-index:8; transition:width .2s ease;
   }
   html.force-desktop #sheetLayers .sheet-body{ overflow-y:auto; }
   html.force-desktop #sheetLayers .sheet-handle, html.force-desktop #sheetLayers .sheet-close{ display:none; }
@@ -542,10 +706,11 @@ html.force-desktop{
      the same right-hand slot — Properties overlays Symbols while a
      device/cable is selected, see setDeviceEditorActive() */
   html.force-desktop #sheetSymbols, html.force-desktop #sheetProps{
-    position:fixed; right:0; left:auto; bottom:0; width:308px;
+    position:fixed; right:0; left:auto; bottom:0; width:var(--symbols-w);
     top:calc(44px + var(--safe-t) + var(--dtb-h, 40px)); max-height:none;
     transform:none; border-radius:0; box-shadow:-2px 0 8px rgba(0,0,0,0.04);
     border-left:1px solid var(--line); z-index:8; display:flex; flex-direction:column;
+    transition:width .2s ease;
   }
   html.force-desktop #sheetSymbols .sheet-body, html.force-desktop #sheetProps .sheet-body{ flex:1; overflow-y:auto; }
   html.force-desktop #sheetSymbols .sheet-handle, html.force-desktop #sheetProps .sheet-handle,
@@ -555,11 +720,30 @@ html.force-desktop{
   html.force-desktop.props-active #sheetProps{ display:flex; }
   html.force-desktop.props-active #sheetSymbols{ display:none; }
   html.force-desktop #canvas-wrap{
-    left:224px; right:308px; top:calc(44px + var(--safe-t) + var(--dtb-h, 40px)); bottom:0;
+    left:calc(var(--layers-w) + var(--rail-w)); right:var(--symbols-w); top:calc(44px + var(--safe-t) + var(--dtb-h, 40px)); bottom:0;
+    transition:left .2s ease, right .2s ease;
   }
-  html.force-desktop #recoveryBanner{ left:calc(224px + 10px); right:calc(308px + 10px); }
+  html.force-desktop #recoveryBanner{ left:calc(var(--layers-w) + var(--rail-w) + 10px); right:calc(var(--symbols-w) + 10px); }
   /* backdrop shouldn't dim the whole screen for the always-open docked panels */
-  html.force-desktop #backdrop{ left:224px; right:308px; }
+  html.force-desktop #backdrop{ left:calc(var(--layers-w) + var(--rail-w)); right:var(--symbols-w); }
+  html.force-desktop .dock-toggle{
+    display:flex; align-items:center; justify-content:center;
+    position:fixed; top:50%; transform:translateY(-50%); width:18px; height:52px; z-index:9;
+    background:var(--panel); border:1px solid var(--line); color:var(--text-dim);
+    cursor:pointer; font-size:13px; padding:0; transition:left .2s ease, right .2s ease;
+  }
+  html.force-desktop .dock-toggle-left{ left:calc(var(--layers-w) + var(--rail-w)); border-radius:0 6px 6px 0; border-left:none; }
+  html.force-desktop .dock-toggle-right{ right:var(--symbols-w); border-radius:6px 0 0 6px; border-right:none; }
+  html.force-desktop.layers-collapsed #sheetLayers{ width:0; border-right:none; overflow:hidden; }
+  html.force-desktop.layers-collapsed #canvas-wrap{ left:var(--rail-w); }
+  html.force-desktop.layers-collapsed #recoveryBanner{ left:calc(var(--rail-w) + 10px); }
+  html.force-desktop.layers-collapsed #backdrop{ left:var(--rail-w); }
+  html.force-desktop.layers-collapsed .dock-toggle-left{ left:var(--rail-w); }
+  html.force-desktop.symbols-collapsed #sheetSymbols, html.force-desktop.symbols-collapsed #sheetProps{ width:0; border-left:none; overflow:hidden; }
+  html.force-desktop.symbols-collapsed #canvas-wrap{ right:0; }
+  html.force-desktop.symbols-collapsed #recoveryBanner{ right:10px; }
+  html.force-desktop.symbols-collapsed #backdrop{ right:0; }
+  html.force-desktop.symbols-collapsed .dock-toggle-right{ right:0; }
   /* the rest of the sheets (Quote, Circuits, Elevation, Floors, Grid,
      Price list, Load, Export, Assign switch, Cable size) still behave as
      real overlay dialogs on desktop, just centred instead of bottom-anchored */
@@ -618,21 +802,30 @@ html.force-desktop{
   <button class="icon-btn" id="btnLayoutToggle" title="Switch between bright desktop layout and dark mobile layout">🖥</button>
 </div>
 
+<div id="desktopRail">
+  <button class="rail-btn dtb-btn active" data-dtool="select" title="Select (V)">↖</button>
+  <button class="rail-btn dtb-btn" data-dtool="pan" title="Pan (H)">✋</button>
+  <button class="rail-btn" id="railPlace" title="Place a device (P)">➕</button>
+  <button class="rail-btn dtb-btn" data-dtool="measure" title="Measure (M)">📏</button>
+  <button class="rail-btn dtb-btn" data-dtool="link" title="Link switch (K)">🔗</button>
+  <button class="rail-btn dtb-btn" data-dtool="calibrate" title="Calibrate (C)">⚖</button>
+  <div class="rail-sep"></div>
+  <button class="rail-btn" id="railLayers" title="Layers (L)">▤</button>
+  <div class="rail-sep"></div>
+  <button class="rail-btn" id="railCommandPalette" title="Command palette (Ctrl+K)">⌘</button>
+</div>
+
 <div id="desktopToolbar">
-  <button class="dtb-btn active" data-dtool="select">↖ Select</button>
-  <button class="dtb-btn" data-dtool="pan">✋ Pan</button>
-  <button class="dtb-btn" data-dtool="measure">📏 Measure</button>
-  <button class="dtb-btn" data-dtool="link">🔗 Link switch</button>
-  <button class="dtb-btn" data-dtool="calibrate">⚖ Calibrate</button>
+  <button class="dtb-btn" id="dtbGrid">▦ Grid &amp; snap</button>
   <div class="dtb-sep"></div>
   <button class="dtb-btn" id="dtbCircuits">⏚ Circuits</button>
   <button class="dtb-btn" id="dtbCommsRacks">🗄 Comms racks</button>
-  <button class="dtb-btn" id="dtbGrid">▦ Grid &amp; snap</button>
-  <button class="dtb-btn" id="dtbPriceList">🏷 Device library</button>
   <button class="dtb-btn" id="dtbQuote">💲 Quote</button>
+  <button class="dtb-btn" id="dtbPanelSchedule">🧮 Panel schedule</button>
+  <button class="dtb-btn" id="dtbPriceList">🏷 Device library</button>
+  <div class="dtb-sep"></div>
   <button class="dtb-btn" id="dtbVersions">🕐 History</button>
   <button class="dtb-btn" id="dtbDuplicates">🧹 Find duplicates</button>
-  <button class="dtb-btn" id="dtbPanelSchedule">🧮 Panel schedule</button>
 </div>
 
 <div id="recoveryBanner" class="hidden">
@@ -644,6 +837,8 @@ html.force-desktop{
 </div>
 <div id="readOnlyBanner">👁 View only — you don't have edit access to this shared project.</div>
 <div id="readOnlyOverlay"></div>
+<button id="dockToggleLayers" class="dock-toggle dock-toggle-left" title="Hide layers panel">‹</button>
+<button id="dockToggleSymbols" class="dock-toggle dock-toggle-right" title="Hide device panel">›</button>
 <div id="canvas-wrap">
   <canvas id="canvas"></canvas>
   <div id="import-prompt">
@@ -702,12 +897,14 @@ html.force-desktop{
 <div class="sheet-backdrop" id="backdrop"></div>
 
 <div class="sheet" id="sheetSymbols">
+  <div class="resize-handle resize-handle-left" id="resizeSymbols"></div>
   <div class="sheet-handle"></div>
   <div class="sheet-header"><div class="sheet-title">Place a device</div><div class="sheet-close" data-close>✕</div></div>
   <div class="sheet-body"><div class="symbol-grid" id="symbolGrid"></div></div>
 </div>
 
 <div class="sheet" id="sheetLayers">
+  <div class="resize-handle resize-handle-right" id="resizeLayers"></div>
   <div class="sheet-handle"></div>
   <div class="sheet-header"><div class="sheet-title">Layers</div><div class="sheet-close" data-close>✕</div></div>
   <div class="sheet-body">
@@ -775,30 +972,46 @@ html.force-desktop{
   <div class="sheet-handle"></div>
   <div class="sheet-header"><div class="sheet-title">More tools</div><div class="sheet-close" data-close>✕</div></div>
   <div class="sheet-body">
-    <div class="tool-row">
-      <div class="tool-card" id="moreCable"><span class="icon">╱</span><span class="lbl">Cable route</span></div>
-      <div class="tool-card" id="moreMeasure"><span class="icon">📏</span><span class="lbl">Measure</span></div>
-      <div class="tool-card" id="moreLink"><span class="icon">🔗</span><span class="lbl">Link switch</span></div>
+    <div class="tool-group">
+      <div class="tool-group-label">Draw</div>
+      <div class="tool-row">
+        <div class="tool-card" id="moreCable"><span class="icon">╱</span><span class="lbl">Cable route</span></div>
+        <div class="tool-card" id="moreMeasure"><span class="icon">📏</span><span class="lbl">Measure</span></div>
+        <div class="tool-card" id="moreLink"><span class="icon">🔗</span><span class="lbl">Link switch</span></div>
+      </div>
+      <div class="tool-row">
+        <div class="tool-card" id="moreScale"><span class="icon">⚖</span><span class="lbl">Calibrate</span></div>
+        <div class="tool-card hidden-feature" id="moreWall"><span class="icon">▬</span><span class="lbl">Mark wall</span></div>
+      </div>
     </div>
-    <div class="tool-row">
-      <div class="tool-card" id="moreCircuits"><span class="icon">⏚</span><span class="lbl">Circuits</span></div>
-      <div class="tool-card" id="moreElevation"><span class="icon">▯</span><span class="lbl">Elevation</span></div>
-      <div class="tool-card" id="moreScale"><span class="icon">⚖</span><span class="lbl">Calibrate</span></div>
+    <div class="tool-group">
+      <div class="tool-group-label">Layout</div>
+      <div class="tool-row">
+        <div class="tool-card" id="moreFloors"><span class="icon">🏢</span><span class="lbl">Floors</span></div>
+        <div class="tool-card" id="moreRooms"><span class="icon">▭</span><span class="lbl">Rooms</span></div>
+        <div class="tool-card" id="moreElevation"><span class="icon">▯</span><span class="lbl">Elevation</span></div>
+      </div>
+      <div class="tool-row">
+        <div class="tool-card" id="moreGrid"><span class="icon">▦</span><span class="lbl">Grid &amp; snap</span></div>
+      </div>
     </div>
-    <div class="tool-row">
-      <div class="tool-card" id="moreFloors"><span class="icon">🏢</span><span class="lbl">Floors</span></div>
-      <div class="tool-card" id="moreQuote"><span class="icon">💲</span><span class="lbl">Quote</span></div>
-      <div class="tool-card" id="moreGrid"><span class="icon">▦</span><span class="lbl">Grid &amp; snap</span></div>
+    <div class="tool-group">
+      <div class="tool-group-label">Circuits &amp; costs</div>
+      <div class="tool-row">
+        <div class="tool-card" id="moreCircuits"><span class="icon">⏚</span><span class="lbl">Circuits</span></div>
+        <div class="tool-card" id="moreQuote"><span class="icon">💲</span><span class="lbl">Quote</span></div>
+        <div class="tool-card" id="morePanelSchedule"><span class="icon">🧮</span><span class="lbl">Panel schedule</span></div>
+      </div>
+      <div class="tool-row">
+        <div class="tool-card" id="morePriceList"><span class="icon">🏷</span><span class="lbl">Device library</span></div>
+      </div>
     </div>
-    <div class="tool-row">
-      <div class="tool-card" id="morePriceList"><span class="icon">🏷</span><span class="lbl">Device library</span></div>
-      <div class="tool-card" id="moreVersions"><span class="icon">🕐</span><span class="lbl">History</span></div>
-      <div class="tool-card" id="moreRooms"><span class="icon">▭</span><span class="lbl">Rooms</span></div>
-    </div>
-    <div class="tool-row">
-      <div class="tool-card hidden-feature" id="moreWall"><span class="icon">▬</span><span class="lbl">Mark wall</span></div>
-      <div class="tool-card" id="moreDuplicates"><span class="icon">🧹</span><span class="lbl">Find duplicates</span></div>
-      <div class="tool-card" id="morePanelSchedule"><span class="icon">🧮</span><span class="lbl">Panel schedule</span></div>
+    <div class="tool-group">
+      <div class="tool-group-label">Manage</div>
+      <div class="tool-row">
+        <div class="tool-card" id="moreVersions"><span class="icon">🕐</span><span class="lbl">History</span></div>
+        <div class="tool-card" id="moreDuplicates"><span class="icon">🧹</span><span class="lbl">Find duplicates</span></div>
+      </div>
     </div>
   </div>
 </div>
@@ -952,6 +1165,14 @@ html.force-desktop{
     <button class="modal-ok" id="modalOk">Save</button>
   </div>
 </div>
+
+<div class="cmd-backdrop" id="cmdBackdrop"></div>
+<div class="cmd-palette" id="cmdPalette">
+  <input type="text" id="cmdInput" class="cmd-input" placeholder="Type a command… (tools, sheets, actions)" autocomplete="off" spellcheck="false">
+  <div class="cmd-results" id="cmdResults"></div>
+</div>
+
+<div id="ctxMenu" class="ctx-menu"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
@@ -2039,14 +2260,48 @@ window.addEventListener('keyup', (e) => {
   if(e.code==='Space'){ isSpacePan = false; canvas.style.cursor = state.activeTool==='select' ? 'default' : 'crosshair'; }
 });
 window.addEventListener('keydown', (e) => {
-  const inField = document.activeElement.tagName==='INPUT' || document.activeElement.tagName==='TEXTAREA';
-  if(inField) return;
+  // Ctrl/Cmd+K and Escape need to work even while the palette's own search
+  // box has focus, so they run before the "don't fire shortcuts while
+  // typing" guard below.
   const mod = e.ctrlKey || e.metaKey;
+  if(mod && e.key.toLowerCase()==='k' && typeof window.__cmdPaletteToggle==='function'){
+    e.preventDefault(); window.__cmdPaletteToggle(); return;
+  }
+  if(e.key==='Escape' && typeof window.__cmdPaletteIsOpen==='function' && window.__cmdPaletteIsOpen()){
+    e.preventDefault(); window.__cmdPaletteClose(); return;
+  }
+  const inField = ['INPUT','TEXTAREA','SELECT'].includes(document.activeElement.tagName);
+  if(inField) return;
   if(mod && e.key.toLowerCase()==='z' && !e.shiftKey){ e.preventDefault(); document.getElementById('btnUndo').click(); }
   else if(mod && (e.key.toLowerCase()==='y' || (e.key.toLowerCase()==='z' && e.shiftKey))){ e.preventDefault(); document.getElementById('btnRedo').click(); }
+  else if(mod && e.key.toLowerCase()==='s'){ e.preventDefault(); document.getElementById('btnSave')?.click(); }
+  else if(mod && e.key.toLowerCase()==='d'){
+    e.preventDefault();
+    if(state.selectedObjectId && !state.multiSelectedIds.has(state.selectedObjectId)) state.multiSelectedIds = new Set([state.selectedObjectId]);
+    if(state.multiSelectedIds.size) document.getElementById('multiDuplicate')?.click();
+  }
   else if(e.key==='Delete' || e.key==='Backspace'){
     if(state.selectedObjectId){ e.preventDefault(); document.getElementById('btnDeleteObj')?.click(); }
     else if(state.selectedCableId){ e.preventDefault(); document.getElementById('btnDeleteCable')?.click(); }
+  }
+  // Single-key tool shortcuts (CAD-style: V=select, H=pan, etc.) — only
+  // when nothing is held down, so they don't fire alongside Ctrl/Cmd combos.
+  else if(!mod && !e.altKey){
+    const toolKeys = { v:'select', h:'pan', m:'measure', k:'link', c:'calibrate' };
+    const key = e.key.toLowerCase();
+    if(toolKeys[key]){
+      e.preventDefault();
+      setTool(toolKeys[key]);
+      document.querySelectorAll('.dtb-btn[data-dtool]').forEach(b=>b.classList.toggle('active', b.dataset.dtool===toolKeys[key]));
+    } else if(key==='p'){
+      e.preventDefault();
+      document.getElementById('railPlace')?.click();
+      document.getElementById('bbPlace')?.click();
+    } else if(key==='l'){
+      e.preventDefault();
+      document.getElementById('railLayers')?.click();
+      document.getElementById('bbLayers')?.click();
+    }
   }
 });
 
@@ -2322,7 +2577,7 @@ document.getElementById('multiAssignSwitch').addEventListener('click', () => {
 // ===================================================================
 const backdrop = document.getElementById('backdrop');
 const sheets = ['sheetSymbols','sheetLayers','sheetProps','sheetQuote','sheetMore','sheetCableSize','sheetCircuits','sheetElevation','sheetFloors','sheetExport','sheetGrid','sheetAssignSwitch','sheetPriceList','sheetVersions','sheetRooms','sheetDuplicates','sheetAccount','sheetSaveOptions','sheetOrg','sheetPanelSchedule'].map(id=>document.getElementById(id));
-function closeSheets(){ sheets.forEach(s=>s.classList.remove('open')); backdrop.classList.remove('open'); }
+function closeSheets(){ sheets.forEach(s=>{ s.classList.remove('open'); if(s._resetSheetSize) s._resetSheetSize(); }); backdrop.classList.remove('open'); }
 // Layers/Symbols/Properties are permanently docked side panels on desktop
 // (not floating dialogs), so the backdrop shouldn't cover the canvas for
 // them there — it sat right over the canvas and silently absorbed the
@@ -2332,10 +2587,77 @@ const DOCKED_SHEET_IDS = ['sheetLayers','sheetSymbols','sheetProps'];
 function isDesktopDocked(){
   return document.documentElement.classList.contains('force-desktop') || window.matchMedia('(min-width:1400px)').matches;
 }
+// A minimized sheet stays visually "open" (so a tap on its header can
+// restore it) but shouldn't dim/block the canvas behind it — that's the
+// whole point of minimizing instead of closing.
+function applySheetBackdrop(sheet, id){
+  const shouldDim = !sheet.classList.contains('minimized') && !(isDesktopDocked() && DOCKED_SHEET_IDS.includes(id));
+  backdrop.classList.toggle('open', shouldDim);
+}
+// On desktop, Layers/Symbols/Props dock as permanent full-height columns
+// and everything else centres as a dialog — .sheet-size-btn is hidden there
+// by CSS. On mobile all of these are ordinary bottom sheets, so they all
+// get the resize controls.
+sheets.forEach(sheet => {
+  if(!sheet) return;
+  const header = sheet.querySelector('.sheet-header');
+  const closeBtn = sheet.querySelector('.sheet-close');
+  if(!header || !closeBtn) return;
+  const actions = document.createElement('div');
+  actions.className = 'sheet-header-actions';
+  const expandBtn = document.createElement('button');
+  expandBtn.type = 'button';
+  expandBtn.className = 'sheet-size-btn sheet-expand-btn';
+  const minBtn = document.createElement('button');
+  minBtn.type = 'button';
+  minBtn.className = 'sheet-size-btn sheet-min-btn';
+  actions.appendChild(expandBtn);
+  actions.appendChild(minBtn);
+  header.insertBefore(actions, closeBtn);
+
+  function refreshButtons(){
+    const minimized = sheet.classList.contains('minimized');
+    const expanded = sheet.classList.contains('expanded');
+    expandBtn.style.display = minimized ? 'none' : '';
+    expandBtn.textContent = expanded ? '⤡' : '⤢';
+    expandBtn.title = expanded ? 'Collapse' : 'Expand';
+    minBtn.textContent = minimized ? '▲' : '▁';
+    minBtn.title = minimized ? 'Restore' : 'Minimize';
+  }
+  expandBtn.addEventListener('click', e => {
+    e.stopPropagation();
+    sheet.classList.remove('minimized');
+    sheet.classList.toggle('expanded');
+    refreshButtons();
+    applySheetBackdrop(sheet, sheet.id);
+  });
+  minBtn.addEventListener('click', e => {
+    e.stopPropagation();
+    sheet.classList.remove('expanded');
+    sheet.classList.toggle('minimized');
+    refreshButtons();
+    applySheetBackdrop(sheet, sheet.id);
+  });
+  // Tapping the peeking header while minimized is the fastest way back in.
+  header.addEventListener('click', e => {
+    if(sheet.classList.contains('minimized') && e.target === header){
+      sheet.classList.remove('minimized');
+      refreshButtons();
+      applySheetBackdrop(sheet, sheet.id);
+    }
+  });
+  sheet._resetSheetSize = () => {
+    sheet.classList.remove('expanded','minimized');
+    refreshButtons();
+  };
+  refreshButtons();
+});
 function openSheet(id){
   closeSheets();
-  document.getElementById(id).classList.add('open');
-  if(!(isDesktopDocked() && DOCKED_SHEET_IDS.includes(id))) backdrop.classList.add('open');
+  const sheet = document.getElementById(id);
+  if(sheet._resetSheetSize) sheet._resetSheetSize();
+  sheet.classList.add('open');
+  applySheetBackdrop(sheet, id);
 }
 // Desktop docked layout only: Properties ("Device settings") overlays the
 // Symbols ("Place a device") panel in the same right-hand slot while a
@@ -3085,34 +3407,58 @@ function symbolCardClick(sym){
   setHint('Tap the plan to place a ' + sym.label);
   closeSheets();
 }
+// Which symbol categories the user has collapsed in the "Place a device"
+// grid — remembered across renders/reloads so re-adding a custom fitting
+// (which re-runs renderSymbolGrid) doesn't spring everything back open.
+const collapsedSymbolCats = new Set();
+try {
+  const raw = localStorage.getItem('sparkydraft_collapsed_symbol_cats');
+  if(raw) JSON.parse(raw).forEach(c => collapsedSymbolCats.add(c));
+} catch(e) {}
+function persistCollapsedSymbolCats(){
+  try { localStorage.setItem('sparkydraft_collapsed_symbol_cats', JSON.stringify([...collapsedSymbolCats])); } catch(e) {}
+}
+function buildSymbolCategory(label, key, syms, collapsible){
+  const wrap = document.createElement('div');
+  wrap.className = 'symbol-category' + (collapsible && collapsedSymbolCats.has(key) ? ' collapsed' : '');
+  const header = document.createElement('div');
+  header.className = 'symbol-cat-header';
+  header.innerHTML = (collapsible ? '<span class="chevron">▾</span>' : '') + `<span>${label}</span>`;
+  if(collapsible){
+    header.addEventListener('click', () => {
+      const nowCollapsed = wrap.classList.toggle('collapsed');
+      if(nowCollapsed) collapsedSymbolCats.add(key); else collapsedSymbolCats.delete(key);
+      persistCollapsedSymbolCats();
+    });
+  }
+  const body = document.createElement('div');
+  body.className = 'symbol-grid symbol-cat-body';
+  syms.forEach(entry => body.appendChild(entry));
+  wrap.appendChild(header);
+  wrap.appendChild(body);
+  return wrap;
+}
 function renderSymbolGrid(){
   symbolGrid.innerHTML = '';
   const grouped = {};
   SYMBOL_LIBRARY.forEach(sym => { (grouped[sym.category]=grouped[sym.category]||[]).push(sym); });
   const orderedCats = Object.keys(CATEGORY_LABELS).concat(Object.keys(grouped).filter(k=>!CATEGORY_LABELS[k]));
   orderedCats.filter(cat=>grouped[cat]).forEach(cat => {
-    const header = document.createElement('div');
-    header.style.cssText = 'grid-column:1/-1; font-family:var(--mono); font-size:10px; letter-spacing:1px; text-transform:uppercase; color:var(--text-dim); margin:10px 0 2px; padding-bottom:4px; border-bottom:1px solid var(--line-soft);';
-    header.textContent = CATEGORY_LABELS[cat] || cat;
-    symbolGrid.appendChild(header);
-    grouped[cat].forEach(sym => {
+    const cards = grouped[cat].map(sym => {
       const el = document.createElement('div');
       el.className = 'symbol-card';
       el.innerHTML = `<div class="sw" style="background:${sym.color}22;color:${sym.color};border:1px solid ${sym.color}55;">${sym.abbr}</div><div class="lbl">${sym.label}</div>`;
       el.addEventListener('click', () => symbolCardClick(sym));
-      symbolGrid.appendChild(el);
+      return el;
     });
+    symbolGrid.appendChild(buildSymbolCategory(CATEGORY_LABELS[cat] || cat, cat, cards, true));
   });
-  const addHeader = document.createElement('div');
-  addHeader.style.cssText = 'grid-column:1/-1; font-family:var(--mono); font-size:10px; letter-spacing:1px; text-transform:uppercase; color:var(--text-dim); margin:10px 0 2px; padding-bottom:4px; border-bottom:1px solid var(--line-soft);';
-  addHeader.textContent = 'Custom';
-  symbolGrid.appendChild(addHeader);
   const addEl = document.createElement('div');
   addEl.className = 'symbol-card';
   addEl.style.borderStyle = 'dashed';
   addEl.innerHTML = `<div class="sw" style="background:transparent; color:var(--text-dim); border:1px dashed var(--line);">+</div><div class="lbl">Add device</div>`;
   addEl.addEventListener('click', openCustomFittingModal);
-  symbolGrid.appendChild(addEl);
+  symbolGrid.appendChild(buildSymbolCategory('Custom', 'custom', [addEl], false));
 }
 function openCustomFittingModal(){
   openFormModal('Add a custom fitting', [
@@ -4110,6 +4456,227 @@ function buildProjectData(){
     applyLayout(pref);
     showToast(pref === 'desktop' ? 'Desktop layout forced on' : 'Back to automatic layout (based on screen size)');
   });
+})();
+
+// ---------------------------------------------------------------------
+// Dock panel collapse: on the desktop layout, Layers and Place-a-device/
+// Properties are permanent docked sidebars — always visible, unlike the
+// mobile bottom sheets which can now be minimized. These two tabs give
+// the same "get it out of the way" ability there, collapsing the panel to
+// nothing and handing its width back to the canvas. Remembered per browser
+// like the layout choice above.
+// ---------------------------------------------------------------------
+(function initDockToggles(){
+  const defs = [
+    { btn: document.getElementById('dockToggleLayers'), cls: 'layers-collapsed', key: 'sparkydraft_layers_collapsed', collapsedIcon: '›', openIcon: '‹', collapsedTitle: 'Show layers panel', openTitle: 'Hide layers panel', toastCollapsed: 'Layers panel hidden', toastOpen: 'Layers panel shown' },
+    { btn: document.getElementById('dockToggleSymbols'), cls: 'symbols-collapsed', key: 'sparkydraft_symbols_collapsed', collapsedIcon: '‹', openIcon: '›', collapsedTitle: 'Show device panel', openTitle: 'Hide device panel', toastCollapsed: 'Device panel hidden', toastOpen: 'Device panel shown' },
+  ];
+  defs.forEach(d => {
+    if(!d.btn) return;
+    function apply(collapsed){
+      document.documentElement.classList.toggle(d.cls, collapsed);
+      d.btn.textContent = collapsed ? d.collapsedIcon : d.openIcon;
+      d.btn.title = collapsed ? d.collapsedTitle : d.openTitle;
+    }
+    let collapsed = false;
+    try { collapsed = localStorage.getItem(d.key) === '1'; } catch(e) {}
+    apply(collapsed);
+    d.btn.addEventListener('click', () => {
+      collapsed = !collapsed;
+      try { localStorage.setItem(d.key, collapsed ? '1' : '0'); } catch(e) {}
+      apply(collapsed);
+      showToast(collapsed ? d.toastCollapsed : d.toastOpen);
+    });
+  });
+})();
+
+// ---------------------------------------------------------------------
+// Command palette (Ctrl+K): type instead of hunting through menus. Every
+// entry just calls the exact same function the matching button already
+// calls, so behaviour can't drift from clicking that button directly.
+// ---------------------------------------------------------------------
+(function initCommandPalette(){
+  const backdrop = document.getElementById('cmdBackdrop');
+  const palette = document.getElementById('cmdPalette');
+  const input = document.getElementById('cmdInput');
+  const results = document.getElementById('cmdResults');
+  if(!backdrop || !palette || !input || !results) return;
+  let activeIndex = 0;
+  let filtered = [];
+
+  function runTool(tool){
+    setTool(tool);
+    document.querySelectorAll('.dtb-btn[data-dtool]').forEach(b=>b.classList.toggle('active', b.dataset.dtool===tool));
+  }
+  const commands = [
+    { label:'Select tool', keywords:'select arrow move', shortcut:'V', action:() => runTool('select') },
+    { label:'Pan tool', keywords:'pan hand scroll', shortcut:'H', action:() => runTool('pan') },
+    { label:'Place a device', keywords:'place add device symbol', shortcut:'P', action:() => { document.getElementById('railPlace')?.click(); document.getElementById('bbPlace')?.click(); } },
+    { label:'Measure tool', keywords:'measure distance', shortcut:'M', action:() => runTool('measure') },
+    { label:'Link switch tool', keywords:'link switch light', shortcut:'K', action:() => runTool('link') },
+    { label:'Calibrate', keywords:'calibrate scale', shortcut:'C', action:() => runTool('calibrate') },
+    { label:'Layers', keywords:'layers visibility', shortcut:'L', action:() => { document.getElementById('railLayers')?.click(); document.getElementById('bbLayers')?.click(); } },
+    { label:'Cable route', keywords:'cable route wire', action:() => document.getElementById('moreCable')?.click() },
+    { label:'Grid & snap', keywords:'grid snap', action:() => { openGridSheet(); openSheet('sheetGrid'); } },
+    { label:'Circuits', keywords:'circuits breaker', action:() => { renderCircuits(); openSheet('sheetCircuits'); } },
+    { label:'Comms racks', keywords:'comms rack data', action:() => { renderCircuits(); openSheet('sheetCircuits'); } },
+    { label:'Quote', keywords:'quote price cost', action:() => { updateQuote(); renderSchedule(); openSheet('sheetQuote'); } },
+    { label:'Panel schedule', keywords:'panel schedule load estimate', action:() => { renderPanelSchedule(); openSheet('sheetPanelSchedule'); } },
+    { label:'Device library', keywords:'device library price list', action:() => { renderPriceList(); openSheet('sheetPriceList'); } },
+    { label:'History', keywords:'history version', action:() => { renderVersionHistory(); openSheet('sheetVersions'); } },
+    { label:'Find duplicates', keywords:'duplicates overlap', action:() => { renderDuplicatesReport(); openSheet('sheetDuplicates'); } },
+    { label:'Floors', keywords:'floors levels', action:() => { renderFloors(); openSheet('sheetFloors'); } },
+    { label:'Rooms', keywords:'rooms assign', action:() => { renderRooms(); openSheet('sheetRooms'); } },
+    { label:'Elevation', keywords:'elevation wall view', action:() => { renderElevationSelect(); openSheet('sheetElevation'); } },
+    { label:'Save now', keywords:'save', shortcut:'Ctrl+S', action:() => document.getElementById('btnSave')?.click() },
+    { label:'Undo', keywords:'undo', shortcut:'Ctrl+Z', action:() => document.getElementById('btnUndo')?.click() },
+    { label:'Redo', keywords:'redo', shortcut:'Ctrl+Y', action:() => document.getElementById('btnRedo')?.click() },
+    { label:'Multi-select', keywords:'multi select box marquee', action:() => document.getElementById('btnMultiSelect')?.click() },
+  ];
+
+  function isOpen(){ return palette.classList.contains('open'); }
+  function open(){
+    palette.classList.add('open'); backdrop.classList.add('open');
+    input.value = ''; renderResults(''); input.focus();
+  }
+  function close(){ palette.classList.remove('open'); backdrop.classList.remove('open'); }
+  function renderResults(query){
+    const q = query.trim().toLowerCase();
+    filtered = !q ? commands : commands.filter(c => (c.label + ' ' + c.keywords).toLowerCase().includes(q));
+    activeIndex = 0;
+    results.innerHTML = filtered.length
+      ? filtered.map((c,i) => `<div class="cmd-item${i===0?' active':''}" data-idx="${i}"><span>${c.label}</span>${c.shortcut?`<span class="cmd-key">${c.shortcut}</span>`:''}</div>`).join('')
+      : '<div class="cmd-empty">No matching command</div>';
+  }
+  function highlight(idx){
+    results.querySelectorAll('.cmd-item').forEach((el,i) => el.classList.toggle('active', i===idx));
+    results.querySelector('.cmd-item.active')?.scrollIntoView({ block:'nearest' });
+  }
+  function runActive(){
+    const cmd = filtered[activeIndex];
+    if(cmd){ close(); cmd.action(); }
+  }
+  input.addEventListener('input', () => renderResults(input.value));
+  input.addEventListener('keydown', (e) => {
+    if(e.key==='ArrowDown'){ e.preventDefault(); activeIndex = Math.min(activeIndex+1, filtered.length-1); highlight(activeIndex); }
+    else if(e.key==='ArrowUp'){ e.preventDefault(); activeIndex = Math.max(activeIndex-1, 0); highlight(activeIndex); }
+    else if(e.key==='Enter'){ e.preventDefault(); runActive(); }
+  });
+  results.addEventListener('click', (e) => {
+    const item = e.target.closest('.cmd-item');
+    if(!item) return;
+    activeIndex = Number(item.dataset.idx);
+    runActive();
+  });
+  backdrop.addEventListener('click', close);
+  document.getElementById('railCommandPalette')?.addEventListener('click', open);
+
+  window.__cmdPaletteIsOpen = isOpen;
+  window.__cmdPaletteClose = close;
+  window.__cmdPaletteToggle = () => isOpen() ? close() : open();
+})();
+
+// ---------------------------------------------------------------------
+// Right-click context menu on canvas — Duplicate/Assign circuit/Delete
+// without opening the Properties panel first. Reuses the exact same
+// buttons those actions already have, just from a menu at the cursor.
+// ---------------------------------------------------------------------
+(function initContextMenu(){
+  const ctxMenu = document.getElementById('ctxMenu');
+  if(!ctxMenu) return;
+  let items = [];
+  function closeCtx(){ ctxMenu.classList.remove('open'); items = []; }
+  function openCtx(x, y, newItems){
+    items = newItems;
+    ctxMenu.innerHTML = items.map((it,i) => `<div class="ctx-item${it.danger?' danger':''}" data-idx="${i}"><span>${it.label}</span>${it.key?`<span class="ctx-key">${it.key}</span>`:''}</div>`).join('');
+    // keep the menu on-screen if it's opened near the right/bottom edge
+    const menuW = 190, menuH = items.length*36 + 8;
+    const x2 = Math.min(x, window.innerWidth - menuW - 8);
+    const y2 = Math.min(y, window.innerHeight - menuH - 8);
+    ctxMenu.style.left = Math.max(4,x2) + 'px';
+    ctxMenu.style.top = Math.max(4,y2) + 'px';
+    ctxMenu.classList.add('open');
+  }
+  ctxMenu.addEventListener('click', (e) => {
+    const el = e.target.closest('.ctx-item');
+    if(!el) return;
+    const item = items[Number(el.dataset.idx)];
+    closeCtx();
+    if(item) item.action();
+  });
+  document.addEventListener('pointerdown', (e) => { if(!ctxMenu.contains(e.target)) closeCtx(); });
+  document.addEventListener('keydown', (e) => { if(e.key==='Escape') closeCtx(); });
+  window.addEventListener('blur', closeCtx);
+
+  canvas.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+    const rect = canvas.getBoundingClientRect();
+    const world = screenToWorld(e.clientX-rect.left, e.clientY-rect.top);
+    const hitObj = hitTestObject(world);
+    const hitCable = !hitObj ? hitTestCable(world) : null;
+    if(hitObj){
+      state.selectedCableId = null;
+      openProps(hitObj.id);
+      render();
+      openCtx(e.clientX, e.clientY, [
+        { label:'Duplicate', key:'Ctrl+D', action:() => { state.multiSelectedIds = new Set([hitObj.id]); document.getElementById('multiDuplicate')?.click(); } },
+        { label:'Assign circuit…', action:() => { state.multiSelectedIds = new Set([hitObj.id]); document.getElementById('multiAssignCircuit')?.click(); } },
+        { label:'Delete', key:'Del', danger:true, action:() => document.getElementById('btnDeleteObj')?.click() },
+      ]);
+    } else if(hitCable){
+      state.selectedObjectId = null;
+      openCableProps(hitCable.id);
+      render();
+      openCtx(e.clientX, e.clientY, [
+        { label:'Delete cable', key:'Del', danger:true, action:() => document.getElementById('btnDeleteCable')?.click() },
+      ]);
+    } else {
+      closeCtx();
+    }
+  });
+})();
+
+// ---------------------------------------------------------------------
+// Resizable docked panels — drag the inner edge of Layers or the Place-a-
+// device/Properties panel to resize it (desktop docked layout only; the
+// handle is display:none everywhere else). Width is stored in a CSS
+// variable so every rule anchored off it (canvas, backdrop, dock-toggle
+// tabs) moves together automatically.
+// ---------------------------------------------------------------------
+(function initPanelResize(){
+  function setupDrag(handle, varName, min, max, storageKey, invert){
+    if(!handle) return;
+    let dragging = false, startX = 0, startW = 0;
+    let saved = null;
+    try { saved = parseInt(localStorage.getItem(storageKey), 10); } catch(e) {}
+    if(saved && saved >= min && saved <= max) document.documentElement.style.setProperty(varName, saved + 'px');
+    handle.addEventListener('pointerdown', (e) => {
+      dragging = true; startX = e.clientX;
+      startW = parseInt(getComputedStyle(document.documentElement).getPropertyValue(varName), 10) || min;
+      handle.classList.add('dragging');
+      handle.setPointerCapture(e.pointerId);
+      document.documentElement.classList.add('panel-resizing');
+      e.preventDefault();
+    });
+    handle.addEventListener('pointermove', (e) => {
+      if(!dragging) return;
+      const delta = (e.clientX - startX) * (invert ? -1 : 1);
+      const w = Math.max(min, Math.min(max, startW + delta));
+      document.documentElement.style.setProperty(varName, w + 'px');
+    });
+    function endDrag(){
+      if(!dragging) return;
+      dragging = false;
+      handle.classList.remove('dragging');
+      document.documentElement.classList.remove('panel-resizing');
+      const w = parseInt(getComputedStyle(document.documentElement).getPropertyValue(varName), 10);
+      try { localStorage.setItem(storageKey, w); } catch(e) {}
+    }
+    handle.addEventListener('pointerup', endDrag);
+    handle.addEventListener('pointercancel', endDrag);
+  }
+  setupDrag(document.getElementById('resizeLayers'), '--layers-w', 180, 420, 'sparkydraft_layers_w', false);
+  setupDrag(document.getElementById('resizeSymbols'), '--symbols-w', 220, 480, 'sparkydraft_symbols_w', true);
 })();
 
 async function saveLocalProject(){
@@ -5401,6 +5968,20 @@ document.getElementById('dtbVersions').addEventListener('click', () => { renderV
 document.getElementById('dtbDuplicates').addEventListener('click', () => { renderDuplicatesReport(); openSheet('sheetDuplicates'); });
 document.getElementById('dtbPanelSchedule').addEventListener('click', () => { renderPanelSchedule(); openSheet('sheetPanelSchedule'); });
 document.getElementById('dtbQuote').addEventListener('click', () => { updateQuote(); renderSchedule(); openSheet('sheetQuote'); });
+
+// Hot-task rail's Place/Layers buttons just bring the already-docked panel
+// back into view if the user had collapsed it — they aren't sheets of
+// their own, see initDockToggles().
+function ensureDockExpanded(cls, btnId){
+  if(document.documentElement.classList.contains(cls)) document.getElementById(btnId)?.click();
+}
+document.getElementById('railPlace').addEventListener('click', () => {
+  ensureDockExpanded('symbols-collapsed', 'dockToggleSymbols');
+  setDeviceEditorActive(false);
+});
+document.getElementById('railLayers').addEventListener('click', () => {
+  ensureDockExpanded('layers-collapsed', 'dockToggleLayers');
+});
 
 // ===================================================================
 // INIT
