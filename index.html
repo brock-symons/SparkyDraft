@@ -757,7 +757,6 @@ html.force-desktop{
 #printView.open{ display:block; }
 #printViewBar{ position:sticky; top:0; z-index:2; display:flex; align-items:center; gap:10px; padding:10px 16px; background:var(--panel); border-bottom:1px solid var(--line); }
 #printViewBar .pv-title{ flex:1; font-weight:600; font-size:14px; color:var(--text); }
-#printViewBar .pv-hint{ font-weight:400; font-size:11.5px; color:var(--text-dim); }
 .pv-btn{ background:var(--accent); color:#0c1116; border:none; padding:9px 16px; border-radius:8px; font-size:13px; font-weight:600; cursor:pointer; }
 .pv-btn.pv-close{ background:var(--panel2); color:var(--text); border:1px solid var(--line); }
 #printViewPages{ padding:24px; display:flex; flex-direction:column; align-items:center; gap:24px; }
@@ -766,15 +765,9 @@ html.force-desktop{
 .print-page-header .ph-name{ font-size:18px; font-weight:700; }
 .print-page-header .ph-meta{ font-size:11px; color:#555; text-align:right; line-height:1.5; }
 .print-page-body{ flex:1; display:flex; gap:18px; min-height:0; }
-/* Screen review only: the plan column is zoomable/pannable (see
-   initPrintPanZoom) so a wall/device relationship can actually be
-   inspected up close before printing -- @media print below forces the
-   transform back off so the printed page always shows the full plan,
-   never whatever crop happened to be on screen. */
-.print-plan-col{ flex:1; min-width:0; position:relative; overflow:hidden; border:1px solid #ccc; background:#fafafa; cursor:grab; }
-.print-plan-col img{ width:100%; height:100%; object-fit:contain; transform-origin:center center; pointer-events:none; user-select:none; }
-.print-plan-col.dragging{ cursor:grabbing; }
-.print-plan-col .pv-empty{ position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:#888; font-size:12px; }
+.print-plan-col{ flex:1; min-width:0; display:flex; align-items:center; justify-content:center; border:1px solid #ccc; background:#fafafa; }
+.print-plan-col img{ max-width:100%; max-height:100%; object-fit:contain; }
+.print-plan-col .pv-empty{ color:#888; font-size:12px; }
 .print-legend-col{ width:260px; flex-shrink:0; overflow-y:auto; }
 .print-legend-col h3{ font-size:11px; text-transform:uppercase; letter-spacing:0.5px; color:#555; margin:0 0 8px; border-bottom:1px solid #ccc; padding-bottom:4px; }
 .print-legend-table{ width:100%; border-collapse:collapse; font-size:11px; }
@@ -790,8 +783,6 @@ html.force-desktop{
   #printViewPages{ padding:0; gap:0; }
   .print-page{ box-shadow:none; width:auto; height:auto; page-break-after:always; }
   .print-page:last-child{ page-break-after:auto; }
-  .print-plan-col{ overflow:visible; }
-  .print-plan-col img{ transform:none !important; }
   @page{ size:landscape; margin:10mm; }
 }
 </style>
@@ -1250,7 +1241,7 @@ html.force-desktop{
 
 <div id="printView">
   <div id="printViewBar">
-    <div class="pv-title">Print / PDF export <span class="pv-hint">— scroll or drag to pan, pinch/ctrl+scroll to zoom, double-click to reset</span></div>
+    <div class="pv-title">Print / PDF export</div>
     <button class="pv-btn" id="btnDoPrint">🖨 Print</button>
     <button class="pv-btn" id="btnSavePdf">⬇ Save as PDF</button>
     <button class="pv-btn pv-close" id="btnClosePrintView">✕ Close</button>
@@ -2010,9 +2001,14 @@ function render(){
         const relevantIds = new Set([...bank.lightIds, ...bank.switches.map(s=>s.switchId)]);
         // isolating a circuit overrides selection/global-toggle relevance —
         // only that circuit's bank(s) draw, regardless of what's selected
+        // printMode (Print/PDF export) forces these switch-to-light loops on
+        // regardless of selection -- deliberately NOT the same as
+        // showSwitchRuns, since the export should only show switching, not
+        // every other kind of cable run (see the power/GPO chains below,
+        // which are not forced on here).
         const isRelevant = state.isolatedCircuitId
           ? [...relevantIds].some(id => currentFloor().objects.find(o=>o.id===id)?.circuit === state.isolatedCircuitId)
-          : state.showSwitchRuns
+          : state.showSwitchRuns || state.printMode
             || (state.selectedObjectId && relevantIds.has(state.selectedObjectId))
             || [...state.multiSelectedIds].some(id => relevantIds.has(id));
         if(!isRelevant) return;
@@ -2530,6 +2526,10 @@ canvas.addEventListener('pointerdown', (e) => {
 
   if(state.activeSymbol){
     const layerForSymbol = SYMBOL_LIBRARY.find(s=>s.id===state.activeSymbol).category;
+    if(isLayerLocked(layerForSymbol)){
+      showToast('That layer is locked — unlock it to place devices there');
+      return;
+    }
     const snapped = snapPoint(world, layerForSymbol, null);
     const { material_cost, labour_hours, ...restDefaults } = SYMBOL_LIBRARY.find(s=>s.id===state.activeSymbol).defaultProps;
     const props = { ...restDefaults, manufacturer:'', model:'', colour:'White', quantity:1, notes:'', priceOverride:null, labourOverride:null };
@@ -4411,13 +4411,12 @@ function fitViewToContent(floor){
 // interaction state -- is saved by the caller and restored afterward, so
 // the user's live editing session is completely unaffected.
 //
-// Capture resolution and symbol size are deliberately left at their
-// original values (1600x1131, unscaled state.symbolSize) -- an earlier
-// attempt doubled both to get more detail to zoom into on screen, but
-// that threw off the icons' proportions relative to everything else on
-// the page and looked wrong. Panning/zooming the review still works fine
-// at this resolution (see initPrintPanZoom); it just won't hold up to
-// extreme zoom levels quite as sharply, which is the right trade-off.
+// Capture resolution and symbol size are left at their original values
+// (1600x1131, unscaled state.symbolSize) -- an earlier attempt doubled
+// both for on-screen zoom, plus added pan/zoom interaction on the review
+// image entirely, but neither held up in real testing (icons looked
+// wrong, the interaction fought trackpad gestures) so both were dropped.
+// This is back to a plain static image, same as the very first version.
 function captureFloorSnapshot(floorIndex){
   const floor = state.floors[floorIndex];
   const savedView = { ...floor.view };
@@ -4437,13 +4436,15 @@ function openPrintView(){
   const savedFloorIndex = state.activeFloorIndex;
   const savedSelected = state.selectedObjectId, savedMulti = state.multiSelectedIds, savedMultiMode = state.multiSelectMode;
   const savedCanvasW = canvas.width, savedCanvasH = canvas.height;
-  const savedShowCircuitLabels = state.showCircuitLabels, savedShowSwitchRuns = state.showSwitchRuns;
+  const savedShowCircuitLabels = state.showCircuitLabels;
   state.selectedObjectId = null; state.multiSelectedIds = new Set(); state.multiSelectMode = false;
   state.printMode = true;
-  // A takeoff/handoff document should always show circuit numbers and
-  // switching, regardless of whatever's toggled on in the live working
-  // view at the moment someone happens to open this.
-  state.showCircuitLabels = true; state.showSwitchRuns = true;
+  // A takeoff/handoff document should always show circuit numbers,
+  // regardless of whatever's toggled on in the live working view. Switch
+  // wiring is handled separately below (state.printMode forces on only
+  // the switch-to-light loops, not power/GPO circuit runs) -- see the
+  // lighting-bank block in render().
+  state.showCircuitLabels = true;
   canvas.width = 1600; canvas.height = 1131; // ~A4 landscape ratio
 
   const projName = document.getElementById('projName').value || 'Untitled';
@@ -4480,13 +4481,12 @@ function openPrintView(){
       </div>`;
   }).join('');
   document.getElementById('printViewPages').innerHTML = pagesHtml;
-  document.querySelectorAll('.print-plan-col').forEach(initPrintPanZoom);
 
   // restore the live editing session exactly as it was before capture
   state.activeFloorIndex = savedFloorIndex;
   state.selectedObjectId = savedSelected; state.multiSelectedIds = savedMulti; state.multiSelectMode = savedMultiMode;
   state.printMode = false;
-  state.showCircuitLabels = savedShowCircuitLabels; state.showSwitchRuns = savedShowSwitchRuns;
+  state.showCircuitLabels = savedShowCircuitLabels;
   canvas.width = savedCanvasW; canvas.height = savedCanvasH;
   render();
 
@@ -4593,52 +4593,6 @@ function hexToRgb(hex){
   return [parseInt(m[1],16), parseInt(m[2],16), parseInt(m[3],16)];
 }
 document.getElementById('btnSavePdf').addEventListener('click', downloadPdfExport);
-// Scroll or drag to pan, pinch/ctrl+scroll to zoom (centred on the
-// cursor), double-click to reset -- screen-review only, see the
-// @media print rule that forces the image transform back off so
-// printing always uses the full, un-zoomed plan.
-//
-// A plain two-finger trackpad swipe fires as an ordinary wheel event,
-// same as a mouse scroll wheel -- only a genuine pinch gesture (or an
-// explicit ctrl/cmd+scroll) carries ctrlKey:true. Treating every wheel
-// event as zoom (the first version of this) meant a normal trackpad
-// swipe intended as panning kept zooming instead, which is exactly what
-// felt "hard to move around": scroll now pans by default, matching the
-// convention most map/canvas apps use, and only ctrlKey zooms.
-function initPrintPanZoom(container){
-  const img = container.querySelector('img');
-  if(!img) return;
-  let scale = 1, tx = 0, ty = 0;
-  const MIN = 1, MAX = 8;
-  const apply = () => { img.style.transform = `translate(${tx}px, ${ty}px) scale(${scale})`; };
-  container.addEventListener('wheel', (e) => {
-    e.preventDefault();
-    if(e.ctrlKey){
-      const rect = container.getBoundingClientRect();
-      const cx = e.clientX - rect.left - rect.width/2, cy = e.clientY - rect.top - rect.height/2;
-      const prevScale = scale;
-      scale = Math.min(MAX, Math.max(MIN, scale * (1 - e.deltaY*0.0015)));
-      const factor = scale/prevScale;
-      tx = cx - (cx-tx)*factor; ty = cy - (cy-ty)*factor;
-      if(scale===MIN){ tx=0; ty=0; }
-    } else {
-      tx -= e.deltaX; ty -= e.deltaY;
-    }
-    apply();
-  }, { passive:false });
-  let dragging=false, startX=0, startY=0, startTx=0, startTy=0;
-  container.addEventListener('mousedown', (e) => {
-    dragging=true; startX=e.clientX; startY=e.clientY; startTx=tx; startTy=ty;
-    container.classList.add('dragging'); e.preventDefault();
-  });
-  window.addEventListener('mousemove', (e) => {
-    if(!dragging) return;
-    tx = startTx + (e.clientX-startX); ty = startTy + (e.clientY-startY);
-    apply();
-  });
-  window.addEventListener('mouseup', () => { dragging=false; container.classList.remove('dragging'); });
-  container.addEventListener('dblclick', () => { scale=1; tx=0; ty=0; apply(); });
-}
 
 // ===================================================================
 // PROPERTIES SHEET
