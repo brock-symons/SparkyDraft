@@ -155,6 +155,12 @@ canvas{display:block; touch-action:none;}
 .org-invite-actions button{ padding:7px 11px; border-radius:6px; font-size:11.5px; font-weight:600; }
 .org-invite-accept{ background:var(--blue-dim); border:1px solid var(--blue); color:#eaf6ff; }
 .org-invite-decline{ background:var(--panel2); border:1px solid var(--line); color:var(--text-dim); }
+/* Invites / My organizations tab bar inside the Organization sheet. */
+.org-tab-btn{
+  flex:1; padding:9px 10px; border-radius:8px; font-size:11.5px; font-weight:600;
+  background:var(--panel2); border:1px solid var(--line); color:var(--text-dim);
+}
+.org-tab-btn.active{ background:var(--blue-dim); border-color:var(--blue); color:#eaf6ff; }
 
 /* Blocks interaction with everything below the topbar/toolbar (canvas,
    tools, bottom bar) while viewing a shared project you only have view
@@ -6239,7 +6245,7 @@ function pickerDeleteCloud(id){
 }
 document.getElementById('btnLoad').addEventListener('click', () => showProjectPicker());
 document.getElementById('pickerClose').addEventListener('click', () => hideProjectPicker());
-document.getElementById('pickerOrg').addEventListener('click', () => { renderOrgSheet(); openSheet('sheetOrg'); });
+document.getElementById('pickerOrg').addEventListener('click', () => { orgSheetTab = null; renderOrgSheet(); openSheet('sheetOrg'); });
 // Reopening the layout question from the projects screen — outside any
 // open drawing, which is the only place changing it makes sense. The
 // chooser overlays this screen and hands control straight back to it.
@@ -6726,21 +6732,38 @@ function cloudSyncSilently(projectData){
 // email. Being a member doesn't grant access to any project by itself;
 // that's project-level sharing, a separate phase built on top of this.
 // ===================================================================
+// A user can belong to more than one organization at once (the DB was
+// always fine with this -- organization_members is unique per org+user,
+// not per user -- the old .limit(1) here was the only thing stopping it).
+// myOrgs holds every membership; currentOrg/orgRole/orgMembers still exist
+// exactly as before and reflect whichever one is "active" (activeOrgId),
+// so every existing call site that reads them keeps working unchanged --
+// switching which org is active is the new part (setActiveOrg).
+let myOrgs = []; // [{id, name, role, created_by}, ...]
+let activeOrgId = null;
 let currentOrg = null;
 let orgRole = null; // 'admin' | 'member' | null
 let orgMembers = [];
 
 async function loadMyOrg(){
-  currentOrg = null; orgRole = null; orgMembers = [];
+  myOrgs = []; currentOrg = null; orgRole = null; orgMembers = [];
   if(!cloudUser || !cloudConfigured) return;
   try{
-    const { data, error } = await supabaseClient.from('organization_members').select('org_id, role, organizations(id, name, created_by)').eq('user_id', cloudUser.id).limit(1).maybeSingle();
+    const { data, error } = await supabaseClient.from('organization_members').select('org_id, role, organizations(id, name, created_by)').eq('user_id', cloudUser.id).order('joined_at', { ascending:true });
     if(error) throw error;
-    if(!data) return;
-    currentOrg = data.organizations;
-    orgRole = data.role;
-    await loadOrgMembers();
-  } catch(err){ console.error('Could not load organization:', err); }
+    myOrgs = (data||[]).map(row => ({ id: row.organizations.id, name: row.organizations.name, role: row.role, created_by: row.organizations.created_by }));
+    if(!myOrgs.length) return;
+    if(!activeOrgId || !myOrgs.some(o=>o.id===activeOrgId)) activeOrgId = myOrgs[0].id;
+    await setActiveOrg(activeOrgId);
+  } catch(err){ console.error('Could not load organizations:', err); }
+}
+async function setActiveOrg(orgId){
+  const org = myOrgs.find(o=>o.id===orgId);
+  if(!org) return;
+  activeOrgId = orgId;
+  currentOrg = { id: org.id, name: org.name, created_by: org.created_by };
+  orgRole = org.role;
+  await loadOrgMembers();
 }
 async function loadOrgMembers(){
   if(!currentOrg) return;
@@ -6758,7 +6781,8 @@ async function createOrganization(name){
     const { error: memErr } = await supabaseClient.from('organization_members').insert({ org_id: data.id, user_id: cloudUser.id, user_name: uname, role:'admin' });
     if(memErr) throw memErr;
     showToast('Created "' + name + '"');
-  } catch(err){ showToast('Could not create organization: ' + err.message); }
+    return data.id;
+  } catch(err){ showToast('Could not create organization: ' + err.message); return null; }
 }
 async function updateOrganizationName(newName){
   if(!currentOrg || !newName || newName === currentOrg.name) return;
@@ -6801,17 +6825,24 @@ async function inviteToOrg(email){
     window.open(`mailto:${clean}?subject=${subject}&body=${bodyText}`, '_blank');
   } catch(err){ showToast('Could not send invite: ' + err.message); }
 }
+// Shared by the one-shot sign-in banner and the Org sheet's Invites tab,
+// so there's exactly one place that knows how to fetch/accept/decline
+// rather than two parallel implementations.
+async function fetchPendingInvites(){
+  if(!cloudUser || !cloudConfigured) return [];
+  try{
+    const { data, error } = await supabaseClient.rpc('get_my_pending_invites');
+    if(error) throw error;
+    return data || [];
+  } catch(err){ console.error('Could not check organization invites:', err); return []; }
+}
 // Checked once per page load, right after the auth gate lifts (see
 // renderAuthGate) -- mirrors maybeShowPickerAfterLogin's one-shot pattern.
 let orgInvitesChecked = false;
 async function checkPendingOrgInvites(){
   if(orgInvitesChecked || !cloudUser || !cloudConfigured) return;
   orgInvitesChecked = true;
-  try{
-    const { data, error } = await supabaseClient.rpc('get_my_pending_invites');
-    if(error) throw error;
-    renderOrgInviteBanner(data || []);
-  } catch(err){ console.error('Could not check organization invites:', err); }
+  renderOrgInviteBanner(await fetchPendingInvites());
 }
 function renderOrgInviteBanner(invites){
   const el = document.getElementById('orgInviteBanner');
@@ -6828,9 +6859,13 @@ function renderOrgInviteBanner(invites){
   el.querySelectorAll('[data-accept]').forEach(btn => btn.addEventListener('click', () => acceptOrgInvite(btn.dataset.accept, btn.dataset.org, btn.dataset.name)));
   el.querySelectorAll('[data-decline]').forEach(btn => btn.addEventListener('click', () => declineOrgInvite(btn.dataset.decline)));
 }
-function removeOrgInviteRow(inviteId){
-  document.querySelector(`.org-invite-row[data-invite="${inviteId}"]`)?.remove();
-  if(!document.querySelectorAll('.org-invite-row').length) document.getElementById('orgInviteBanner').classList.add('hidden');
+// Re-fetches and re-renders every place a pending invite can be shown --
+// simpler and more robust than tracking exactly which view(s) are open and
+// surgically patching their DOM.
+async function refreshInviteViews(){
+  const invites = await fetchPendingInvites();
+  renderOrgInviteBanner(invites);
+  if(document.getElementById('sheetOrg').classList.contains('open')) renderOrgSheet();
 }
 async function acceptOrgInvite(inviteId, orgId, orgName){
   try{
@@ -6840,17 +6875,17 @@ async function acceptOrgInvite(inviteId, orgId, orgName){
     const { error: delErr } = await supabaseClient.from('organization_invites').delete().eq('id', inviteId);
     if(delErr) throw delErr;
     showToast('Joined ' + orgName);
-    removeOrgInviteRow(inviteId);
+    activeOrgId = orgId; // switch straight to the org just joined
     await loadMyOrg();
-    if(document.getElementById('sheetOrg').classList.contains('open')) renderOrgSheet();
+    await refreshInviteViews();
   } catch(err){ showToast('Could not accept invite: ' + err.message); }
 }
 async function declineOrgInvite(inviteId){
   try{
     const { error } = await supabaseClient.from('organization_invites').delete().eq('id', inviteId);
     if(error) throw error;
-    removeOrgInviteRow(inviteId);
     showToast('Invite declined');
+    await refreshInviteViews();
   } catch(err){ showToast('Could not decline: ' + err.message); }
 }
 async function removeOrgMember(userId){
@@ -6864,6 +6899,11 @@ async function removeOrgMember(userId){
   } catch(err){ showToast('Could not remove: ' + err.message); }
 }
 
+// Which tab the Organization sheet is showing -- defaults to 'invites'
+// on open if there's anything pending, otherwise 'orgs' (see renderOrgSheet).
+let orgSheetTab = null;
+let orgSheetInvites = [];
+
 async function renderOrgSheet(){
   const body = document.getElementById('orgBody');
   if(!cloudConfigured || !cloudLibraryLoaded){
@@ -6875,9 +6915,61 @@ async function renderOrgSheet(){
     return;
   }
   body.innerHTML = `<div style="text-align:center; padding:24px 0; color:var(--text-dim); font-size:12.5px;">Loading…</div>`;
-  await loadMyOrg();
+  const [_, invites] = await Promise.all([loadMyOrg(), fetchPendingInvites()]);
+  orgSheetInvites = invites;
+  if(!orgSheetTab) orgSheetTab = invites.length ? 'invites' : 'orgs';
+  renderOrgSheetTabs();
+}
+
+function renderOrgSheetTabs(){
+  const body = document.getElementById('orgBody');
+  body.innerHTML = `
+    <div class="org-tabbar" style="display:flex; gap:6px; margin-bottom:16px;">
+      <button class="org-tab-btn${orgSheetTab==='invites'?' active':''}" data-org-tab="invites">📨 Invites${orgSheetInvites.length?` (${orgSheetInvites.length})`:''}</button>
+      <button class="org-tab-btn${orgSheetTab==='orgs'?' active':''}" data-org-tab="orgs">🏢 My organizations${myOrgs.length?` (${myOrgs.length})`:''}</button>
+    </div>
+    <div id="orgTabBody"></div>
+  `;
+  body.querySelectorAll('[data-org-tab]').forEach(btn => btn.addEventListener('click', () => {
+    orgSheetTab = btn.dataset.orgTab;
+    renderOrgSheetTabs();
+  }));
+  if(orgSheetTab === 'invites') renderInvitesTab(orgSheetInvites);
+  else renderOrgsTab();
+}
+
+function renderInvitesTab(invites){
+  const tabBody = document.getElementById('orgTabBody');
+  if(!invites.length){
+    tabBody.innerHTML = `<div style="font-size:11px; color:var(--text-dim); padding:12px 0; line-height:1.5;">No pending invites right now.</div>`;
+    return;
+  }
+  tabBody.innerHTML = invites.map(inv => `
+    <div class="load-row" style="flex-direction:column; align-items:stretch; gap:8px; padding:10px 0;">
+      <span style="font-size:12px; line-height:1.4;"><b>${inv.invited_by_name}</b> invited you to join <b>${inv.org_name}</b></span>
+      <div style="display:flex; gap:8px;">
+        <button class="add-btn" style="margin-top:0; flex:1;" data-tab-accept="${inv.id}" data-org="${inv.org_id}" data-name="${inv.org_name}">Accept</button>
+        <button class="add-btn" style="margin-top:0; flex:1; background:var(--panel2); border-color:var(--line); color:var(--text-dim);" data-tab-decline="${inv.id}">Decline</button>
+      </div>
+    </div>
+  `).join('');
+  tabBody.querySelectorAll('[data-tab-accept]').forEach(btn => btn.addEventListener('click', async () => {
+    await acceptOrgInvite(btn.dataset.tabAccept, btn.dataset.org, btn.dataset.name);
+    orgSheetInvites = await fetchPendingInvites();
+    orgSheetTab = 'orgs';
+    renderOrgSheetTabs();
+  }));
+  tabBody.querySelectorAll('[data-tab-decline]').forEach(btn => btn.addEventListener('click', async () => {
+    await declineOrgInvite(btn.dataset.tabDecline);
+    orgSheetInvites = await fetchPendingInvites();
+    renderInvitesTab(orgSheetInvites);
+  }));
+}
+
+function renderOrgsTab(){
+  const tabBody = document.getElementById('orgTabBody');
   if(!currentOrg){
-    body.innerHTML = `
+    tabBody.innerHTML = `
       <div style="font-size:11px; color:var(--text-dim); margin-bottom:14px; line-height:1.5;">You're not part of an organization yet. Create one to start inviting people to specific projects.</div>
       <div class="prop-row"><label>Organization name</label><input id="org_name" type="text" placeholder="e.g. IJED Electric"></div>
       <button class="add-btn" id="btnCreateOrg" style="margin-top:0;">+ Create organization</button>
@@ -6885,13 +6977,22 @@ async function renderOrgSheet(){
     document.getElementById('btnCreateOrg').addEventListener('click', async () => {
       const name = document.getElementById('org_name').value.trim();
       if(!name){ showToast('Enter an organization name'); return; }
-      await createOrganization(name);
-      renderOrgSheet();
+      const newId = await createOrganization(name);
+      if(newId){ activeOrgId = newId; await loadMyOrg(); }
+      renderOrgsTab();
     });
     return;
   }
   const isAdmin = orgRole === 'admin';
-  body.innerHTML = `
+  tabBody.innerHTML = `
+    ${myOrgs.length > 1 ? `
+      <div style="font-family:var(--mono); font-size:10px; letter-spacing:1px; text-transform:uppercase; color:var(--text-dim); margin:0 0 6px; padding-bottom:4px; border-bottom:1px solid var(--line-soft);">Switch organization</div>
+      <div id="orgSwitchList" style="margin-bottom:16px;">${myOrgs.map(o => `
+        <div class="load-row" style="gap:8px; cursor:pointer; ${o.id===activeOrgId ? 'color:var(--accent);' : ''}" data-switch-org="${o.id}">
+          <span style="flex:1;">${o.id===activeOrgId ? '● ' : '○ '}${o.name}${o.role==='admin' ? ' <span style="color:var(--amber); font-size:10px;">ADMIN</span>' : ''}</span>
+        </div>
+      `).join('')}</div>
+    ` : ''}
     ${isAdmin
       ? `<div class="prop-row"><label>Organization name</label><input id="org_name_edit" type="text" value="${currentOrg.name}"></div>
          <button class="add-btn" id="btnRenameOrg" style="background:var(--panel2); border-color:var(--line); color:var(--text); margin-top:0;">Save name</button>`
@@ -6910,7 +7011,25 @@ async function renderOrgSheet(){
         ${isAdmin && m.user_id !== cloudUser.id ? `<div class="lock-btn" data-remove-member="${m.user_id}" title="Remove from organization" style="opacity:1; color:var(--red);">🗑</div>` : ''}
       </div>
     `).join('')}</div>
+    <div style="font-family:var(--mono); font-size:10px; letter-spacing:1px; text-transform:uppercase; color:var(--text-dim); margin:20px 0 6px; padding-bottom:4px; border-bottom:1px solid var(--line-soft);">Join another organization</div>
+    <div style="font-size:11px; color:var(--text-dim); margin:6px 0 14px; line-height:1.5;">You can belong to more than one organization. Create a new one below -- to join an existing one, ask an admin to invite the email you sign in with.</div>
+    <div class="prop-row"><label>Organization name</label><input id="org_name_new" type="text" placeholder="e.g. IJED Electric"></div>
+    <button class="add-btn" id="btnCreateOrg2" style="background:var(--panel2); border-color:var(--line); color:var(--text); margin-top:0;">+ Create organization</button>
   `;
+  if(myOrgs.length > 1){
+    tabBody.querySelectorAll('[data-switch-org]').forEach(row => row.addEventListener('click', async () => {
+      if(row.dataset.switchOrg === activeOrgId) return;
+      await setActiveOrg(row.dataset.switchOrg);
+      renderOrgsTab();
+    }));
+  }
+  document.getElementById('btnCreateOrg2').addEventListener('click', async () => {
+    const name = document.getElementById('org_name_new').value.trim();
+    if(!name){ showToast('Enter an organization name'); return; }
+    const newId = await createOrganization(name);
+    if(newId){ activeOrgId = newId; await loadMyOrg(); }
+    renderOrgsTab();
+  });
   if(isAdmin){
     document.getElementById('btnInvite').addEventListener('click', () => {
       const email = document.getElementById('org_invite_email').value.trim();
@@ -6922,7 +7041,7 @@ async function renderOrgSheet(){
       if(!newName){ showToast('Enter an organization name'); return; }
       updateOrganizationName(newName);
     });
-    body.querySelectorAll('[data-remove-member]').forEach(btn => btn.addEventListener('click', () => {
+    tabBody.querySelectorAll('[data-remove-member]').forEach(btn => btn.addEventListener('click', () => {
       openConfirmModal('Remove member?', "They'll lose access to any projects shared with them in this organization.", () => removeOrgMember(btn.dataset.removeMember), 'Remove');
     }));
   }
