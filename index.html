@@ -141,6 +141,20 @@ canvas{display:block; touch-action:none;}
 .recovery-actions button{ padding:7px 11px; border-radius:6px; font-size:11.5px; font-weight:600; }
 #recoveryRestore{ background:var(--blue-dim); border:1px solid var(--blue); color:#eaf6ff; }
 #recoveryDismiss{ background:var(--panel2); border:1px solid var(--line); color:var(--text-dim); }
+/* One or more pending org invites, shown the same way as the recovery
+   banner (stacks below it if both are up at once) -- each row is its own
+   accept/decline card since there can be more than one pending invite. */
+#orgInviteBanner{ position:absolute; top:calc(48px + var(--safe-t) + 8px); left:10px; right:10px; z-index:25; display:flex; flex-direction:column; gap:8px; }
+#orgInviteBanner.hidden{ display:none; }
+.org-invite-row{
+  background:var(--panel); border:1px solid var(--blue-dim); border-radius:10px; padding:10px 12px;
+  display:flex; align-items:center; gap:10px; font-size:12px; box-shadow:0 4px 16px rgba(0,0,0,0.4);
+}
+.org-invite-row span{ flex:1; line-height:1.4; }
+.org-invite-actions{ display:flex; gap:6px; flex-shrink:0; }
+.org-invite-actions button{ padding:7px 11px; border-radius:6px; font-size:11.5px; font-weight:600; }
+.org-invite-accept{ background:var(--blue-dim); border:1px solid var(--blue); color:#eaf6ff; }
+.org-invite-decline{ background:var(--panel2); border:1px solid var(--line); color:var(--text-dim); }
 
 /* Blocks interaction with everything below the topbar/toolbar (canvas,
    tools, bottom bar) while viewing a shared project you only have view
@@ -699,7 +713,7 @@ html.force-desktop{
     left:calc(var(--layers-w) + var(--rail-w)); right:var(--symbols-w); top:calc(44px + var(--safe-t) + var(--dtb-h, 40px)); bottom:0;
     transition:left .2s ease, right .2s ease;
   }
-  html.force-desktop #recoveryBanner{ left:calc(var(--layers-w) + var(--rail-w) + 10px); right:calc(var(--symbols-w) + 10px); }
+  html.force-desktop #recoveryBanner, html.force-desktop #orgInviteBanner{ left:calc(var(--layers-w) + var(--rail-w) + 10px); right:calc(var(--symbols-w) + 10px); }
   /* backdrop shouldn't dim the whole screen for the always-open docked panels */
   html.force-desktop #backdrop{ left:calc(var(--layers-w) + var(--rail-w)); right:var(--symbols-w); }
   html.force-desktop .dock-toggle{
@@ -712,12 +726,12 @@ html.force-desktop{
   html.force-desktop .dock-toggle-right{ right:var(--symbols-w); border-radius:6px 0 0 6px; border-right:none; }
   html.force-desktop.layers-collapsed #sheetLayers{ width:0; border-right:none; overflow:hidden; }
   html.force-desktop.layers-collapsed #canvas-wrap{ left:var(--rail-w); }
-  html.force-desktop.layers-collapsed #recoveryBanner{ left:calc(var(--rail-w) + 10px); }
+  html.force-desktop.layers-collapsed #recoveryBanner, html.force-desktop.layers-collapsed #orgInviteBanner{ left:calc(var(--rail-w) + 10px); }
   html.force-desktop.layers-collapsed #backdrop{ left:var(--rail-w); }
   html.force-desktop.layers-collapsed .dock-toggle-left{ left:var(--rail-w); }
   html.force-desktop.symbols-collapsed #sheetSymbols, html.force-desktop.symbols-collapsed #sheetProps{ width:0; border-left:none; overflow:hidden; }
   html.force-desktop.symbols-collapsed #canvas-wrap{ right:0; }
-  html.force-desktop.symbols-collapsed #recoveryBanner{ right:10px; }
+  html.force-desktop.symbols-collapsed #recoveryBanner, html.force-desktop.symbols-collapsed #orgInviteBanner{ right:10px; }
   html.force-desktop.symbols-collapsed #backdrop{ right:0; }
   html.force-desktop.symbols-collapsed .dock-toggle-right{ right:0; }
   /* the rest of the sheets (Quote, Circuits, Elevation, Floors, Grid,
@@ -890,6 +904,7 @@ html.force-desktop{
     <button id="recoveryDismiss">Dismiss</button>
   </div>
 </div>
+<div id="orgInviteBanner" class="hidden"></div>
 <div id="readOnlyBanner">👁 View only — you don't have edit access to this shared project.</div>
 <div id="readOnlyOverlay"></div>
 <button id="dockToggleLayers" class="dock-toggle dock-toggle-left" title="Hide layers panel">‹</button>
@@ -6223,7 +6238,7 @@ function renderAuthGate(){
     document.getElementById('gateSubmit').addEventListener('click', () => submitNewPassword());
     return;
   }
-  if(cloudUser){ gate.classList.remove('open'); maybeShowPickerAfterLogin(); return; }
+  if(cloudUser){ gate.classList.remove('open'); maybeShowPickerAfterLogin(); checkPendingOrgInvites(); return; }
   gate.classList.add('open');
   if(!cloudCredentialsSet){
     body.innerHTML = `<div class="auth-msg">Cloud login isn't configured for this build.</div>`;
@@ -6676,23 +6691,13 @@ async function updateOrganizationName(newName){
 }
 // Adding someone to the org requires that they already have a Sparky Draft
 // account (find_user_by_email looks up auth.users by email -- see
-// supabase-org-member-lookup.sql). This is a straight add, not a pending
-// invite: since the account already exists, they're a member immediately
-// and we open a notification email for the admin to send them. This also
-// makes duplicate/self checks meaningful, since there's no separate
-// pending-invite state to reconcile against membership later.
-// NOTE TO SELF (deliberately not attempted yet, per the user 30 Aug 2026):
-// right now this inserts the invited user straight into organization_members
-// as a full member -- no acceptance step at all. The invited person never
-// consents; the mailto: draft below is just an optional FYI, easy to skip,
-// and not a real in-app notification. The user wants this changed to a real
-// invite flow: membership should start in a pending/not-yet-accepted state
-// (needs a status column on organization_members, or a separate
-// organization_invites table), and the invited user should see an in-app
-// notification when they next open the app -- naming who invited them and
-// which organization -- with an explicit Accept (and presumably Decline)
-// action before they actually join. Don't build this speculatively; wait
-// for the user to ask for it.
+// supabase-org-member-lookup.sql). This creates a PENDING invite (the
+// organization_invites table already existed for this, it just wasn't
+// wired up before -- see supabase-organization-invite-accept.sql for what
+// that migration adds) rather than adding them immediately: they only
+// become a real member once they accept it from the notification banner
+// (checkPendingOrgInvites/renderOrgInviteBanner below), which shows who
+// invited them and to which organization.
 async function inviteToOrg(email){
   if(!currentOrg) return;
   const clean = (email || '').trim().toLowerCase();
@@ -6704,19 +6709,68 @@ async function inviteToOrg(email){
     const target = found && found[0];
     if(!target){ showToast('No Sparky Draft account found for that email -- they need to sign up first.'); return; }
     if(orgMembers.some(m => m.user_id === target.id)){ showToast('Already a member of this organization'); return; }
-    const uname = target.user_name || clean;
-    const { error } = await supabaseClient.from('organization_members').insert({ org_id: currentOrg.id, user_id: target.id, user_name: uname, role:'member' });
+    const { error } = await supabaseClient.from('organization_invites').insert({ org_id: currentOrg.id, email: clean, invited_by: cloudUser.id });
     if(error){
-      if(error.code === '23505'){ showToast('Already a member of this organization'); return; }
+      if(error.code === '23505'){ showToast('Already invited — waiting on them to accept'); return; }
       throw error;
     }
-    showToast('Added ' + uname + ' to ' + currentOrg.name);
-    const subject = encodeURIComponent(`You've been added to ${currentOrg.name} on Sparky Draft`);
-    const bodyText = encodeURIComponent(`Hi,\n\nYou've been added to the "${currentOrg.name}" organization on Sparky Draft. Sign in with ${clean} to see it.\n`);
+    showToast('Invited ' + (target.user_name||clean) + " to " + currentOrg.name + " — they'll see it next time they sign in");
+    const subject = encodeURIComponent(`You've been invited to join ${currentOrg.name} on Sparky Draft`);
+    const bodyText = encodeURIComponent(`Hi,\n\nYou've been invited to join the "${currentOrg.name}" organization on Sparky Draft. Sign in with ${clean} and accept the invite notification to join.\n`);
     window.open(`mailto:${clean}?subject=${subject}&body=${bodyText}`, '_blank');
-    await loadOrgMembers();
-    renderOrgSheet();
-  } catch(err){ showToast('Could not add member: ' + err.message); }
+  } catch(err){ showToast('Could not send invite: ' + err.message); }
+}
+// Checked once per page load, right after the auth gate lifts (see
+// renderAuthGate) -- mirrors maybeShowPickerAfterLogin's one-shot pattern.
+let orgInvitesChecked = false;
+async function checkPendingOrgInvites(){
+  if(orgInvitesChecked || !cloudUser || !cloudConfigured) return;
+  orgInvitesChecked = true;
+  try{
+    const { data, error } = await supabaseClient.rpc('get_my_pending_invites');
+    if(error) throw error;
+    renderOrgInviteBanner(data || []);
+  } catch(err){ console.error('Could not check organization invites:', err); }
+}
+function renderOrgInviteBanner(invites){
+  const el = document.getElementById('orgInviteBanner');
+  if(!invites.length){ el.classList.add('hidden'); el.innerHTML = ''; return; }
+  el.innerHTML = invites.map(inv => `
+    <div class="org-invite-row" data-invite="${inv.id}">
+      <span>🔔 <b>${inv.invited_by_name}</b> invited you to join <b>${inv.org_name}</b></span>
+      <div class="org-invite-actions">
+        <button class="org-invite-accept" data-accept="${inv.id}" data-org="${inv.org_id}" data-name="${inv.org_name}">Accept</button>
+        <button class="org-invite-decline" data-decline="${inv.id}">Decline</button>
+      </div>
+    </div>`).join('');
+  el.classList.remove('hidden');
+  el.querySelectorAll('[data-accept]').forEach(btn => btn.addEventListener('click', () => acceptOrgInvite(btn.dataset.accept, btn.dataset.org, btn.dataset.name)));
+  el.querySelectorAll('[data-decline]').forEach(btn => btn.addEventListener('click', () => declineOrgInvite(btn.dataset.decline)));
+}
+function removeOrgInviteRow(inviteId){
+  document.querySelector(`.org-invite-row[data-invite="${inviteId}"]`)?.remove();
+  if(!document.querySelectorAll('.org-invite-row').length) document.getElementById('orgInviteBanner').classList.add('hidden');
+}
+async function acceptOrgInvite(inviteId, orgId, orgName){
+  try{
+    const uname = (cloudUser.user_metadata && cloudUser.user_metadata.full_name) || cloudUser.email;
+    const { error: memErr } = await supabaseClient.from('organization_members').insert({ org_id: orgId, user_id: cloudUser.id, user_name: uname, role:'member' });
+    if(memErr && memErr.code !== '23505') throw memErr; // already a member somehow -- still fine to clear the invite below
+    const { error: delErr } = await supabaseClient.from('organization_invites').delete().eq('id', inviteId);
+    if(delErr) throw delErr;
+    showToast('Joined ' + orgName);
+    removeOrgInviteRow(inviteId);
+    await loadMyOrg();
+    if(document.getElementById('sheetOrg').classList.contains('open')) renderOrgSheet();
+  } catch(err){ showToast('Could not accept invite: ' + err.message); }
+}
+async function declineOrgInvite(inviteId){
+  try{
+    const { error } = await supabaseClient.from('organization_invites').delete().eq('id', inviteId);
+    if(error) throw error;
+    removeOrgInviteRow(inviteId);
+    showToast('Invite declined');
+  } catch(err){ showToast('Could not decline: ' + err.message); }
 }
 async function removeOrgMember(userId){
   if(!currentOrg) return;
