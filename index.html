@@ -4428,7 +4428,11 @@ function captureFloorSnapshot(floorIndex){
   fitViewToContent(floor);
   state.symbolSize = savedSymbolSize * PRINT_RES_SCALE;
   render();
-  const dataUrl = canvas.toDataURL('image/png');
+  // JPEG, not PNG: the capture is a fully opaque white-background render
+  // with nothing that needs real transparency, and some PDF viewers render
+  // PNGs embedded via jsPDF with washed-out/near-transparent colour --
+  // JPEG has no alpha channel at all, so that class of bug can't happen.
+  const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
   floor.view = savedView;
   state.symbolSize = savedSymbolSize;
   return dataUrl;
@@ -4438,8 +4442,13 @@ function openPrintView(){
   const savedFloorIndex = state.activeFloorIndex;
   const savedSelected = state.selectedObjectId, savedMulti = state.multiSelectedIds, savedMultiMode = state.multiSelectMode;
   const savedCanvasW = canvas.width, savedCanvasH = canvas.height;
+  const savedShowCircuitLabels = state.showCircuitLabels, savedShowSwitchRuns = state.showSwitchRuns;
   state.selectedObjectId = null; state.multiSelectedIds = new Set(); state.multiSelectMode = false;
   state.printMode = true;
+  // A takeoff/handoff document should always show circuit numbers and
+  // switching, regardless of whatever's toggled on in the live working
+  // view at the moment someone happens to open this.
+  state.showCircuitLabels = true; state.showSwitchRuns = true;
   canvas.width = 1600*PRINT_RES_SCALE; canvas.height = 1131*PRINT_RES_SCALE; // ~A4 landscape ratio, high-res so zooming in on screen still holds up
 
   const projName = document.getElementById('projName').value || 'Untitled';
@@ -4482,6 +4491,7 @@ function openPrintView(){
   state.activeFloorIndex = savedFloorIndex;
   state.selectedObjectId = savedSelected; state.multiSelectedIds = savedMulti; state.multiSelectMode = savedMultiMode;
   state.printMode = false;
+  state.showCircuitLabels = savedShowCircuitLabels; state.showSwitchRuns = savedShowSwitchRuns;
   canvas.width = savedCanvasW; canvas.height = savedCanvasH;
   render();
 
@@ -4497,7 +4507,7 @@ document.getElementById('btnDoPrint').addEventListener('click', () => window.pri
 // printPagesData in openPrintView) -- drawn natively rather than as a
 // screenshot of the HTML, so the legend stays crisp vector text instead
 // of a rasterized table.
-function downloadPdfExport(){
+async function downloadPdfExport(){
   if(!printPagesData.length){ showToast('Nothing to export yet'); return; }
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ orientation:'landscape', unit:'mm', format:'a4' });
@@ -4527,7 +4537,7 @@ function downloadPdfExport(){
       const drawW = imgProps.width*scale, drawH = imgProps.height*scale;
       const dx = planX + (planW-drawW)/2, dy = bodyTop + (bodyH-drawH)/2;
       doc.setDrawColor(200,200,200); doc.rect(planX, bodyTop, planW, bodyH);
-      doc.addImage(p.imgSrc, 'PNG', dx, dy, drawW, drawH);
+      doc.addImage(p.imgSrc, 'JPEG', dx, dy, drawW, drawH);
     } else {
       doc.setDrawColor(200,200,200); doc.rect(planX, bodyTop, planW, bodyH);
       doc.setFontSize(9); doc.setTextColor(136,136,136);
@@ -4560,6 +4570,27 @@ function downloadPdfExport(){
   });
 
   const fileSafeName = projName.replace(/[^a-z0-9]+/gi,'-').replace(/^-+|-+$/g,'') || 'sparky-draft';
+  // Where supported (Chrome/Edge, HTTPS only), let the user actually
+  // choose the filename/location via a real "Save As" dialog instead of
+  // it silently landing in the Downloads folder -- Firefox/Safari/mobile
+  // don't implement this API at all, so they fall through to the plain
+  // download below exactly as before.
+  if(window.showSaveFilePicker){
+    try{
+      const handle = await window.showSaveFilePicker({
+        suggestedName: fileSafeName + '.pdf',
+        types: [{ description:'PDF document', accept: { 'application/pdf': ['.pdf'] } }],
+      });
+      const writable = await handle.createWritable();
+      await writable.write(doc.output('blob'));
+      await writable.close();
+      showToast('Saved ' + fileSafeName + '.pdf');
+      return;
+    } catch(err){
+      if(err && err.name === 'AbortError') return; // user cancelled the picker -- not a failure
+      // any other failure (permissions, etc.) -- fall through to the plain download
+    }
+  }
   doc.save(fileSafeName + '.pdf');
 }
 function hexToRgb(hex){
