@@ -743,6 +743,7 @@ html.force-desktop{
 #printView.open{ display:block; }
 #printViewBar{ position:sticky; top:0; z-index:2; display:flex; align-items:center; gap:10px; padding:10px 16px; background:var(--panel); border-bottom:1px solid var(--line); }
 #printViewBar .pv-title{ flex:1; font-weight:600; font-size:14px; color:var(--text); }
+#printViewBar .pv-hint{ font-weight:400; font-size:11.5px; color:var(--text-dim); }
 .pv-btn{ background:var(--accent); color:#0c1116; border:none; padding:9px 16px; border-radius:8px; font-size:13px; font-weight:600; cursor:pointer; }
 .pv-btn.pv-close{ background:var(--panel2); color:var(--text); border:1px solid var(--line); }
 #printViewPages{ padding:24px; display:flex; flex-direction:column; align-items:center; gap:24px; }
@@ -751,9 +752,15 @@ html.force-desktop{
 .print-page-header .ph-name{ font-size:18px; font-weight:700; }
 .print-page-header .ph-meta{ font-size:11px; color:#555; text-align:right; line-height:1.5; }
 .print-page-body{ flex:1; display:flex; gap:18px; min-height:0; }
-.print-plan-col{ flex:1; min-width:0; display:flex; align-items:center; justify-content:center; border:1px solid #ccc; background:#fafafa; }
-.print-plan-col img{ max-width:100%; max-height:100%; object-fit:contain; }
-.print-plan-col .pv-empty{ color:#888; font-size:12px; }
+/* Screen review only: the plan column is zoomable/pannable (see
+   initPrintPanZoom) so a wall/device relationship can actually be
+   inspected up close before printing -- @media print below forces the
+   transform back off so the printed page always shows the full plan,
+   never whatever crop happened to be on screen. */
+.print-plan-col{ flex:1; min-width:0; position:relative; overflow:hidden; border:1px solid #ccc; background:#fafafa; cursor:grab; }
+.print-plan-col img{ width:100%; height:100%; object-fit:contain; transform-origin:center center; pointer-events:none; user-select:none; }
+.print-plan-col.dragging{ cursor:grabbing; }
+.print-plan-col .pv-empty{ position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:#888; font-size:12px; }
 .print-legend-col{ width:260px; flex-shrink:0; overflow-y:auto; }
 .print-legend-col h3{ font-size:11px; text-transform:uppercase; letter-spacing:0.5px; color:#555; margin:0 0 8px; border-bottom:1px solid #ccc; padding-bottom:4px; }
 .print-legend-table{ width:100%; border-collapse:collapse; font-size:11px; }
@@ -769,6 +776,8 @@ html.force-desktop{
   #printViewPages{ padding:0; gap:0; }
   .print-page{ box-shadow:none; width:auto; height:auto; page-break-after:always; }
   .print-page:last-child{ page-break-after:auto; }
+  .print-plan-col{ overflow:visible; }
+  .print-plan-col img{ transform:none !important; }
   @page{ size:landscape; margin:10mm; }
 }
 </style>
@@ -1226,8 +1235,9 @@ html.force-desktop{
 
 <div id="printView">
   <div id="printViewBar">
-    <div class="pv-title">Print / PDF export</div>
-    <button class="pv-btn" id="btnDoPrint">🖨 Print / Save as PDF</button>
+    <div class="pv-title">Print / PDF export <span class="pv-hint">— scroll to zoom, drag to pan, double-click to reset</span></div>
+    <button class="pv-btn" id="btnDoPrint">🖨 Print</button>
+    <button class="pv-btn" id="btnSavePdf">⬇ Save as PDF</button>
     <button class="pv-btn pv-close" id="btnClosePrintView">✕ Close</button>
   </div>
   <div id="printViewPages"></div>
@@ -4400,7 +4410,7 @@ function openPrintView(){
   const savedCanvasW = canvas.width, savedCanvasH = canvas.height;
   state.selectedObjectId = null; state.multiSelectedIds = new Set(); state.multiSelectMode = false;
   state.printMode = true;
-  canvas.width = 1600; canvas.height = 1131; // ~A4 landscape ratio, high enough res to print cleanly
+  canvas.width = 3200; canvas.height = 2263; // ~A4 landscape ratio, high-res so zooming in on screen still holds up
 
   const projName = document.getElementById('projName').value || 'Untitled';
   const dateStr = new Date().toLocaleDateString('en-AU');
@@ -4429,6 +4439,7 @@ function openPrintView(){
       </div>`;
   }).join('');
   document.getElementById('printViewPages').innerHTML = pagesHtml;
+  document.querySelectorAll('.print-plan-col').forEach(initPrintPanZoom);
 
   // restore the live editing session exactly as it was before capture
   state.activeFloorIndex = savedFloorIndex;
@@ -4444,6 +4455,48 @@ document.getElementById('dtbPrintExport').addEventListener('click', openPrintVie
 document.getElementById('morePrintExport').addEventListener('click', () => { closeSheets(); openPrintView(); });
 document.getElementById('btnClosePrintView').addEventListener('click', closePrintView);
 document.getElementById('btnDoPrint').addEventListener('click', () => window.print());
+// "Save as PDF" and "Print" both open the same browser Print dialog --
+// there's no separate browser API to save a PDF directly, so this just
+// points the user at the right destination choice inside that one dialog
+// rather than pretending there's a second mechanism.
+document.getElementById('btnSavePdf').addEventListener('click', () => {
+  showToast("Choose \"Save as PDF\" as the destination in the dialog that opens");
+  window.print();
+});
+// Scroll to zoom (centred on the cursor), drag to pan, double-click to
+// reset -- screen-review only, see the @media print rule that forces the
+// image transform back off so printing always uses the full, un-zoomed plan.
+function initPrintPanZoom(container){
+  const img = container.querySelector('img');
+  if(!img) return;
+  let scale = 1, tx = 0, ty = 0;
+  const MIN = 1, MAX = 8;
+  const apply = () => { img.style.transform = `translate(${tx}px, ${ty}px) scale(${scale})`; };
+  container.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    const rect = container.getBoundingClientRect();
+    const cx = e.clientX - rect.left - rect.width/2, cy = e.clientY - rect.top - rect.height/2;
+    const prevScale = scale;
+    scale = Math.min(MAX, Math.max(MIN, scale * (1 - e.deltaY*0.0015)));
+    const factor = scale/prevScale;
+    tx = cx - (cx-tx)*factor; ty = cy - (cy-ty)*factor;
+    if(scale===MIN){ tx=0; ty=0; }
+    apply();
+  }, { passive:false });
+  let dragging=false, startX=0, startY=0, startTx=0, startTy=0;
+  container.addEventListener('mousedown', (e) => {
+    if(scale<=MIN) return;
+    dragging=true; startX=e.clientX; startY=e.clientY; startTx=tx; startTy=ty;
+    container.classList.add('dragging'); e.preventDefault();
+  });
+  window.addEventListener('mousemove', (e) => {
+    if(!dragging) return;
+    tx = startTx + (e.clientX-startX); ty = startTy + (e.clientY-startY);
+    apply();
+  });
+  window.addEventListener('mouseup', () => { dragging=false; container.classList.remove('dragging'); });
+  container.addEventListener('dblclick', () => { scale=1; tx=0; ty=0; apply(); });
+}
 
 // ===================================================================
 // PROPERTIES SHEET
