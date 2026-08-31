@@ -1278,6 +1278,7 @@ html.force-desktop{
 <div id="ctxMenu" class="ctx-menu"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
 <script>
 // ===================================================================
 // SYMBOL LIBRARY
@@ -4409,31 +4410,52 @@ function fitViewToContent(floor){
 // Everything mutated here -- canvas size, that floor's view, selection/
 // interaction state -- is saved by the caller and restored afterward, so
 // the user's live editing session is completely unaffected.
+//
+// Device icons are drawn at a FIXED pixel radius (state.symbolSize),
+// unrelated to zoom -- fine for the normal on-screen canvas, but the
+// export canvas is deliberately much higher resolution (PRINT_RES_SCALE
+// times the original capture size) so on-screen zoom/review still holds
+// up. Left at its normal size, that same fixed radius becomes a much
+// smaller fraction of the bigger canvas and reads as "too small" on the
+// page -- so it's scaled up by the same factor for the capture, then
+// restored, matching the resolution bump exactly rather than guessing.
+const PRINT_RES_SCALE = 2;
 function captureFloorSnapshot(floorIndex){
   const floor = state.floors[floorIndex];
   const savedView = { ...floor.view };
+  const savedSymbolSize = state.symbolSize;
   state.activeFloorIndex = floorIndex;
   fitViewToContent(floor);
+  state.symbolSize = savedSymbolSize * PRINT_RES_SCALE;
   render();
   const dataUrl = canvas.toDataURL('image/png');
   floor.view = savedView;
+  state.symbolSize = savedSymbolSize;
   return dataUrl;
 }
+let printPagesData = [];
 function openPrintView(){
   const savedFloorIndex = state.activeFloorIndex;
   const savedSelected = state.selectedObjectId, savedMulti = state.multiSelectedIds, savedMultiMode = state.multiSelectMode;
   const savedCanvasW = canvas.width, savedCanvasH = canvas.height;
   state.selectedObjectId = null; state.multiSelectedIds = new Set(); state.multiSelectMode = false;
   state.printMode = true;
-  canvas.width = 3200; canvas.height = 2263; // ~A4 landscape ratio, high-res so zooming in on screen still holds up
+  canvas.width = 1600*PRINT_RES_SCALE; canvas.height = 1131*PRINT_RES_SCALE; // ~A4 landscape ratio, high-res so zooming in on screen still holds up
 
   const projName = document.getElementById('projName').value || 'Untitled';
   const dateStr = new Date().toLocaleDateString('en-AU');
-  const pagesHtml = state.floors.map((floor, i) => {
+  // Kept around (not just built straight into HTML) so "Save as PDF" can
+  // reuse the exact same captured images/legend data instead of re-rendering
+  // every floor a second time.
+  printPagesData = state.floors.map((floor, i) => {
     const imgSrc = captureFloorSnapshot(i);
     const entries = computeLegendEntries(floor);
     const total = entries.reduce((s,e) => s+e.count, 0);
-    const legendRows = entries.map(e => `
+    const hasContent = !!(floor.planImage || floor.objects.length);
+    return { floorName: floor.name, calibrated: !!floor.scale, imgSrc, hasContent, entries, total };
+  });
+  const pagesHtml = printPagesData.map(p => {
+    const legendRows = p.entries.map(e => `
       <tr>
         <td><span class="pl-swatch" style="background:${e.sym.color};">${e.gang ? e.gang+'G' : e.sym.abbr}</span>${e.sym.label}${e.gang ? ' — '+e.gang+' gang' : ''}</td>
         <td class="pl-qty">× ${e.count}</td>
@@ -4441,14 +4463,14 @@ function openPrintView(){
     return `
       <div class="print-page">
         <div class="print-page-header">
-          <div class="ph-name">${projName} — ${floor.name}</div>
-          <div class="ph-meta">${dateStr}${floor.scale ? '<br>Calibrated' : '<br>Not calibrated'}</div>
+          <div class="ph-name">${projName} — ${p.floorName}</div>
+          <div class="ph-meta">${dateStr}${p.calibrated ? '<br>Calibrated' : '<br>Not calibrated'}</div>
         </div>
         <div class="print-page-body">
-          <div class="print-plan-col">${floor.planImage || floor.objects.length ? `<img src="${imgSrc}">` : '<span class="pv-empty">Nothing on this floor yet</span>'}</div>
+          <div class="print-plan-col">${p.hasContent ? `<img src="${p.imgSrc}">` : '<span class="pv-empty">Nothing on this floor yet</span>'}</div>
           <div class="print-legend-col">
             <h3>Legend</h3>
-            ${entries.length ? `<table class="print-legend-table">${legendRows}</table><div class="print-legend-total">${total} device${total===1?'':'s'} total</div>` : '<div class="pv-empty" style="font-size:11px; color:#888;">Nothing placed on this floor yet.</div>'}
+            ${p.entries.length ? `<table class="print-legend-table">${legendRows}</table><div class="print-legend-total">${p.total} device${p.total===1?'':'s'} total</div>` : '<div class="pv-empty" style="font-size:11px; color:#888;">Nothing placed on this floor yet.</div>'}
           </div>
         </div>
       </div>`;
@@ -4470,14 +4492,81 @@ document.getElementById('dtbPrintExport').addEventListener('click', openPrintVie
 document.getElementById('morePrintExport').addEventListener('click', () => { closeSheets(); openPrintView(); });
 document.getElementById('btnClosePrintView').addEventListener('click', closePrintView);
 document.getElementById('btnDoPrint').addEventListener('click', () => window.print());
-// "Save as PDF" and "Print" both open the same browser Print dialog --
-// there's no separate browser API to save a PDF directly, so this just
-// points the user at the right destination choice inside that one dialog
-// rather than pretending there's a second mechanism.
-document.getElementById('btnSavePdf').addEventListener('click', () => {
-  showToast("Choose \"Save as PDF\" as the destination in the dialog that opens");
-  window.print();
-});
+// A genuine local PDF file, built with jsPDF from the same captured plan
+// images + legend data the on-screen review already has (see
+// printPagesData in openPrintView) -- drawn natively rather than as a
+// screenshot of the HTML, so the legend stays crisp vector text instead
+// of a rasterized table.
+function downloadPdfExport(){
+  if(!printPagesData.length){ showToast('Nothing to export yet'); return; }
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation:'landscape', unit:'mm', format:'a4' });
+  const pageW = doc.internal.pageSize.getWidth(), pageH = doc.internal.pageSize.getHeight();
+  const margin = 10;
+  const projName = document.getElementById('projName').value || 'Untitled';
+
+  printPagesData.forEach((p, i) => {
+    if(i>0) doc.addPage();
+    // header
+    doc.setFont('helvetica','bold'); doc.setFontSize(14); doc.setTextColor(17,17,17);
+    doc.text(`${projName} — ${p.floorName}`, margin, margin+2);
+    doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(85,85,85);
+    doc.text(new Date().toLocaleDateString('en-AU') + (p.calibrated ? ' · Calibrated' : ' · Not calibrated'), pageW-margin, margin+2, { align:'right' });
+    doc.setDrawColor(17,17,17); doc.setLineWidth(0.5);
+    doc.line(margin, margin+5, pageW-margin, margin+5);
+
+    const bodyTop = margin+10, bodyBottom = pageH-margin, bodyH = bodyBottom-bodyTop;
+    const legendW = 55, gap = 6;
+    const planX = margin, planW = pageW - margin*2 - legendW - gap;
+    const legendX = planX + planW + gap;
+
+    // plan image, fit-contain within its column
+    if(p.hasContent){
+      const imgProps = doc.getImageProperties(p.imgSrc);
+      const scale = Math.min(planW/imgProps.width, bodyH/imgProps.height);
+      const drawW = imgProps.width*scale, drawH = imgProps.height*scale;
+      const dx = planX + (planW-drawW)/2, dy = bodyTop + (bodyH-drawH)/2;
+      doc.setDrawColor(200,200,200); doc.rect(planX, bodyTop, planW, bodyH);
+      doc.addImage(p.imgSrc, 'PNG', dx, dy, drawW, drawH);
+    } else {
+      doc.setDrawColor(200,200,200); doc.rect(planX, bodyTop, planW, bodyH);
+      doc.setFontSize(9); doc.setTextColor(136,136,136);
+      doc.text('Nothing on this floor yet', planX+planW/2, bodyTop+bodyH/2, { align:'center' });
+    }
+
+    // legend, drawn as real text/vector shapes -- not a screenshot
+    doc.setFont('helvetica','bold'); doc.setFontSize(9); doc.setTextColor(85,85,85);
+    doc.text('LEGEND', legendX, bodyTop+3);
+    doc.setDrawColor(200,200,200); doc.line(legendX, bodyTop+5, legendX+legendW, bodyTop+5);
+    let ly = bodyTop+11;
+    doc.setFont('helvetica','normal'); doc.setFontSize(8.5);
+    p.entries.forEach(e => {
+      if(ly > bodyBottom-6) return; // ran out of room on the page -- rare, but don't draw off the edge
+      const [r,g,b] = hexToRgb(e.sym.color);
+      doc.setFillColor(r,g,b); doc.circle(legendX+2, ly-1, 1.6, 'F');
+      doc.setTextColor(30,30,30);
+      const label = e.sym.label + (e.gang ? ' — '+e.gang+'g' : '');
+      doc.text(label, legendX+5.5, ly, { maxWidth: legendW-13 });
+      doc.text('×'+e.count, legendX+legendW, ly, { align:'right' });
+      ly += 6;
+    });
+    if(p.entries.length){
+      doc.setFont('helvetica','bold'); doc.setFontSize(8.5); doc.setTextColor(17,17,17);
+      doc.text(p.total+' total', legendX+legendW, bodyBottom-2, { align:'right' });
+    } else {
+      doc.setFontSize(8.5); doc.setTextColor(136,136,136);
+      doc.text('Nothing placed', legendX, ly);
+    }
+  });
+
+  const fileSafeName = projName.replace(/[^a-z0-9]+/gi,'-').replace(/^-+|-+$/g,'') || 'sparky-draft';
+  doc.save(fileSafeName + '.pdf');
+}
+function hexToRgb(hex){
+  const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex||'#888888') || [null,'88','88','88'];
+  return [parseInt(m[1],16), parseInt(m[2],16), parseInt(m[3],16)];
+}
+document.getElementById('btnSavePdf').addEventListener('click', downloadPdfExport);
 // Scroll to zoom (centred on the cursor), drag to pan, double-click to
 // reset -- screen-review only, see the @media print rule that forces the
 // image transform back off so printing always uses the full, un-zoomed plan.
