@@ -1467,6 +1467,7 @@ let state = {
   floors:[ makeFloor('Ground Floor') ], activeFloorIndex:0,
   layers: LAYER_DEFS.map(l=>({...l,visible:true})),
   activeTool:'select', activeSymbol:null, activeCableSize:CABLE_SIZES[2], selectedObjectId:null, selectedCableId:null,
+  lastPlacedSymbolId:null, lastPlacedSwitchConfig:null, // for the "R" repeat-placement hotkey
   calibratePoints:[], lineStart:null, nextId:1,
   circuits:[], linkPendingSwitch:null, activeLinkGroup:null,
   dimStart:null,
@@ -2550,6 +2551,10 @@ canvas.addEventListener('pointerdown', (e) => {
     };
     if(obj.symbolId==='comms_rack') obj.commsPorts = defaultCommsPorts(obj.id);
     currentFloor().objects.push(obj); state.snapGuides = []; state.snapTarget = null; pushHistory(); render(); renderSchedule(); updateQuote();
+    // Remember what we just placed so the "R" hotkey (below) can resume
+    // placing the same device without reopening the palette.
+    state.lastPlacedSymbolId = obj.symbolId;
+    state.lastPlacedSwitchConfig = state.pendingSwitchConfig || null;
     // Exit placement mode once the device lands: activeSymbol staying set
     // meant the very next canvas click — most naturally a click/drag on the
     // device just placed — re-entered this branch and placed ANOTHER
@@ -2557,8 +2562,13 @@ canvas.addEventListener('pointerdown', (e) => {
     // what looked like devices "duplicating" when clicked or dragged.
     // openProps() below now owns "select this device for editing"; picking
     // another device card resumes placement for the next one.
-    state.activeSymbol = null; state.activeTool = 'select';
-    setHint(null);
+    // Holding Shift while placing is the deliberate exception: it keeps
+    // placement mode active so several of the same device can be dropped
+    // in a row without a re-click on the palette each time.
+    if(!e.shiftKey){
+      state.activeSymbol = null; state.activeTool = 'select';
+    }
+    setHint(e.shiftKey ? 'Still placing — tap to drop another, release Shift to stop' : null);
     openProps(obj.id);
     return;
   }
@@ -2659,6 +2669,22 @@ window.addEventListener('keydown', (e) => {
       e.preventDefault();
       document.getElementById('railPlace')?.click();
       document.getElementById('bbPlace')?.click();
+    } else if(key==='r'){
+      // Resume placing whatever device was placed last, without reopening
+      // the "Place a device" palette — handy for dropping several of the
+      // same device (see also: hold Shift while placing, above).
+      e.preventDefault();
+      if(state.lastPlacedSymbolId){
+        const sym = SYMBOL_LIBRARY.find(s=>s.id===state.lastPlacedSymbolId);
+        if(sym){
+          document.querySelectorAll('.bb-btn').forEach(b=>b.classList.remove('active'));
+          state.pendingSwitchConfig = state.lastPlacedSwitchConfig;
+          state.activeSymbol = sym.id; state.activeTool = 'place';
+          setHint('Tap the plan to place another ' + sym.label);
+        }
+      } else {
+        showToast('Place a device first, then press R to place another');
+      }
     } else if(key==='l'){
       e.preventDefault();
       document.getElementById('railLayers')?.click();
