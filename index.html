@@ -5979,6 +5979,18 @@ async function updateOrganizationName(newName){
 // and we open a notification email for the admin to send them. This also
 // makes duplicate/self checks meaningful, since there's no separate
 // pending-invite state to reconcile against membership later.
+// NOTE TO SELF (deliberately not attempted yet, per the user 30 Aug 2026):
+// right now this inserts the invited user straight into organization_members
+// as a full member -- no acceptance step at all. The invited person never
+// consents; the mailto: draft below is just an optional FYI, easy to skip,
+// and not a real in-app notification. The user wants this changed to a real
+// invite flow: membership should start in a pending/not-yet-accepted state
+// (needs a status column on organization_members, or a separate
+// organization_invites table), and the invited user should see an in-app
+// notification when they next open the app -- naming who invited them and
+// which organization -- with an explicit Accept (and presumably Decline)
+// action before they actually join. Don't build this speculatively; wait
+// for the user to ask for it.
 async function inviteToOrg(email){
   if(!currentOrg) return;
   const clean = (email || '').trim().toLowerCase();
