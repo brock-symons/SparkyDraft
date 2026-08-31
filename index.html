@@ -1250,7 +1250,7 @@ html.force-desktop{
 
 <div id="printView">
   <div id="printViewBar">
-    <div class="pv-title">Print / PDF export <span class="pv-hint">— scroll to zoom, drag to pan, double-click to reset</span></div>
+    <div class="pv-title">Print / PDF export <span class="pv-hint">— scroll or drag to pan, pinch/ctrl+scroll to zoom, double-click to reset</span></div>
     <button class="pv-btn" id="btnDoPrint">🖨 Print</button>
     <button class="pv-btn" id="btnSavePdf">⬇ Save as PDF</button>
     <button class="pv-btn pv-close" id="btnClosePrintView">✕ Close</button>
@@ -4411,22 +4411,18 @@ function fitViewToContent(floor){
 // interaction state -- is saved by the caller and restored afterward, so
 // the user's live editing session is completely unaffected.
 //
-// Device icons are drawn at a FIXED pixel radius (state.symbolSize),
-// unrelated to zoom -- fine for the normal on-screen canvas, but the
-// export canvas is deliberately much higher resolution (PRINT_RES_SCALE
-// times the original capture size) so on-screen zoom/review still holds
-// up. Left at its normal size, that same fixed radius becomes a much
-// smaller fraction of the bigger canvas and reads as "too small" on the
-// page -- so it's scaled up by the same factor for the capture, then
-// restored, matching the resolution bump exactly rather than guessing.
-const PRINT_RES_SCALE = 2;
+// Capture resolution and symbol size are deliberately left at their
+// original values (1600x1131, unscaled state.symbolSize) -- an earlier
+// attempt doubled both to get more detail to zoom into on screen, but
+// that threw off the icons' proportions relative to everything else on
+// the page and looked wrong. Panning/zooming the review still works fine
+// at this resolution (see initPrintPanZoom); it just won't hold up to
+// extreme zoom levels quite as sharply, which is the right trade-off.
 function captureFloorSnapshot(floorIndex){
   const floor = state.floors[floorIndex];
   const savedView = { ...floor.view };
-  const savedSymbolSize = state.symbolSize;
   state.activeFloorIndex = floorIndex;
   fitViewToContent(floor);
-  state.symbolSize = savedSymbolSize * PRINT_RES_SCALE;
   render();
   // JPEG, not PNG: the capture is a fully opaque white-background render
   // with nothing that needs real transparency, and some PDF viewers render
@@ -4434,7 +4430,6 @@ function captureFloorSnapshot(floorIndex){
   // JPEG has no alpha channel at all, so that class of bug can't happen.
   const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
   floor.view = savedView;
-  state.symbolSize = savedSymbolSize;
   return dataUrl;
 }
 let printPagesData = [];
@@ -4449,7 +4444,7 @@ function openPrintView(){
   // switching, regardless of whatever's toggled on in the live working
   // view at the moment someone happens to open this.
   state.showCircuitLabels = true; state.showSwitchRuns = true;
-  canvas.width = 1600*PRINT_RES_SCALE; canvas.height = 1131*PRINT_RES_SCALE; // ~A4 landscape ratio, high-res so zooming in on screen still holds up
+  canvas.width = 1600; canvas.height = 1131; // ~A4 landscape ratio
 
   const projName = document.getElementById('projName').value || 'Untitled';
   const dateStr = new Date().toLocaleDateString('en-AU');
@@ -4598,9 +4593,18 @@ function hexToRgb(hex){
   return [parseInt(m[1],16), parseInt(m[2],16), parseInt(m[3],16)];
 }
 document.getElementById('btnSavePdf').addEventListener('click', downloadPdfExport);
-// Scroll to zoom (centred on the cursor), drag to pan, double-click to
-// reset -- screen-review only, see the @media print rule that forces the
-// image transform back off so printing always uses the full, un-zoomed plan.
+// Scroll or drag to pan, pinch/ctrl+scroll to zoom (centred on the
+// cursor), double-click to reset -- screen-review only, see the
+// @media print rule that forces the image transform back off so
+// printing always uses the full, un-zoomed plan.
+//
+// A plain two-finger trackpad swipe fires as an ordinary wheel event,
+// same as a mouse scroll wheel -- only a genuine pinch gesture (or an
+// explicit ctrl/cmd+scroll) carries ctrlKey:true. Treating every wheel
+// event as zoom (the first version of this) meant a normal trackpad
+// swipe intended as panning kept zooming instead, which is exactly what
+// felt "hard to move around": scroll now pans by default, matching the
+// convention most map/canvas apps use, and only ctrlKey zooms.
 function initPrintPanZoom(container){
   const img = container.querySelector('img');
   if(!img) return;
@@ -4609,18 +4613,21 @@ function initPrintPanZoom(container){
   const apply = () => { img.style.transform = `translate(${tx}px, ${ty}px) scale(${scale})`; };
   container.addEventListener('wheel', (e) => {
     e.preventDefault();
-    const rect = container.getBoundingClientRect();
-    const cx = e.clientX - rect.left - rect.width/2, cy = e.clientY - rect.top - rect.height/2;
-    const prevScale = scale;
-    scale = Math.min(MAX, Math.max(MIN, scale * (1 - e.deltaY*0.0015)));
-    const factor = scale/prevScale;
-    tx = cx - (cx-tx)*factor; ty = cy - (cy-ty)*factor;
-    if(scale===MIN){ tx=0; ty=0; }
+    if(e.ctrlKey){
+      const rect = container.getBoundingClientRect();
+      const cx = e.clientX - rect.left - rect.width/2, cy = e.clientY - rect.top - rect.height/2;
+      const prevScale = scale;
+      scale = Math.min(MAX, Math.max(MIN, scale * (1 - e.deltaY*0.0015)));
+      const factor = scale/prevScale;
+      tx = cx - (cx-tx)*factor; ty = cy - (cy-ty)*factor;
+      if(scale===MIN){ tx=0; ty=0; }
+    } else {
+      tx -= e.deltaX; ty -= e.deltaY;
+    }
     apply();
   }, { passive:false });
   let dragging=false, startX=0, startY=0, startTx=0, startTy=0;
   container.addEventListener('mousedown', (e) => {
-    if(scale<=MIN) return;
     dragging=true; startX=e.clientX; startY=e.clientY; startTx=tx; startTy=ty;
     container.classList.add('dragging'); e.preventDefault();
   });
