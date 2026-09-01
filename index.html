@@ -745,6 +745,18 @@ html.force-desktop{
   html.force-desktop.layers-collapsed #recoveryBanner, html.force-desktop.layers-collapsed #orgInviteBanner{ left:calc(var(--rail-w) + 10px); }
   html.force-desktop.layers-collapsed #backdrop{ left:var(--rail-w); }
   html.force-desktop.layers-collapsed .dock-toggle-left{ left:var(--rail-w); }
+  /* Civil mode: the Layers panel (per-layer lock/visibility, cable-run
+     labels, the electrical Legend) doesn't apply to a civil plan at all
+     (see the scope note on civilPlans — no LAYER_DEFS integration for
+     civil v1) — force it fully collapsed exactly like .layers-collapsed
+     above, independent of the user's own saved layers-collapsed
+     preference so toggling civil mode never overwrites that. The toggle
+     chevron itself is hidden too, since there's nothing to expand. */
+  html.force-desktop.civil-mode #sheetLayers{ width:0; border-right:none; overflow:hidden; }
+  html.force-desktop.civil-mode #canvas-wrap{ left:var(--rail-w); }
+  html.force-desktop.civil-mode #recoveryBanner, html.force-desktop.civil-mode #orgInviteBanner{ left:calc(var(--rail-w) + 10px); }
+  html.force-desktop.civil-mode #backdrop{ left:var(--rail-w); }
+  html.force-desktop.civil-mode .dock-toggle-left{ display:none; }
   html.force-desktop.symbols-collapsed #sheetSymbols, html.force-desktop.symbols-collapsed #sheetProps{ width:0; border-left:none; overflow:hidden; }
   html.force-desktop.symbols-collapsed #canvas-wrap{ right:0; }
   html.force-desktop.symbols-collapsed #recoveryBanner, html.force-desktop.symbols-collapsed #orgInviteBanner{ right:10px; }
@@ -3775,6 +3787,13 @@ function setTool(tool){
   state.activeSymbol = null; state.lineStart = null; state.calibratePoints = [];
   state.linkPendingSwitch = null; state.activeLinkGroup = null; state.dimStart = null; state.snapGuides = []; state.snapTarget = null; state.pendingSwitchConfig = null;
   state.wallStart = null;
+  // This is the shared tool-switch entry point for both modes (the V/H/M/C/K
+  // hotkeys and the select/pan/measure/calibrate rail buttons all call it
+  // regardless of activePlanType) — switching away from 'conduit' mid-draw
+  // via any of those must cancel the draft the same way switching civil
+  // plans, switching app mode, or undo already do, or the half-drawn
+  // polyline is left stuck on screen with no tool left armed to finish it.
+  cancelConduitDraft();
   if(tool !== 'select' && state.multiSelectMode){
     exitMultiSelect();
   }
@@ -4292,6 +4311,16 @@ function setActivePlanType(type){
   setHint(null);
   render();
   markDirty();
+  // Toggling civil-mode moves #canvas-wrap's left edge (the Layers panel
+  // is force-collapsed in civil mode, see the CSS) exactly like collapsing
+  // a docked panel does — same fire-twice resize dispatch as
+  // initDockToggles() above, or the canvas keeps its stale pixel
+  // width/height until an actual window resize, leaving devices/pits
+  // placed at the wrong on-screen position relative to the cursor.
+  try {
+    window.dispatchEvent(new Event('resize'));
+    setTimeout(() => window.dispatchEvent(new Event('resize')), 260);
+  } catch(e) {}
 }
 document.getElementById('civilModeToggle').addEventListener('click', () => {
   setActivePlanType(state.activePlanType==='civil' ? 'floor' : 'civil');
