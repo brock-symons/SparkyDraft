@@ -236,6 +236,16 @@ canvas{display:block; touch-action:none;}
   padding:7px 10px; border-radius:8px; font-size:11.5px; color:var(--text); font-weight:600; max-width:100px;
   overflow:hidden; white-space:nowrap; text-overflow:ellipsis;
 }
+/* Civil mode: a handful of elements only make sense in one mode or the
+   other. .civil-only is hidden by default, shown when html.civil-mode is
+   set; .civil-hide is the reverse (electrical-only tools/sheets that don't
+   apply to a civil plan — Circuits, Comms racks, Panel schedule, Quote,
+   Device library, Find duplicates, Layers, Link, and the Grid & snap sheet,
+   which is entangled with the wall-marking concept civil doesn't have). */
+.civil-only{display:none;}
+html.civil-mode .civil-only{display:flex;}
+html.civil-mode .civil-hide{display:none !important;}
+#civilModeToggle.active{background:#3a2a12; color:#f2a93b; border-color:#5a3f18;}
 .floor-row{display:flex; align-items:center; gap:10px; padding:12px 8px; border-bottom:1px solid var(--line-soft); border-radius:8px;}
 .floor-row.active{background:var(--panel2);}
 .floor-row .fname{flex:1; font-size:13.5px;}
@@ -852,7 +862,9 @@ html.force-desktop{
 <div id="topbar">
   <div class="brand"><div class="dot"></div>SD</div>
   <input id="projName" value="Smith Residence">
-  <button class="floor-badge" id="floorBadge">🏢 Ground Floor</button>
+  <button class="floor-badge civil-hide" id="floorBadge">🏢 Ground Floor</button>
+  <button class="floor-badge civil-only" id="civilPlanBadge">🚧 Civil</button>
+  <button class="icon-btn" id="civilModeToggle" title="Switch between the rough-in plan and civil/underground plans">🚧</button>
   <div class="file-btn-wrap">
     <div class="visual">⬆</div>
     <input type="file" id="fileImport" accept="image/png,image/jpeg,image/webp,image/gif,application/pdf,.pdf,.png,.jpg,.jpeg,.webp,.gif">
@@ -870,25 +882,27 @@ html.force-desktop{
   <button class="rail-btn dtb-btn" data-dtool="pan" title="Pan (H)">✋</button>
   <button class="rail-btn" id="railPlace" title="Place a device (P)">➕</button>
   <button class="rail-btn dtb-btn" data-dtool="measure" title="Measure (M)">📏</button>
-  <button class="rail-btn dtb-btn" data-dtool="link" title="Link switch (K)">🔗</button>
+  <button class="rail-btn dtb-btn civil-hide" data-dtool="link" title="Link switch (K)">🔗</button>
   <button class="rail-btn dtb-btn" data-dtool="calibrate" title="Calibrate (C)">⚖</button>
-  <div class="rail-sep"></div>
-  <button class="rail-btn" id="railLayers" title="Layers (L)">▤</button>
+  <div class="rail-sep civil-hide"></div>
+  <button class="rail-btn civil-hide" id="railLayers" title="Layers (L)">▤</button>
   <div class="rail-sep"></div>
   <button class="rail-btn" id="railCommandPalette" title="Command palette (Ctrl+K)">⌘</button>
 </div>
 
 <div id="desktopToolbar">
-  <button class="dtb-btn" id="dtbGrid">▦ Grid &amp; snap</button>
-  <div class="dtb-sep"></div>
-  <button class="dtb-btn" id="dtbCircuits">⏚ Circuits</button>
-  <button class="dtb-btn" id="dtbCommsRacks">🗄 Comms racks</button>
-  <button class="dtb-btn" id="dtbQuote">💲 Quote</button>
-  <button class="dtb-btn" id="dtbPanelSchedule">🧮 Panel schedule</button>
-  <button class="dtb-btn" id="dtbPriceList">🏷 Device library</button>
+  <button class="dtb-btn civil-hide" id="dtbGrid">▦ Grid &amp; snap</button>
+  <button class="dtb-btn civil-only" id="dtbCivilPlans">🚧 Civil plans</button>
+  <button class="dtb-btn civil-only" id="dtbCivilMaterials">🧱 Civil materials</button>
+  <div class="dtb-sep civil-hide"></div>
+  <button class="dtb-btn civil-hide" id="dtbCircuits">⏚ Circuits</button>
+  <button class="dtb-btn civil-hide" id="dtbCommsRacks">🗄 Comms racks</button>
+  <button class="dtb-btn civil-hide" id="dtbQuote">💲 Quote</button>
+  <button class="dtb-btn civil-hide" id="dtbPanelSchedule">🧮 Panel schedule</button>
+  <button class="dtb-btn civil-hide" id="dtbPriceList">🏷 Device library</button>
   <div class="dtb-sep"></div>
   <button class="dtb-btn" id="dtbVersions">🕐 History</button>
-  <button class="dtb-btn" id="dtbDuplicates">🧹 Find duplicates</button>
+  <button class="dtb-btn civil-hide" id="dtbDuplicates">🧹 Find duplicates</button>
   <button class="dtb-btn" id="dtbPrintExport">🖨 Print / PDF export</button>
   <div class="dtb-sep"></div>
   <button class="dtb-btn" id="dtbReportProblem">🚩 Report a problem</button>
@@ -909,8 +923,8 @@ html.force-desktop{
 <div id="canvas-wrap">
   <canvas id="canvas"></canvas>
   <div id="import-prompt">
-    <div class="big">No plan imported yet</div>
-    <div class="sub">Import an architectural PDF or image. Once it's in, use Calibrate to set real-world scale before placing devices.</div>
+    <div class="big" id="importPromptBig">No plan imported yet</div>
+    <div class="sub" id="importPromptSub">Import an architectural PDF or image. Once it's in, use Calibrate to set real-world scale before placing devices.</div>
     <div class="file-btn-wrap">
       <input type="file" id="fileImportCenter" accept="image/png,image/jpeg,image/webp,image/gif,application/pdf,.pdf,.png,.jpg,.jpeg,.webp,.gif">
     </div>
@@ -957,7 +971,7 @@ html.force-desktop{
   <button class="bb-btn active" data-tool="select"><span class="icon">↖</span>Select</button>
   <button class="bb-btn" data-tool="pan"><span class="icon">✋</span>Pan</button>
   <button class="bb-btn" id="bbPlace"><span class="icon">➕</span>Place</button>
-  <button class="bb-btn" id="bbLayers"><span class="icon">▤</span>Layers</button>
+  <button class="bb-btn civil-hide" id="bbLayers"><span class="icon">▤</span>Layers</button>
   <button class="bb-btn" id="bbMore"><span class="icon">⋯</span>More</button>
 </div>
 
@@ -966,7 +980,7 @@ html.force-desktop{
 <div class="sheet" id="sheetSymbols">
   <div class="resize-handle resize-handle-left" id="resizeSymbols"></div>
   <div class="sheet-handle"></div>
-  <div class="sheet-header"><div class="sheet-title">Place a device</div><div class="sheet-close" data-close>✕</div></div>
+  <div class="sheet-header"><div class="sheet-title" id="sheetSymbolsTitle">Place a device</div><div class="sheet-close" data-close>✕</div></div>
   <div class="sheet-body"><div class="symbol-grid" id="symbolGrid"></div></div>
 </div>
 
@@ -1419,6 +1433,37 @@ const CABLE_SIZES = [
   { size:'16mm²',  color:'#e879f9' },
   { size:'25mm²',  color:'#f472b6' },
 ];
+// ===================================================================
+// CIVIL / UNDERGROUND WORKS — pit and conduit type libraries. Same
+// editable-data-table idiom as SYMBOL_LIBRARY/CABLE_SIZES: costs and
+// sizes here are sensible AU/NZ-typical starting defaults, not gospel —
+// tune them from the Pit & Conduit Library sheet.
+// ===================================================================
+const PIT_LIBRARY = [
+  { id:'pit_300', label:'300×300 inspection pit', abbr:'P3', color:'#94a3b8', defaultProps:{ material_cost:45, labour_hours:0.75 } },
+  { id:'pit_450', label:'450×450 pit', abbr:'P4', color:'#94a3b8', defaultProps:{ material_cost:85, labour_hours:1 } },
+  { id:'pit_600', label:'600×600 pit', abbr:'P6', color:'#94a3b8', defaultProps:{ material_cost:150, labour_hours:1.5 } },
+  { id:'pit_pull', label:'Pull pit / junction pit', abbr:'PJ', color:'#60a5fa', defaultProps:{ material_cost:65, labour_hours:0.75 } },
+  { id:'pit_meter', label:'Meter / service pit', abbr:'PM', color:'#facc15', defaultProps:{ material_cost:120, labour_hours:1.25 } },
+];
+const CONDUIT_SIZES = [
+  { id:'c20',  size:'20mm',  color:'#f97316', material_cost_per_m:1.8, labour_hours_per_m:0.05 },
+  { id:'c25',  size:'25mm',  color:'#fb923c', material_cost_per_m:2.2, labour_hours_per_m:0.055 },
+  { id:'c32',  size:'32mm',  color:'#f0932b', material_cost_per_m:2.9, labour_hours_per_m:0.06 },
+  { id:'c40',  size:'40mm',  color:'#e67e22', material_cost_per_m:3.8, labour_hours_per_m:0.065 },
+  { id:'c50',  size:'50mm',  color:'#d35400', material_cost_per_m:5.2, labour_hours_per_m:0.07 },
+  { id:'c65',  size:'65mm',  color:'#c2410c', material_cost_per_m:7.6, labour_hours_per_m:0.08 },
+  { id:'c80',  size:'80mm',  color:'#9a3412', material_cost_per_m:10.5, labour_hours_per_m:0.09 },
+  { id:'c100', size:'100mm', color:'#7c2d12', material_cost_per_m:14.2, labour_hours_per_m:0.1 },
+  { id:'c150', size:'150mm', color:'#5c1a09', material_cost_per_m:24.0, labour_hours_per_m:0.12 },
+];
+const BUILDING_ENTRY_SERVICE_TYPES = [
+  { id:'power', label:'Power', color:'#f97316' },
+  { id:'data', label:'Data / comms', color:'#4ade80' },
+  { id:'comms', label:'Telco', color:'#60a5fa' },
+  { id:'water', label:'Water', color:'#38bdf8' },
+  { id:'gas', label:'Gas', color:'#facc15' },
+];
 // Protection devices as real priced entities (section 21-22 of the revision
 // brief). Costs are editable defaults, same override pattern as product pricing.
 // `amps` is the breaker's own rating, used by the panel schedule to flag a
@@ -1448,6 +1493,18 @@ function makeFloor(name){
     gridOriginX: 0, gridOriginY: 0, gridVisible: true, gridAlignWallId: null,
     bankNames: {} }; // 'switchId::group' → display name for a lighting bank
 }
+// A civil/underground-works plan — deliberately separate from a floor
+// (not a building level, no rooms/switchLinks/walls-as-electrical-reference),
+// but carries the same view/scale/planImage/grid shape so currentPlan()
+// can be swapped in for currentFloor() in every pan/zoom/calibrate/grid
+// function without those functions needing to know which kind they have.
+function makeCivilPlan(name){
+  return { id:'CP-'+Date.now()+'-'+Math.floor(Math.random()*1000), name, planImage:null, scale:null,
+    view:{ zoom:1, offsetX:0, offsetY:0 },
+    gridSpacingMM: 1000, snapEnabled: true,
+    gridOriginX: 0, gridOriginY: 0, gridVisible: true,
+    pits:[], conduits:[], buildingEntries:[], dimensions:[] };
+}
 // Stable identity for a project's storage record -- local AND cloud --
 // separate from its display name, so renaming or sharing a name with
 // another project never changes (or forks/collides with) which record
@@ -1465,6 +1522,11 @@ function genProjectId(){
 let state = {
   currentProjectId: genProjectId(),
   floors:[ makeFloor('Ground Floor') ], activeFloorIndex:0,
+  // Civil/underground-works plans — deliberately separate from floors (see
+  // makeCivilPlan()) so this content never crowds the rough-in plan.
+  // 'floor' | 'civil' picks which set of tools/panels/canvas content is
+  // active; currentPlan() below is the shared accessor everything reads.
+  civilPlans:[ makeCivilPlan('Civil') ], activeCivilPlanIndex:0, activePlanType:'floor',
   layers: LAYER_DEFS.map(l=>({...l,visible:true})),
   activeTool:'select', activeSymbol:null, activeCableSize:CABLE_SIZES[2], selectedObjectId:null, selectedCableId:null,
   lastPlacedSymbolId:null, lastPlacedSwitchConfig:null, // for the "R" repeat-placement hotkey
@@ -1488,6 +1550,12 @@ let state = {
   // linked rack at the time -- nothing to attach them to yet, so they wait
   // here instead of being silently dropped. See migrateLegacyCommsData().
   unassignedCommsPorts:[],
+  // Civil mode selection + active placement type. activeTool doubles for
+  // civil tools too ('placePit'/'placeBuildingEntry'/'conduit' alongside
+  // the shared 'select'/'pan'/'calibrate'/'measure').
+  selectedPitId:null, selectedBuildingEntryId:null, selectedConduitId:null,
+  activePitTypeId: PIT_LIBRARY[0].id, activeBuildingEntryServiceTypes:['power'],
+  activeConduitSize: CONDUIT_SIZES[3], // 40mm default — a common general-purpose underground size
 };
 // Product default price + object-level override (section 17-18 of the
 // revision brief). If no override, always resolve to the CURRENT product
@@ -1519,6 +1587,15 @@ function effectiveProtectionCost(circuit){
   return p ? p.cost : 0;
 }
 function currentFloor(){ return state.floors[state.activeFloorIndex]; }
+function currentCivilPlan(){ return state.civilPlans[state.activeCivilPlanIndex]; }
+// The shared accessor for anything that only cares about the generic
+// view/scale/planImage/grid shape a floor and a civil plan both carry —
+// pan/zoom, calibration, background image, grid rendering. Civil-specific
+// content (pits/conduits/buildingEntries vs objects/cables/walls) still
+// needs its own dedicated code, dispatched separately (see render()/
+// pointerdownCivil()) — this is NOT a generalization of currentFloor()'s
+// electrical semantics, just the plumbing both plan types share.
+function currentPlan(){ return state.activePlanType==='civil' ? currentCivilPlan() : currentFloor(); }
 const SWITCH_IDS = ['switch_1g','switch_2way','switch_intermediate','dimmer'];
 const LIGHT_IDS = ['downlight','batten','pendant','wall_light','sensor_light','flood_light','led_strip','ceiling_light','exit_light','emergency_light','tastic_2h','tastic_4h','exhaust_fan','ceiling_fan'];
 function isSwitchSymbol(symbolId){ return SWITCH_IDS.includes(symbolId); }
@@ -1868,7 +1945,7 @@ function migrateLegacyCommsData(d){
 }
 
 let history = []; let historyIndex = -1;
-function snapshot(){ return JSON.stringify({ floors: state.floors.map(f=>({...f, planImage:undefined})), layers:state.layers, circuits:state.circuits }); }
+function snapshot(){ return JSON.stringify({ floors: state.floors.map(f=>({...f, planImage:undefined})), civilPlans: state.civilPlans.map(cp=>({...cp, planImage:undefined})), layers:state.layers, circuits:state.circuits }); }
 function pushHistory(){ history = history.slice(0, historyIndex+1); history.push({ ts:Date.now(), data:snapshot() }); historyIndex = history.length-1; if(history.length>60){history.shift();historyIndex--;} if(typeof refreshHistoryButtons==='function') refreshHistoryButtons(); if(typeof markDirty==='function') markDirty(); }
 
 // ===================================================================
@@ -1880,10 +1957,11 @@ const wrap = document.getElementById('canvas-wrap');
 function resizeCanvas(){ canvas.width = wrap.clientWidth; canvas.height = wrap.clientHeight; render(); }
 window.addEventListener('resize', resizeCanvas);
 
-function worldToScreen(x,y){ return { x: x*currentFloor().view.zoom + currentFloor().view.offsetX, y: y*currentFloor().view.zoom + currentFloor().view.offsetY }; }
-function screenToWorld(x,y){ return { x: (x-currentFloor().view.offsetX)/currentFloor().view.zoom, y: (y-currentFloor().view.offsetY)/currentFloor().view.zoom }; }
+function worldToScreen(x,y){ return { x: x*currentPlan().view.zoom + currentPlan().view.offsetX, y: y*currentPlan().view.zoom + currentPlan().view.offsetY }; }
+function screenToWorld(x,y){ return { x: (x-currentPlan().view.offsetX)/currentPlan().view.zoom, y: (y-currentPlan().view.offsetY)/currentPlan().view.zoom }; }
 
 function render(){
+  if(state.activePlanType==='civil'){ renderCivil(); return; }
   ctx.fillStyle = state.printMode ? '#ffffff' : '#0c1116'; ctx.fillRect(0,0,canvas.width,canvas.height);
   // Underlay grid (default): drawn beneath the plan so it doesn't obscure lines --
   // skipped entirely in print mode, since a design grid has no place on a printed drawing
@@ -2168,12 +2246,175 @@ function render(){
     }
   }
 }
+// Sum of consecutive segment lengths for a conduit's vertex array, in the
+// same raw world units everything else uses (divide by plan.scale for
+// metres) — the one length calculation this app doesn't already have a
+// helper for, since every existing "run length" is a straight 2-point
+// Math.hypot (see index.html comments on estimateCircuitCableLength).
+function conduitLength(conduit){
+  let total = 0;
+  for(let i=0;i<conduit.points.length-1;i++){
+    total += Math.hypot(conduit.points[i+1].x-conduit.points[i].x, conduit.points[i+1].y-conduit.points[i].y);
+  }
+  return total;
+}
+// Civil mode's entire render pass — deliberately separate from render()
+// above rather than threading conditionals through it: none of the
+// electrical rendering (objects/cables/walls/circuits/comms/lighting
+// banks) applies here, so keeping this as its own function means the
+// rough-in rendering code above is never touched by civil-mode changes.
+function renderCivil(){
+  const plan = currentCivilPlan();
+  ctx.fillStyle = state.printMode ? '#ffffff' : '#0c1116'; ctx.fillRect(0,0,canvas.width,canvas.height);
+  if(plan.gridVisible !== false && !state.printMode) drawGrid(false);
+  if(plan.planImage){
+    const img = plan.planImage; const tl = worldToScreen(0,0);
+    ctx.drawImage(img, tl.x, tl.y, img.width*plan.view.zoom, img.height*plan.view.zoom);
+    document.getElementById('import-prompt').classList.add('hidden');
+  } else {
+    document.getElementById('import-prompt').classList.remove('hidden');
+  }
+
+  // Dimensions (Measure tool) — identical styling to the rough-in side.
+  plan.dimensions.forEach(d => {
+    const p1 = worldToScreen(d.x1,d.y1), p2 = worldToScreen(d.x2,d.y2);
+    ctx.strokeStyle = '#dbe6f0'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(p1.x,p1.y); ctx.lineTo(p2.x,p2.y); ctx.stroke();
+    const angle = Math.atan2(p2.y-p1.y, p2.x-p1.x), tick = 6;
+    [p1,p2].forEach(p => {
+      ctx.beginPath();
+      ctx.moveTo(p.x - Math.sin(angle)*tick, p.y + Math.cos(angle)*tick);
+      ctx.lineTo(p.x + Math.sin(angle)*tick, p.y - Math.cos(angle)*tick);
+      ctx.stroke();
+    });
+    const label = plan.scale ? (Math.hypot(d.x2-d.x1,d.y2-d.y1)/plan.scale).toFixed(2)+'m' : Math.round(Math.hypot(d.x2-d.x1,d.y2-d.y1))+'px';
+    const mx=(p1.x+p2.x)/2, my=(p1.y+p2.y)/2;
+    ctx.font='11px JetBrains Mono'; ctx.textAlign='center';
+    const w = ctx.measureText(label).width + 10;
+    ctx.fillStyle='#0c1116'; ctx.fillRect(mx-w/2,my-18,w,16);
+    ctx.fillStyle='#dbe6f0'; ctx.fillText(label, mx, my-6);
+  });
+
+  // Conduits — the one genuinely new geometry primitive in this app: a
+  // vertex array instead of a 2-point line, drawn as a connected polyline.
+  plan.conduits.forEach(cd => {
+    const size = CONDUIT_SIZES.find(s=>s.id===cd.sizeId) || CONDUIT_SIZES[0];
+    const selected = cd.id === state.selectedConduitId;
+    ctx.strokeStyle = size.color; ctx.lineWidth = selected ? 5 : 3.5; ctx.lineCap='round'; ctx.lineJoin='round';
+    ctx.beginPath();
+    cd.points.forEach((pt,i) => { const p = worldToScreen(pt.x,pt.y); if(i===0) ctx.moveTo(p.x,p.y); else ctx.lineTo(p.x,p.y); });
+    ctx.stroke();
+    if(selected){
+      cd.points.forEach(pt => {
+        const p = worldToScreen(pt.x,pt.y);
+        ctx.fillStyle = '#ffffff'; ctx.fillRect(p.x-5,p.y-5,10,10);
+        ctx.strokeStyle = size.color; ctx.lineWidth = 2; ctx.strokeRect(p.x-5,p.y-5,10,10);
+      });
+    }
+    const totalLen = conduitLength(cd);
+    const midPt = cd.points[Math.floor((cd.points.length-1)/2)];
+    const midPt2 = cd.points[Math.ceil((cd.points.length-1)/2)];
+    if(midPt && midPt2){
+      const mp1 = worldToScreen(midPt.x, midPt.y), mp2 = worldToScreen(midPt2.x, midPt2.y);
+      const mx = (mp1.x+mp2.x)/2, my = (mp1.y+mp2.y)/2;
+      const label = size.size + (plan.scale ? ' · ' + (totalLen/plan.scale).toFixed(1)+'m' : '');
+      ctx.font='11px JetBrains Mono'; ctx.textAlign='center';
+      const w = ctx.measureText(label).width + 10;
+      ctx.fillStyle='#0c1116'; ctx.fillRect(mx-w/2,my-9,w,16);
+      ctx.fillStyle=size.color; ctx.fillText(label, mx, my+3);
+    }
+  });
+
+  // In-progress conduit draft (mid-draw) — dashed, with a rubber-band
+  // segment following the cursor out to the next un-committed point.
+  if(conduitDraft && conduitDraft.points.length){
+    const size = CONDUIT_SIZES.find(s=>s.id===conduitDraft.sizeId) || CONDUIT_SIZES[0];
+    ctx.strokeStyle = size.color; ctx.lineWidth = 3; ctx.setLineDash([6,4]);
+    ctx.beginPath();
+    conduitDraft.points.forEach((pt,i) => { const p = worldToScreen(pt.x,pt.y); if(i===0) ctx.moveTo(p.x,p.y); else ctx.lineTo(p.x,p.y); });
+    if(conduitDraftHover){ const p = worldToScreen(conduitDraftHover.x, conduitDraftHover.y); ctx.lineTo(p.x,p.y); }
+    ctx.stroke(); ctx.setLineDash([]);
+    conduitDraft.points.forEach(pt => {
+      const p = worldToScreen(pt.x,pt.y);
+      ctx.beginPath(); ctx.arc(p.x,p.y,4,0,Math.PI*2); ctx.fillStyle = size.color; ctx.fill();
+    });
+  }
+
+  // Building service-entry points — a distinct rotated-square icon so they
+  // never read as "just another pit" at a glance.
+  plan.buildingEntries.forEach(be => {
+    const p = worldToScreen(be.x, be.y);
+    const r = state.symbolSize;
+    const selected = be.id === state.selectedBuildingEntryId;
+    ctx.save();
+    ctx.translate(p.x, p.y); ctx.rotate(Math.PI/4);
+    ctx.fillStyle = '#38bdf8' + (selected ? 'ff' : 'dd');
+    ctx.fillRect(-r*0.72, -r*0.72, r*1.44, r*1.44);
+    if(selected){ ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2.5; ctx.strokeRect(-r*0.72, -r*0.72, r*1.44, r*1.44); }
+    ctx.restore();
+    ctx.fillStyle='#0c1116'; ctx.font='bold 10px JetBrains Mono'; ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillText('BE', p.x, p.y);
+  });
+
+  // Pits — same visual language as electrical device symbols (filled
+  // circle + abbreviation) so they read as "placeable things" consistently
+  // with the rest of the app, just on this separate plan.
+  plan.pits.forEach(pit => {
+    const type = PIT_LIBRARY.find(t=>t.id===pit.typeId) || PIT_LIBRARY[0];
+    const p = worldToScreen(pit.x, pit.y);
+    const r = state.symbolSize;
+    const selected = pit.id === state.selectedPitId;
+    ctx.beginPath(); ctx.arc(p.x,p.y,r,0,Math.PI*2);
+    ctx.fillStyle = type.color + (selected ? 'ff' : 'dd'); ctx.fill();
+    if(selected){ ctx.strokeStyle='#ffffff'; ctx.lineWidth=2.5; ctx.stroke(); }
+    ctx.fillStyle='#0c1116'; ctx.font='bold 11px JetBrains Mono'; ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillText(type.abbr, p.x, p.y);
+  });
+
+  // Snap guides/target — same visual feedback system as the electrical
+  // side, populated by snapPointCivil() instead of snapPoint().
+  if(state.snapGuides && state.snapGuides.length){
+    state.snapGuides.forEach(g => {
+      const color = g.kind==='device' ? '#4ade80cc' : g.kind==='wall' ? '#f2a93bcc' : '#4fb3ffaa';
+      ctx.strokeStyle = color; ctx.lineWidth = g.kind==='device' ? 1.5 : 1; ctx.setLineDash([5,4]);
+      ctx.beginPath();
+      if(g.axis==='x'){ const sx = worldToScreen(g.value,0).x; ctx.moveTo(sx,0); ctx.lineTo(sx,canvas.height); }
+      else { const sy = worldToScreen(0,g.value).y; ctx.moveTo(0,sy); ctx.lineTo(canvas.width,sy); }
+      ctx.stroke(); ctx.setLineDash([]);
+    });
+  }
+  if(state.snapTarget){
+    const tp = worldToScreen(state.snapTarget.x, state.snapTarget.y);
+    ctx.strokeStyle = '#4ade80'; ctx.lineWidth = 2; ctx.setLineDash([]);
+    ctx.beginPath(); ctx.arc(tp.x, tp.y, state.symbolSize + 6, 0, Math.PI*2); ctx.stroke();
+  }
+
+  // Ghost preview of the pit/building-entry about to be placed, following
+  // the cursor — mirrors the electrical device ghost preview in render().
+  if(state.activeTool==='placePit' && hoverScreen && !dragPitId){
+    const type = PIT_LIBRARY.find(t=>t.id===state.activePitTypeId) || PIT_LIBRARY[0];
+    ctx.save(); ctx.globalAlpha = 0.5;
+    ctx.beginPath(); ctx.arc(hoverScreen.x, hoverScreen.y, state.symbolSize, 0, Math.PI*2);
+    ctx.fillStyle = type.color; ctx.fill();
+    ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1.5; ctx.setLineDash([3,3]); ctx.stroke(); ctx.setLineDash([]);
+    ctx.fillStyle = '#0c1116'; ctx.font = 'bold 11px JetBrains Mono'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(type.abbr, hoverScreen.x, hoverScreen.y);
+    ctx.restore();
+  }
+  if(state.activeTool==='placeBuildingEntry' && hoverScreen && !dragBuildingEntryId){
+    const r = state.symbolSize;
+    ctx.save(); ctx.globalAlpha = 0.5;
+    ctx.translate(hoverScreen.x, hoverScreen.y); ctx.rotate(Math.PI/4);
+    ctx.fillStyle = '#38bdf8'; ctx.fillRect(-r*0.72, -r*0.72, r*1.44, r*1.44);
+    ctx.restore();
+  }
+}
 // Effective grid spacing in world units. Once a floor is calibrated,
 // this reflects the electrician's chosen real-world spacing (mm); before
 // calibration there's no metre reference yet, so it falls back to a
 // generic screen-based spacing.
 function effectiveGridWorldUnits(){
-  const f = currentFloor();
+  const f = currentPlan();
   // Once calibrated, spacing is true millimetres on the plan (px/m * m).
   // Before calibration there is no metre reference, so fall back to a
   // fixed screen-based spacing that still gives a usable drafting grid.
@@ -2185,10 +2426,10 @@ function effectiveGridWorldUnits(){
 // Major lines every 5 cells give a measurement reference at a glance.
 function drawGrid(overlay){
   const spacing = effectiveGridWorldUnits();
-  const zoom = currentFloor().view.zoom;
+  const zoom = currentPlan().view.zoom;
   const step = spacing * zoom;
   if(step < 4) return; // too dense at this zoom — skip rather than flood the canvas
-  const f = currentFloor();
+  const f = currentPlan();
   const ox = f.gridOriginX || 0, oy = f.gridOriginY || 0;
   // Lines pass through grid origin; spacing is calibration-based world units.
   // Find first line at or before the left/top of the visible canvas.
@@ -2235,13 +2476,13 @@ function drawGrid(overlay){
   }
 }
 function fitToScreen(){
-  if(!currentFloor().planImage) return;
+  if(!currentPlan().planImage) return;
   const margin=30;
-  const sX=(canvas.width-margin*2)/currentFloor().planImage.width, sY=(canvas.height-margin*2)/currentFloor().planImage.height;
-  currentFloor().view.zoom = Math.min(sX,sY,4);
-  currentFloor().view.offsetX = (canvas.width - currentFloor().planImage.width*currentFloor().view.zoom)/2;
-  currentFloor().view.offsetY = (canvas.height - currentFloor().planImage.height*currentFloor().view.zoom)/2;
-  render(); document.getElementById('zoom-badge').textContent = Math.round(currentFloor().view.zoom*100)+'%';
+  const sX=(canvas.width-margin*2)/currentPlan().planImage.width, sY=(canvas.height-margin*2)/currentPlan().planImage.height;
+  currentPlan().view.zoom = Math.min(sX,sY,4);
+  currentPlan().view.offsetX = (canvas.width - currentPlan().planImage.width*currentPlan().view.zoom)/2;
+  currentPlan().view.offsetY = (canvas.height - currentPlan().planImage.height*currentPlan().view.zoom)/2;
+  render(); document.getElementById('zoom-badge').textContent = Math.round(currentPlan().view.zoom*100)+'%';
 }
 document.getElementById('fit-btn').addEventListener('click', fitToScreen);
 
@@ -2272,7 +2513,7 @@ function hitTestCable(world){
   );
 }
 function hitTestDimension(world){
-  return currentFloor().dimensions.slice().reverse().find(d => distToSegment(world, {x:d.x1,y:d.y1}, {x:d.x2,y:d.y2}) < 14/currentFloor().view.zoom);
+  return currentPlan().dimensions.slice().reverse().find(d => distToSegment(world, {x:d.x1,y:d.y1}, {x:d.x2,y:d.y2}) < 14/currentPlan().view.zoom);
 }
 function hitTestWall(world){
   // Walls are always hittable when the wall tool is active — don't require the
@@ -2406,6 +2647,108 @@ function snapPoint(world, layerId, excludeId){
 }
 
 // ===================================================================
+// CIVIL MODE — hit-testing and snapping. Pits/building-entries are point
+// objects like electrical devices (hitTestObject generalizes conceptually
+// but reads f.objects, so these are written directly against
+// currentCivilPlan().pits/.buildingEntries rather than trying to overload
+// hitTestObject). Conduits are the one primitive with no electrical
+// analog — a per-segment hit-test over an arbitrary-length vertex array.
+// ===================================================================
+function hitTestPit(world){
+  const tol = (state.symbolSize+4) / currentCivilPlan().view.zoom;
+  return currentCivilPlan().pits.slice().reverse().find(p => Math.hypot(p.x-world.x, p.y-world.y) < tol);
+}
+function hitTestBuildingEntry(world){
+  const tol = (state.symbolSize+4) / currentCivilPlan().view.zoom;
+  return currentCivilPlan().buildingEntries.slice().reverse().find(b => Math.hypot(b.x-world.x, b.y-world.y) < tol);
+}
+// Returns { conduit, segmentIndex } for the closest conduit within
+// tolerance, or null. segmentIndex is the index of the FIRST vertex of
+// the hit segment (segment i runs from points[i] to points[i+1]).
+function hitTestConduitSegment(world){
+  const tol = 14 / currentCivilPlan().view.zoom;
+  let best = null, bestDist = tol;
+  currentCivilPlan().conduits.slice().reverse().forEach(cd => {
+    for(let i=0;i<cd.points.length-1;i++){
+      const d = distToSegment(world, cd.points[i], cd.points[i+1]);
+      if(d < bestDist){ bestDist = d; best = { conduit: cd, segmentIndex: i }; }
+    }
+  });
+  return best;
+}
+// Only checked against the currently-selected conduit's own vertices
+// (called with that conduit already resolved) — hit-testing every
+// conduit's every vertex on every pointerdown would be wasted work, since
+// vertex handles are only interactive on a conduit that's already selected.
+function hitTestConduitVertex(world, conduit){
+  if(!conduit) return null;
+  const tol = 10 / currentCivilPlan().view.zoom;
+  for(let i=0;i<conduit.points.length;i++){
+    if(Math.hypot(conduit.points[i].x-world.x, conduit.points[i].y-world.y) < tol) return i;
+  }
+  return null;
+}
+// Snap priority for civil mode (NOT a generalization of snapPoint() above —
+// the electrical semantics there, layer visibility and wall projection,
+// don't apply to civil content at all):
+//  1. Pit / building-entry centre (so a conduit endpoint lands exactly on
+//     it and can record fromPitId/toPitId/fromBuildingEntryId/etc.)
+//  2. An existing conduit vertex (so runs can share a junction point)
+//  3. Grid intersection (once calibrated; a generic screen spacing before that)
+// opts: { excludePitId, excludeBuildingEntryId, excludeVertex:{conduitId,vertexIndex} }
+function snapPointCivil(world, opts){
+  opts = opts || {};
+  const plan = currentCivilPlan();
+  if(plan.snapEnabled === false){
+    state.snapGuides = []; state.snapTarget = null;
+    return { x: world.x, y: world.y, hit:null };
+  }
+  const tol = 14 / plan.view.zoom;
+
+  let best = null, bestDist = tol * 1.25;
+  plan.pits.forEach(p => {
+    if(p.id === opts.excludePitId) return;
+    const d = Math.hypot(p.x-world.x, p.y-world.y);
+    if(d < bestDist){ bestDist = d; best = { x:p.x, y:p.y, hit:{ kind:'pit', id:p.id } }; }
+  });
+  plan.buildingEntries.forEach(b => {
+    if(b.id === opts.excludeBuildingEntryId) return;
+    const d = Math.hypot(b.x-world.x, b.y-world.y);
+    if(d < bestDist){ bestDist = d; best = { x:b.x, y:b.y, hit:{ kind:'buildingEntry', id:b.id } }; }
+  });
+  if(best){
+    state.snapGuides = []; state.snapTarget = { x:best.x, y:best.y };
+    return best;
+  }
+
+  let bestV = null, bestVDist = tol;
+  plan.conduits.forEach(cd => {
+    cd.points.forEach((pt, idx) => {
+      if(opts.excludeVertex && opts.excludeVertex.conduitId===cd.id && opts.excludeVertex.vertexIndex===idx) return;
+      const d = Math.hypot(pt.x-world.x, pt.y-world.y);
+      if(d < bestVDist){ bestVDist = d; bestV = { x:pt.x, y:pt.y }; }
+    });
+  });
+  if(bestV){
+    state.snapGuides = []; state.snapTarget = { x:bestV.x, y:bestV.y };
+    return { x:bestV.x, y:bestV.y, hit:null };
+  }
+
+  state.snapTarget = null;
+  const gridStep = effectiveGridWorldUnits();
+  const ox = plan.gridOriginX || 0, oy = plan.gridOriginY || 0;
+  const guides = [];
+  const snapped = {
+    x: Math.round((world.x - ox) / gridStep) * gridStep + ox,
+    y: Math.round((world.y - oy) / gridStep) * gridStep + oy,
+  };
+  if(Math.abs(snapped.x - world.x) < tol * 1.5) guides.push({ axis:'x', value:snapped.x, kind:'grid' });
+  if(Math.abs(snapped.y - world.y) < tol * 1.5) guides.push({ axis:'y', value:snapped.y, kind:'grid' });
+  state.snapGuides = guides;
+  return { x:snapped.x, y:snapped.y, hit:null };
+}
+
+// ===================================================================
 // TOUCH / POINTER INTERACTION
 // ===================================================================
 const pointers = new Map();
@@ -2415,6 +2758,18 @@ let pendingTap = null; // { kind:'object'|'empty', id, startX, startY, world }
 let marqueeStart = null, marqueeRect = null;
 let hoverScreen = null; // last cursor position (canvas-space), for the device-placement ghost preview
 const DRAG_THRESHOLD = 8; // px before a touch on an object promotes to a drag/pan
+// ===================================================================
+// CIVIL MODE — interaction state. Parallel to the electrical drag/select
+// state above but kept separate: a pit/building-entry/conduit-vertex drag
+// is never in flight at the same time as an electrical object drag (the
+// two modes are mutually exclusive via state.activePlanType), but keeping
+// them in distinct variables avoids any risk of one mode's cleanup
+// accidentally clearing state the other mode still needs.
+// ===================================================================
+let dragPitId = null, dragBuildingEntryId = null;
+let dragConduitVertex = null; // { conduitId, vertexIndex } | null
+let conduitDraft = null; // { points:[{x,y},...], sizeId, fromPitId, fromBuildingEntryId } | null — the in-progress multi-click run
+let conduitDraftHover = null; // last cursor world point while drafting, so the not-yet-placed final segment can preview
 
 canvas.addEventListener('pointerdown', (e) => {
   canvas.setPointerCapture(e.pointerId);
@@ -2424,7 +2779,7 @@ canvas.addEventListener('pointerdown', (e) => {
     isPanningCanvas = false; dragObjectId = null; pendingTap = null;
     const pts = [...pointers.values()];
     pinchStartDist = Math.hypot(pts[0].x-pts[1].x, pts[0].y-pts[1].y);
-    pinchStartZoom = currentFloor().view.zoom;
+    pinchStartZoom = currentPlan().view.zoom;
     pinchStartMid = { x:(pts[0].x+pts[1].x)/2, y:(pts[0].y+pts[1].y)/2 };
     return;
   }
@@ -2439,12 +2794,22 @@ canvas.addEventListener('pointerdown', (e) => {
       const [a,b]=state.calibratePoints;
       const distPx = Math.hypot(b.x-a.x,b.y-a.y);
       openFormModal('Calibrate', [{ id:'dist', label:'Real-world distance between the two points (metres)', type:'number', value:6.0 }], (vals) => {
-        if(vals.dist && vals.dist > 0){ currentFloor().scale = distPx/vals.dist; updateScaleBadge(); showToast('Calibrated: ' + currentFloor().scale.toFixed(1) + ' px/m'); }
+        if(vals.dist && vals.dist > 0){ currentPlan().scale = distPx/vals.dist; updateScaleBadge(); showToast('Calibrated: ' + currentPlan().scale.toFixed(1) + ' px/m'); }
         state.calibratePoints=[]; render();
       }, 'Calibrate');
       return;
     }
     render();
+    return;
+  }
+
+  // Everything else in this handler (cable/wall/link/place-device/select)
+  // is electrical-only and reads currentFloor() directly — civil mode gets
+  // its own dedicated handler instead of threading conditionals through
+  // ~150 lines of proven rough-in interaction code. Calibrate (above) is
+  // the one tool genuinely shared between modes, so it's checked first.
+  if(state.activePlanType==='civil'){
+    pointerdownCivil(world, e);
     return;
   }
 
@@ -2462,14 +2827,14 @@ canvas.addEventListener('pointerdown', (e) => {
     const hitDim = hitTestDimension(world);
     if(!state.dimStart && hitDim){
       openConfirmModal('Remove measurement?', 'This will delete the selected dimension line.', () => {
-        currentFloor().dimensions = currentFloor().dimensions.filter(d=>d.id!==hitDim.id);
+        currentPlan().dimensions = currentPlan().dimensions.filter(d=>d.id!==hitDim.id);
         pushHistory(); render();
       });
       return;
     }
     if(!state.dimStart){ state.dimStart = world; setHint('Tap the other end to measure'); }
     else {
-      currentFloor().dimensions.push({ id:'M-'+String(state.nextId++).padStart(3,'0'), x1:state.dimStart.x, y1:state.dimStart.y, x2:world.x, y2:world.y });
+      currentPlan().dimensions.push({ id:'M-'+String(state.nextId++).padStart(3,'0'), x1:state.dimStart.x, y1:state.dimStart.y, x2:world.x, y2:world.y });
       state.dimStart = null; setHint('Tap two points to measure, or tap an existing measurement to remove it');
       pushHistory(); render();
     }
@@ -2655,6 +3020,15 @@ window.addEventListener('keydown', (e) => {
   else if(e.key==='Delete' || e.key==='Backspace'){
     if(state.selectedObjectId){ e.preventDefault(); document.getElementById('btnDeleteObj')?.click(); }
     else if(state.selectedCableId){ e.preventDefault(); document.getElementById('btnDeleteCable')?.click(); }
+    else if(state.selectedPitId){ e.preventDefault(); document.getElementById('btnDeletePit')?.click(); }
+    else if(state.selectedBuildingEntryId){ e.preventDefault(); document.getElementById('btnDeleteBuildingEntry')?.click(); }
+    else if(state.selectedConduitId){ e.preventDefault(); document.getElementById('btnDeleteConduit')?.click(); }
+  }
+  else if(e.key==='Escape' && state.activePlanType==='civil' && conduitDraft){
+    e.preventDefault(); cancelConduitDraft();
+  }
+  else if(e.key==='Enter' && state.activePlanType==='civil' && conduitDraft && conduitDraft.points.length>=2){
+    e.preventDefault(); finishConduitDraft();
   }
   // Single-key tool shortcuts (CAD-style: V=select, H=pan, etc.) — only
   // when nothing is held down, so they don't fire alongside Ctrl/Cmd combos.
@@ -2696,9 +3070,11 @@ window.addEventListener('keydown', (e) => {
 canvas.addEventListener('pointermove', (e) => {
   // ghost preview: track the cursor even when no pointer is "down" (plain
   // mouse hover) so a device selected for placement previews where it'll land
-  if(state.activeSymbol){
+  const civilGhostActive = state.activePlanType==='civil' && (state.activeTool==='placePit' || state.activeTool==='placeBuildingEntry' || conduitDraft);
+  if(state.activeSymbol || civilGhostActive){
     const rect = canvas.getBoundingClientRect();
     hoverScreen = { x:e.clientX-rect.left, y:e.clientY-rect.top };
+    if(conduitDraft) conduitDraftHover = screenToWorld(hoverScreen.x, hoverScreen.y);
     if(!pointers.has(e.pointerId)) render();
   }
   if(!pointers.has(e.pointerId)) return;
@@ -2720,12 +3096,17 @@ canvas.addEventListener('pointermove', (e) => {
     const dist = Math.hypot(pts[0].x-pts[1].x, pts[0].y-pts[1].y);
     const rect = canvas.getBoundingClientRect();
     const midWorldBefore = screenToWorld(pinchStartMid.x-rect.left, pinchStartMid.y-rect.top);
-    currentFloor().view.zoom = Math.max(0.1, Math.min(8, pinchStartZoom * (dist/pinchStartDist)));
+    currentPlan().view.zoom = Math.max(0.1, Math.min(8, pinchStartZoom * (dist/pinchStartDist)));
     const midWorldAfter = screenToWorld(pinchStartMid.x-rect.left, pinchStartMid.y-rect.top);
-    currentFloor().view.offsetX += (midWorldAfter.x - midWorldBefore.x) * currentFloor().view.zoom;
-    currentFloor().view.offsetY += (midWorldAfter.y - midWorldBefore.y) * currentFloor().view.zoom;
+    currentPlan().view.offsetX += (midWorldAfter.x - midWorldBefore.x) * currentPlan().view.zoom;
+    currentPlan().view.offsetY += (midWorldAfter.y - midWorldBefore.y) * currentPlan().view.zoom;
     render();
-    document.getElementById('zoom-badge').textContent = Math.round(currentFloor().view.zoom*100)+'%';
+    document.getElementById('zoom-badge').textContent = Math.round(currentPlan().view.zoom*100)+'%';
+    return;
+  }
+
+  if(state.activePlanType==='civil'){
+    pointermoveCivil(e);
     return;
   }
 
@@ -2777,6 +3158,11 @@ function endPointer(e){
   if(dragObjectId){ pushHistory(); }
   state.snapGuides = []; state.snapTarget = null;
 
+  if(state.activePlanType==='civil'){
+    endPointerCivil(e);
+    return;
+  }
+
   if(marqueeStart){
     if(marqueeRect && (marqueeRect.w > 4 || marqueeRect.h > 4)){
       currentFloor().objects.forEach(o => {
@@ -2806,6 +3192,195 @@ canvas.addEventListener('pointerup', endPointer);
 canvas.addEventListener('pointercancel', endPointer);
 canvas.addEventListener('pointerleave', (e) => {
   if(hoverScreen && !pointers.has(e.pointerId)){ hoverScreen = null; render(); }
+});
+
+// ===================================================================
+// CIVIL MODE — pointer handlers, dispatched to from the shared
+// pointerdown/pointermove/endPointer above. Kept separate rather than
+// threading conditionals through the electrical interaction code (which
+// reads currentFloor()/state.selectedObjectId/etc. throughout) so none of
+// that proven rough-in code path is touched by civil-only changes.
+// ===================================================================
+function pointerdownCivil(world, e){
+  if(isSpacePan || state.activeTool==='pan'){
+    isPanningCanvas = true; panLast = { x:e.clientX, y:e.clientY }; pendingTap = null;
+    return;
+  }
+
+  if(state.activeTool==='placePit'){
+    const type = PIT_LIBRARY.find(t=>t.id===state.activePitTypeId) || PIT_LIBRARY[0];
+    const snapped = snapPointCivil(world, {});
+    const pit = { id:'PIT-'+String(state.nextId++).padStart(3,'0'), typeId: type.id, x:snapped.x, y:snapped.y, label:'', notes:'',
+      props:{ material_cost: type.defaultProps.material_cost, labour_hours: type.defaultProps.labour_hours } };
+    currentCivilPlan().pits.push(pit);
+    state.snapGuides = []; state.snapTarget = null;
+    pushHistory(); render(); markDirty();
+    // Same "exit placement mode unless Shift is held" rule as electrical
+    // device placement — see the R/Shift hotkey comment in the electrical
+    // placement branch above for why: leaving the tool armed made the very
+    // next click re-enter this branch and place another pit on top instead
+    // of selecting/moving the one just placed.
+    if(!e.shiftKey) state.activeTool = 'select';
+    openPitProps(pit.id);
+    return;
+  }
+
+  if(state.activeTool==='placeBuildingEntry'){
+    const snapped = snapPointCivil(world, {});
+    const be = { id:'BE-'+String(state.nextId++).padStart(3,'0'), x:snapped.x, y:snapped.y, label:'', serviceTypes:[...state.activeBuildingEntryServiceTypes], notes:'' };
+    currentCivilPlan().buildingEntries.push(be);
+    state.snapGuides = []; state.snapTarget = null;
+    pushHistory(); render(); markDirty();
+    if(!e.shiftKey) state.activeTool = 'select';
+    openBuildingEntryProps(be.id);
+    return;
+  }
+
+  if(state.activeTool==='conduit'){
+    const snapped = snapPointCivil(world, {});
+    if(!conduitDraft){
+      conduitDraft = { points:[{x:snapped.x,y:snapped.y}], sizeId: state.activeConduitSize.id,
+        fromPitId: snapped.hit && snapped.hit.kind==='pit' ? snapped.hit.id : null,
+        fromBuildingEntryId: snapped.hit && snapped.hit.kind==='buildingEntry' ? snapped.hit.id : null };
+      conduitDraftHover = null;
+      setHint('Click to add a bend, or click a pit/building entry to finish there. Escape cancels, Enter finishes unlinked.');
+      state.snapGuides = []; state.snapTarget = null;
+      render();
+      return;
+    }
+    conduitDraft.points.push({ x:snapped.x, y:snapped.y });
+    if(snapped.hit && (snapped.hit.kind==='pit' || snapped.hit.kind==='buildingEntry')){
+      if(snapped.hit.kind==='pit') conduitDraft.toPitId = snapped.hit.id; else conduitDraft.toBuildingEntryId = snapped.hit.id;
+      finishConduitDraft();
+    } else {
+      state.snapGuides = []; state.snapTarget = null;
+      render();
+    }
+    return;
+  }
+
+  // Select tool: a vertex handle on the ALREADY-selected conduit takes
+  // priority over everything else (it's drawn on top and is the more
+  // specific target); otherwise hit-test pits, then building entries,
+  // then conduit segments; nothing hit falls back to pan (mirrors the
+  // electrical select tool's own "nothing under the cursor = pan").
+  const selectedConduitForDrag = state.selectedConduitId ? currentCivilPlan().conduits.find(c=>c.id===state.selectedConduitId) : null;
+  const hitVertexIdx = selectedConduitForDrag ? hitTestConduitVertex(world, selectedConduitForDrag) : null;
+  const hitPit = (hitVertexIdx===null) ? hitTestPit(world) : null;
+  const hitBE = (hitVertexIdx===null && !hitPit) ? hitTestBuildingEntry(world) : null;
+  const hitCD = (hitVertexIdx===null && !hitPit && !hitBE) ? hitTestConduitSegment(world) : null;
+  pendingTap = { startX:e.clientX, startY:e.clientY, world,
+    hitPitId: hitPit?hitPit.id:null, hitBuildingEntryId: hitBE?hitBE.id:null, hitConduitId: hitCD?hitCD.conduit.id:null,
+    hitVertexConduitId: hitVertexIdx!==null ? selectedConduitForDrag.id : null, hitVertexIndex: hitVertexIdx };
+  isPanningCanvas = false; dragPitId = null; dragBuildingEntryId = null; dragConduitVertex = null;
+  panLast = { x:e.clientX, y:e.clientY };
+}
+
+function pointermoveCivil(e){
+  if(pendingTap && !dragPitId && !dragBuildingEntryId && !dragConduitVertex && !isPanningCanvas){
+    const moved = Math.hypot(e.clientX-pendingTap.startX, e.clientY-pendingTap.startY);
+    if(moved > DRAG_THRESHOLD){
+      if(pendingTap.hitVertexConduitId){
+        dragConduitVertex = { conduitId: pendingTap.hitVertexConduitId, vertexIndex: pendingTap.hitVertexIndex };
+      } else if(pendingTap.hitPitId){
+        dragPitId = pendingTap.hitPitId;
+        state.selectedPitId = pendingTap.hitPitId; state.selectedBuildingEntryId = null; state.selectedConduitId = null;
+      } else if(pendingTap.hitBuildingEntryId){
+        dragBuildingEntryId = pendingTap.hitBuildingEntryId;
+        state.selectedBuildingEntryId = pendingTap.hitBuildingEntryId; state.selectedPitId = null; state.selectedConduitId = null;
+      } else if(pendingTap.hitConduitId){
+        state.selectedConduitId = pendingTap.hitConduitId; state.selectedPitId = null; state.selectedBuildingEntryId = null;
+      } else {
+        isPanningCanvas = true;
+        state.selectedPitId = null; state.selectedBuildingEntryId = null; state.selectedConduitId = null;
+        setDeviceEditorActive(false);
+      }
+      pendingTap = null;
+      render();
+    }
+  }
+
+  if(dragConduitVertex){
+    const rect = canvas.getBoundingClientRect();
+    const world = screenToWorld(e.clientX-rect.left, e.clientY-rect.top);
+    const cd = currentCivilPlan().conduits.find(c=>c.id===dragConduitVertex.conduitId);
+    if(!cd){ dragConduitVertex = null; return; }
+    const snapped = snapPointCivil(world, { excludeVertex: dragConduitVertex });
+    cd.points[dragConduitVertex.vertexIndex] = { x:snapped.x, y:snapped.y };
+    // Dragging an endpoint onto a pit/building-entry re-links that end;
+    // dragging it off one (no snap hit) unlinks it. Interior vertices
+    // (a bend, not an endpoint) never carry a link either way.
+    if(dragConduitVertex.vertexIndex===0){
+      cd.fromPitId = snapped.hit && snapped.hit.kind==='pit' ? snapped.hit.id : null;
+      cd.fromBuildingEntryId = snapped.hit && snapped.hit.kind==='buildingEntry' ? snapped.hit.id : null;
+    } else if(dragConduitVertex.vertexIndex===cd.points.length-1){
+      cd.toPitId = snapped.hit && snapped.hit.kind==='pit' ? snapped.hit.id : null;
+      cd.toBuildingEntryId = snapped.hit && snapped.hit.kind==='buildingEntry' ? snapped.hit.id : null;
+    }
+    render();
+    return;
+  }
+
+  if(dragPitId){
+    const rect = canvas.getBoundingClientRect();
+    const world = screenToWorld(e.clientX-rect.left, e.clientY-rect.top);
+    const pit = currentCivilPlan().pits.find(p=>p.id===dragPitId);
+    if(!pit){ dragPitId = null; return; }
+    const snapped = snapPointCivil(world, { excludePitId: pit.id });
+    pit.x = snapped.x; pit.y = snapped.y;
+    render();
+    return;
+  }
+  if(dragBuildingEntryId){
+    const rect = canvas.getBoundingClientRect();
+    const world = screenToWorld(e.clientX-rect.left, e.clientY-rect.top);
+    const be = currentCivilPlan().buildingEntries.find(b=>b.id===dragBuildingEntryId);
+    if(!be){ dragBuildingEntryId = null; return; }
+    const snapped = snapPointCivil(world, { excludeBuildingEntryId: be.id });
+    be.x = snapped.x; be.y = snapped.y;
+    render();
+    return;
+  }
+
+  if(isPanningCanvas && panLast){
+    currentPlan().view.offsetX += (e.clientX - panLast.x);
+    currentPlan().view.offsetY += (e.clientY - panLast.y);
+    panLast = { x:e.clientX, y:e.clientY };
+    render();
+  }
+}
+
+function endPointerCivil(e){
+  const draggedConduitId = dragConduitVertex ? dragConduitVertex.conduitId : null;
+  if(dragPitId || dragBuildingEntryId || dragConduitVertex){ pushHistory(); markDirty(); }
+  if(pendingTap && state.activeTool==='select'){
+    if(pendingTap.hitVertexConduitId){ /* a plain tap on a vertex handle (no drag) — nothing to do, it's already selected */ }
+    else if(pendingTap.hitPitId){ openPitProps(pendingTap.hitPitId); }
+    else if(pendingTap.hitBuildingEntryId){ openBuildingEntryProps(pendingTap.hitBuildingEntryId); }
+    else if(pendingTap.hitConduitId){ openConduitProps(pendingTap.hitConduitId); }
+    else {
+      state.selectedPitId = null; state.selectedBuildingEntryId = null; state.selectedConduitId = null;
+      setDeviceEditorActive(false); render();
+      document.getElementById('propsBody').innerHTML = '<div class="empty-state">Select a pit, conduit, or building entry on the plan to see and edit its properties here.</div>';
+      document.getElementById('propsTitle').textContent = 'Properties';
+    }
+  }
+  if(draggedConduitId) openConduitProps(draggedConduitId);
+  pendingTap = null;
+  dragPitId = null; dragBuildingEntryId = null; dragConduitVertex = null;
+  isPanningCanvas = false; panLast = null;
+}
+// Double-click finishes an in-progress conduit run at the last point,
+// unlinked (toPitId/toBuildingEntryId stay null) — the mouse/touch pair
+// behind a dblclick already fired two ordinary clicks first, so the
+// second one added a near-duplicate vertex right on top of the first;
+// drop that duplicate before committing so the run doesn't end with a
+// zero-length final segment.
+canvas.addEventListener('dblclick', () => {
+  if(state.activePlanType!=='civil' || !conduitDraft) return;
+  if(conduitDraft.points.length < 2) return;
+  conduitDraft.points.pop();
+  finishConduitDraft();
 });
 
 // extra safety net: some mobile webviews honor touch-action inconsistently,
@@ -3630,6 +4205,47 @@ function detectWallsFromPlan(){
 function updateFloorBadge(){
   document.getElementById('floorBadge').textContent = '🏢 ' + currentFloor().name;
 }
+function updateCivilPlanBadge(){
+  document.getElementById('civilPlanBadge').textContent = '🚧 ' + currentCivilPlan().name;
+}
+// Switches the whole app between the rough-in floor plan and a civil/
+// underground-works plan. Deliberately resets ALL transient tool/selection
+// state on every switch (not just the civil side) — an electrical
+// selection or an in-progress conduit draft left over from before the
+// switch could otherwise reference something the other mode's UI no
+// longer shows, or (for a conduit draft) get orphaned by an undo that
+// happens while looking at the other mode.
+function setActivePlanType(type){
+  if(state.activePlanType === type) return;
+  cancelConduitDraft();
+  state.activePlanType = type;
+  document.documentElement.classList.toggle('civil-mode', type==='civil');
+  document.getElementById('civilModeToggle').classList.toggle('active', type==='civil');
+  state.activeTool = 'select';
+  state.selectedObjectId = null; state.selectedCableId = null;
+  state.multiSelectMode = false; state.multiSelectedIds.clear();
+  state.selectedPitId = null; state.selectedBuildingEntryId = null; state.selectedConduitId = null;
+  state.snapGuides = []; state.snapTarget = null;
+  setDeviceEditorActive(false);
+  document.getElementById('propsBody').innerHTML = type==='civil'
+    ? '<div class="empty-state">Select a pit, conduit, or building entry on the plan to see and edit its properties here.</div>'
+    : '<div class="empty-state">Select a device or cable on the plan to see and edit its properties here.</div>';
+  document.getElementById('propsTitle').textContent = 'Properties';
+  document.querySelectorAll('.dtb-btn[data-dtool]').forEach(b=>b.classList.toggle('active', b.dataset.dtool==='select'));
+  document.getElementById('railPlace').title = type==='civil' ? 'Civil tools (P)' : 'Place a device (P)';
+  const bbPlaceLbl = document.querySelector('#bbPlace .icon')?.nextSibling;
+  if(bbPlaceLbl) bbPlaceLbl.textContent = type==='civil' ? 'Civil' : 'Place';
+  updateImportPromptCopy();
+  updateCivilPlanBadge();
+  renderSymbolGrid();
+  updateScaleBadge();
+  setHint(null);
+  render();
+  markDirty();
+}
+document.getElementById('civilModeToggle').addEventListener('click', () => {
+  setActivePlanType(state.activePlanType==='civil' ? 'floor' : 'civil');
+});
 function renderFloors(){
   const el = document.getElementById('floorList');
   el.innerHTML = '';
@@ -3707,6 +4323,25 @@ function restoreSnapshot(entry){
   if(state.activeFloorIndex >= state.floors.length || state.activeFloorIndex < 0){
     state.activeFloorIndex = Math.max(0, state.floors.length - 1);
   }
+  // Same id-matching rebuild as floors above, for civil plans. d.civilPlans
+  // is absent on a history entry recorded before this feature existed —
+  // falls back to whatever civil plans already exist live (or a fresh one)
+  // rather than wiping them out just because an older snapshot predates them.
+  const liveCivilPlansById = new Map(state.civilPlans.map(cp => [cp.id, cp]));
+  state.civilPlans = d.civilPlans
+    ? d.civilPlans.map(saved => {
+        const live = liveCivilPlansById.get(saved.id);
+        return { ...saved, planImage: live ? live.planImage : null, view: live ? live.view : { zoom:1, offsetX:0, offsetY:0 } };
+      })
+    : state.civilPlans;
+  if(!state.civilPlans.length) state.civilPlans = [makeCivilPlan('Civil')];
+  if(state.activeCivilPlanIndex >= state.civilPlans.length || state.activeCivilPlanIndex < 0){
+    state.activeCivilPlanIndex = Math.max(0, state.civilPlans.length - 1);
+  }
+  // A conduit draft undone mid-draw could reference a pit/vertex that no
+  // longer exists after this restore — always drop it rather than risk
+  // that dangling reference.
+  cancelConduitDraft();
   state.layers = d.layers; state.circuits = d.circuits;
   // an isolate filter pointed at a circuit that existed later than this
   // snapshot would otherwise hide every device after undoing past its
@@ -3715,8 +4350,9 @@ function restoreSnapshot(entry){
     state.isolatedCircuitId = null;
   }
   state.selectedObjectId = null; state.selectedCableId = null;
+  state.selectedPitId = null; state.selectedBuildingEntryId = null; state.selectedConduitId = null;
   setDeviceEditorActive(false);
-  updateFloorBadge();
+  updateFloorBadge(); updateCivilPlanBadge();
   render(); renderSchedule(); updateQuote(); updateScaleBadge();
 }
 document.getElementById('btnUndo').addEventListener('click', () => {
@@ -3883,6 +4519,8 @@ function buildSymbolCategory(label, key, syms, collapsible){
   return wrap;
 }
 function renderSymbolGrid(){
+  if(state.activePlanType==='civil'){ return renderCivilPalette(); }
+  document.getElementById('sheetSymbolsTitle').textContent = 'Place a device';
   symbolGrid.innerHTML = '';
   const grouped = {};
   // Patch panel isn't placed as its own device -- it's derived from a
@@ -3908,6 +4546,64 @@ function renderSymbolGrid(){
   addEl.innerHTML = `<div class="sw" style="background:transparent; color:var(--text-dim); border:1px dashed var(--line);">+</div><div class="lbl">Add device</div>`;
   addEl.addEventListener('click', openCustomFittingModal);
   symbolGrid.appendChild(buildSymbolCategory('Custom', 'custom', [addEl], false));
+}
+// Civil mode's version of the "Place a device" palette — reuses the same
+// #symbolGrid/buildSymbolCategory building blocks, just with pit types,
+// a single building-entry card, and a conduit-size picker instead of
+// SYMBOL_LIBRARY.
+function renderCivilPalette(){
+  document.getElementById('sheetSymbolsTitle').textContent = 'Civil tools';
+  symbolGrid.innerHTML = '';
+
+  const pitCards = PIT_LIBRARY.map(t => {
+    const el = document.createElement('div');
+    el.className = 'symbol-card';
+    el.innerHTML = `<div class="sw" style="background:${t.color}22;color:${t.color};border:1px solid ${t.color}55;">${t.abbr}</div><div class="lbl">${t.label}</div>`;
+    el.addEventListener('click', () => civilPitCardClick(t));
+    return el;
+  });
+  symbolGrid.appendChild(buildSymbolCategory('Pits', 'civil_pits', pitCards, true));
+
+  const beCard = document.createElement('div');
+  beCard.className = 'symbol-card';
+  beCard.innerHTML = `<div class="sw" style="background:#38bdf822;color:#38bdf8;border:1px solid #38bdf855;">BE</div><div class="lbl">Building entry</div>`;
+  beCard.addEventListener('click', () => civilBuildingEntryCardClick());
+  symbolGrid.appendChild(buildSymbolCategory('Building entries', 'civil_be', [beCard], true));
+
+  const conduitCards = CONDUIT_SIZES.map(sz => {
+    const el = document.createElement('div');
+    el.className = 'symbol-card';
+    el.innerHTML = `<div class="sw" style="background:${sz.color}22;color:${sz.color};border:1px solid ${sz.color}55;">${sz.size.replace('mm','')}</div><div class="lbl">${sz.size} conduit</div>`;
+    el.addEventListener('click', () => civilConduitCardClick(sz));
+    return el;
+  });
+  symbolGrid.appendChild(buildSymbolCategory('Draw conduit', 'civil_conduit', conduitCards, true));
+}
+function civilPitCardClick(type){
+  exitMultiSelect();
+  cancelConduitDraft();
+  state.activePitTypeId = type.id;
+  state.activeTool = 'placePit';
+  document.querySelectorAll('.bb-btn').forEach(b=>b.classList.remove('active'));
+  setHint('Tap the plan to place a ' + type.label);
+  closeSheets();
+}
+function civilBuildingEntryCardClick(){
+  exitMultiSelect();
+  cancelConduitDraft();
+  state.activeTool = 'placeBuildingEntry';
+  document.querySelectorAll('.bb-btn').forEach(b=>b.classList.remove('active'));
+  setHint('Tap the plan to place a building service entry');
+  closeSheets();
+}
+function civilConduitCardClick(size){
+  exitMultiSelect();
+  cancelConduitDraft();
+  state.activeConduitSize = size;
+  state.activeTool = 'conduit';
+  document.querySelectorAll('.bb-btn').forEach(b=>b.classList.remove('active'));
+  setHint('Tap to start a ' + size.size + ' conduit run — click to add bends, click a pit/entry to finish there, Escape to cancel, Enter to finish unlinked');
+  closeSheets();
 }
 function openCustomFittingModal(){
   openFormModal('Add a custom fitting', [
@@ -4630,6 +5326,7 @@ document.getElementById('btnSavePdf').addEventListener('click', downloadPdfExpor
 // PROPERTIES SHEET
 // ===================================================================
 function openProps(id){
+  if(id && (id.startsWith('PIT-') || id.startsWith('BE-') || id.startsWith('CD-'))){ return openCivilProps(id); }
   state.selectedObjectId = id; render();
   setDeviceEditorActive(true);
   const obj = currentFloor().objects.find(o=>o.id===id);
@@ -4914,6 +5611,233 @@ function openProps(id){
     const del = document.getElementById('btnDeleteObj');
     if(del){ del.disabled = true; del.style.opacity = '0.4'; }
   }
+  openSheet('sheetProps');
+}
+
+// Civil mode's properties panel — reuses the SAME #sheetProps/#propsBody
+// DOM as the electrical openProps() above (see the dispatch at the top of
+// openProps), just populated differently depending on which kind of civil
+// entity id is passed in. This gets 100% of the existing docking/resize/
+// mobile-sheet CSS and JS for free.
+function openCivilProps(id){
+  if(id.startsWith('PIT-')) return openPitProps(id);
+  if(id.startsWith('BE-')) return openBuildingEntryProps(id);
+  if(id.startsWith('CD-')) return openConduitProps(id);
+}
+// Filled in fully once the conduit drawing tool exists — kept as a real,
+// callable stub rather than left undefined so nothing throws if reached
+// before then (it can't be reached yet: conduits[] stays empty).
+// Readable label for a conduit's endpoint — which pit/building-entry it's
+// linked to, or "Unlinked" if that end was left as a bare stub (a real,
+// legitimate state — not every run needs both ends tied off yet).
+function civilEndpointLabel(cd, end){
+  const plan = currentCivilPlan();
+  const pitId = end==='from' ? cd.fromPitId : cd.toPitId;
+  const beId = end==='from' ? cd.fromBuildingEntryId : cd.toBuildingEntryId;
+  if(pitId){
+    const p = plan.pits.find(x=>x.id===pitId);
+    if(!p) return 'Pit (deleted)';
+    const t = PIT_LIBRARY.find(x=>x.id===p.typeId);
+    return p.label || (t ? t.label : 'Pit');
+  }
+  if(beId){
+    const b = plan.buildingEntries.find(x=>x.id===beId);
+    return b ? (b.label || 'Building entry') : 'Building entry (deleted)';
+  }
+  return 'Unlinked';
+}
+function openConduitProps(id){
+  const plan = currentCivilPlan();
+  const cd = plan.conduits.find(c=>c.id===id);
+  if(!cd) return;
+  state.selectedConduitId = id; state.selectedPitId = null; state.selectedBuildingEntryId = null;
+  render();
+  setDeviceEditorActive(true);
+  const size = CONDUIT_SIZES.find(s=>s.id===cd.sizeId) || CONDUIT_SIZES[0];
+  document.getElementById('propsTitle').textContent = size.size + ' conduit';
+  const sizeOptions = CONDUIT_SIZES.map(s => `<option value="${s.id}" ${s.id===cd.sizeId?'selected':''}>${s.size}</option>`).join('');
+  const lenWorld = conduitLength(cd);
+  const lenLabel = plan.scale ? (lenWorld/plan.scale).toFixed(1)+' m' : Math.round(lenWorld)+' px — calibrate the plan for metres';
+  document.getElementById('propsBody').innerHTML = `
+    <div class="prop-row"><label>Conduit size</label><select id="cv_cd_size">${sizeOptions}</select></div>
+    <div class="prop-grid2">
+      <div class="prop-row"><label>From</label><input value="${civilEndpointLabel(cd,'from')}" disabled></div>
+      <div class="prop-row"><label>To</label><input value="${civilEndpointLabel(cd,'to')}" disabled></div>
+    </div>
+    <div class="prop-row"><label>Length</label><input value="${lenLabel}" disabled></div>
+    <div class="prop-row"><label>Points</label><span style="color:var(--text-dim); font-size:12px;">${cd.points.length} — right-click a point on the plan to insert/delete one</span></div>
+    <button class="danger-btn" id="btnDeleteConduit">Delete conduit</button>
+  `;
+  document.getElementById('cv_cd_size').addEventListener('change', (e) => {
+    cd.sizeId = e.target.value; pushHistory(); render(); markDirty(); openConduitProps(id);
+  });
+  document.getElementById('btnDeleteConduit').addEventListener('click', () => {
+    openConfirmModal('Delete this conduit?', 'This removes the whole run. Any pit or building entry it was linked to stays in place.', () => deleteConduit(id), 'Delete');
+  });
+  openSheet('sheetProps');
+}
+function deleteConduit(conduitId){
+  const plan = currentCivilPlan();
+  plan.conduits = plan.conduits.filter(c=>c.id!==conduitId);
+  if(state.selectedConduitId===conduitId){
+    state.selectedConduitId = null; setDeviceEditorActive(false); closeSheets();
+  }
+  pushHistory(); render(); markDirty();
+}
+function deleteConduitVertex(conduitId, vertexIndex){
+  const plan = currentCivilPlan();
+  const cd = plan.conduits.find(c=>c.id===conduitId);
+  if(!cd) return;
+  if(cd.points.length <= 2){ showToast('A conduit needs at least 2 points — delete the whole conduit instead'); return; }
+  if(vertexIndex===0){ cd.fromPitId = null; cd.fromBuildingEntryId = null; }
+  if(vertexIndex===cd.points.length-1){ cd.toPitId = null; cd.toBuildingEntryId = null; }
+  cd.points.splice(vertexIndex, 1);
+  pushHistory(); render(); markDirty();
+  if(state.selectedConduitId===conduitId) openConduitProps(conduitId);
+}
+function insertConduitVertex(conduitId, segmentIndex, world){
+  const plan = currentCivilPlan();
+  const cd = plan.conduits.find(c=>c.id===conduitId);
+  if(!cd) return;
+  const snapped = snapPointCivil(world, {});
+  cd.points.splice(segmentIndex+1, 0, { x:snapped.x, y:snapped.y });
+  state.snapGuides = []; state.snapTarget = null;
+  pushHistory(); render(); markDirty();
+  if(state.selectedConduitId===conduitId) openConduitProps(conduitId);
+}
+// Finishes the in-progress multi-click conduit draft (see conduitDraft) and
+// commits it as a real conduit. A degenerate near-zero-length result (e.g.
+// double-clicking the same spot without moving) is silently discarded
+// rather than saved as junk data.
+function finishConduitDraft(){
+  if(!conduitDraft){ return; }
+  if(conduitDraft.points.length < 2 || conduitLength(conduitDraft) < 2){
+    conduitDraft = null; conduitDraftHover = null; state.snapGuides = []; state.snapTarget = null; render();
+    return;
+  }
+  const cd = {
+    id: 'CD-'+String(state.nextId++).padStart(3,'0'),
+    points: conduitDraft.points,
+    sizeId: conduitDraft.sizeId,
+    fromPitId: conduitDraft.fromPitId || null,
+    fromBuildingEntryId: conduitDraft.fromBuildingEntryId || null,
+    toPitId: conduitDraft.toPitId || null,
+    toBuildingEntryId: conduitDraft.toBuildingEntryId || null,
+  };
+  currentCivilPlan().conduits.push(cd);
+  const sizeLabel = (CONDUIT_SIZES.find(s=>s.id===cd.sizeId)||{}).size || '';
+  conduitDraft = null; conduitDraftHover = null;
+  state.snapGuides = []; state.snapTarget = null;
+  state.selectedConduitId = cd.id; state.selectedPitId = null; state.selectedBuildingEntryId = null;
+  pushHistory(); render(); markDirty();
+  setHint('Conduit placed. Tap the plan to start another ' + sizeLabel + ' run, or press Escape/switch tools to stop.');
+}
+// Cancels an in-progress conduit draft without saving anything. Called from
+// Escape, from switching civil plans, from toggling out of civil mode, and
+// from undo — a stale draft referencing a pit/vertex that just got
+// undone/switched-away-from would otherwise be left dangling.
+function cancelConduitDraft(){
+  if(!conduitDraft) return;
+  conduitDraft = null; conduitDraftHover = null;
+  state.snapGuides = []; state.snapTarget = null;
+  setHint(null);
+  render();
+}
+function openPitProps(id){
+  const plan = currentCivilPlan();
+  const pit = plan.pits.find(p=>p.id===id);
+  if(!pit) return;
+  state.selectedPitId = id; state.selectedBuildingEntryId = null; state.selectedConduitId = null;
+  render();
+  setDeviceEditorActive(true);
+  const type = PIT_LIBRARY.find(t=>t.id===pit.typeId) || PIT_LIBRARY[0];
+  document.getElementById('propsTitle').textContent = pit.label || type.label;
+  const typeOptions = PIT_LIBRARY.map(t => `<option value="${t.id}" ${t.id===pit.typeId?'selected':''}>${t.label}</option>`).join('');
+  const linkedConduits = plan.conduits.filter(cd => cd.fromPitId===id || cd.toPitId===id);
+  const linkedHtml = linkedConduits.length
+    ? `<div class="prop-row"><label>Conduits connected here</label><div style="font-size:12.5px; color:var(--text);">${linkedConduits.length} conduit${linkedConduits.length===1?'':'s'} — ${linkedConduits.map(cd => (CONDUIT_SIZES.find(s=>s.id===cd.sizeId)||{}).size||'?').join(', ')}</div></div>`
+    : `<div class="prop-row"><label>Conduits connected here</label><span style="color:var(--text-dim); font-size:12px;">None yet — draw a conduit and end it on this pit</span></div>`;
+  document.getElementById('propsBody').innerHTML = `
+    <div class="prop-row"><label>Pit type</label><select id="cv_pit_type">${typeOptions}</select></div>
+    <div class="prop-row"><label>Label</label><input id="cv_pit_label" value="${pit.label||''}" placeholder="${type.label}"></div>
+    ${linkedHtml}
+    <div class="prop-grid2">
+      <div class="prop-row"><label>Material cost</label><input id="cv_pit_cost" type="number" step="0.01" value="${pit.props.material_cost}"></div>
+      <div class="prop-row"><label>Labour (hrs)</label><input id="cv_pit_labour" type="number" step="0.05" value="${pit.props.labour_hours}"></div>
+    </div>
+    <div class="prop-row"><label>Notes</label><textarea id="cv_pit_notes" placeholder="e.g. adjust to finished ground level">${pit.notes||''}</textarea></div>
+    <button class="add-btn" id="btnSavePit">💾 Save pit</button>
+    <button class="danger-btn" id="btnDeletePit">Delete pit</button>
+  `;
+  document.getElementById('cv_pit_type').addEventListener('change', (e) => {
+    const t = PIT_LIBRARY.find(x=>x.id===e.target.value); if(!t) return;
+    pit.typeId = t.id; pit.props.material_cost = t.defaultProps.material_cost; pit.props.labour_hours = t.defaultProps.labour_hours;
+    pushHistory(); render(); markDirty(); openPitProps(id);
+  });
+  document.getElementById('cv_pit_label').addEventListener('change', (e) => { pit.label = e.target.value.trim(); document.getElementById('propsTitle').textContent = pit.label || type.label; pushHistory(); markDirty(); });
+  document.getElementById('cv_pit_cost').addEventListener('change', (e) => { pit.props.material_cost = parseFloat(e.target.value)||0; pushHistory(); markDirty(); });
+  document.getElementById('cv_pit_labour').addEventListener('change', (e) => { pit.props.labour_hours = parseFloat(e.target.value)||0; pushHistory(); markDirty(); });
+  document.getElementById('cv_pit_notes').addEventListener('change', (e) => { pit.notes = e.target.value; pushHistory(); markDirty(); });
+  document.getElementById('btnSavePit').addEventListener('click', () => { showToast('Pit saved'); pushHistory(); markDirty(); });
+  document.getElementById('btnDeletePit').addEventListener('click', () => {
+    const affected = plan.conduits.filter(cd => cd.fromPitId===id || cd.toPitId===id);
+    const doDelete = () => {
+      affected.forEach(cd => { if(cd.fromPitId===id) cd.fromPitId=null; if(cd.toPitId===id) cd.toPitId=null; });
+      plan.pits = plan.pits.filter(p=>p.id!==id);
+      state.selectedPitId = null; setDeviceEditorActive(false); closeSheets(); pushHistory(); render(); markDirty();
+    };
+    if(affected.length){
+      openConfirmModal('Delete this pit?', affected.length+' conduit'+(affected.length===1?'':'s')+' will be unlinked from it (not deleted) — you can re-terminate them on another pit afterwards.', doDelete, 'Delete');
+    } else {
+      doDelete();
+    }
+  });
+  openSheet('sheetProps');
+}
+function openBuildingEntryProps(id){
+  const plan = currentCivilPlan();
+  const be = plan.buildingEntries.find(b=>b.id===id);
+  if(!be) return;
+  state.selectedBuildingEntryId = id; state.selectedPitId = null; state.selectedConduitId = null;
+  render();
+  setDeviceEditorActive(true);
+  document.getElementById('propsTitle').textContent = be.label || 'Building entry';
+  const serviceCheckboxes = BUILDING_ENTRY_SERVICE_TYPES.map(st => `
+    <label style="display:flex; align-items:center; gap:6px; font-size:12.5px; margin-bottom:4px;">
+      <input type="checkbox" class="cv_be_service" value="${st.id}" ${be.serviceTypes.includes(st.id)?'checked':''}> ${st.label}
+    </label>`).join('');
+  const linkedConduits = plan.conduits.filter(cd => cd.fromBuildingEntryId===id || cd.toBuildingEntryId===id);
+  const linkedHtml = linkedConduits.length
+    ? `<div class="prop-row"><label>Conduits connected here</label><div style="font-size:12.5px; color:var(--text);">${linkedConduits.length} conduit${linkedConduits.length===1?'':'s'}</div></div>`
+    : `<div class="prop-row"><label>Conduits connected here</label><span style="color:var(--text-dim); font-size:12px;">None yet</span></div>`;
+  document.getElementById('propsBody').innerHTML = `
+    <div class="prop-row"><label>Label</label><input id="cv_be_label" value="${be.label||''}" placeholder="e.g. Main switchboard entry"></div>
+    <div class="prop-row"><label>Services entering here</label>${serviceCheckboxes}</div>
+    ${linkedHtml}
+    <div class="prop-row"><label>Notes</label><textarea id="cv_be_notes" placeholder="e.g. core through slab, sleeve required">${be.notes||''}</textarea></div>
+    <button class="danger-btn" id="btnDeleteBuildingEntry">Delete building entry</button>
+  `;
+  document.getElementById('cv_be_label').addEventListener('change', (e) => { be.label = e.target.value.trim(); document.getElementById('propsTitle').textContent = be.label || 'Building entry'; pushHistory(); markDirty(); });
+  document.getElementById('cv_be_notes').addEventListener('change', (e) => { be.notes = e.target.value; pushHistory(); markDirty(); });
+  document.querySelectorAll('.cv_be_service').forEach(cb => {
+    cb.addEventListener('change', () => {
+      be.serviceTypes = Array.from(document.querySelectorAll('.cv_be_service:checked')).map(x=>x.value);
+      pushHistory(); render(); markDirty();
+    });
+  });
+  document.getElementById('btnDeleteBuildingEntry').addEventListener('click', () => {
+    const affected = plan.conduits.filter(cd => cd.fromBuildingEntryId===id || cd.toBuildingEntryId===id);
+    const doDelete = () => {
+      affected.forEach(cd => { if(cd.fromBuildingEntryId===id) cd.fromBuildingEntryId=null; if(cd.toBuildingEntryId===id) cd.toBuildingEntryId=null; });
+      plan.buildingEntries = plan.buildingEntries.filter(b=>b.id!==id);
+      state.selectedBuildingEntryId = null; setDeviceEditorActive(false); closeSheets(); pushHistory(); render(); markDirty();
+    };
+    if(affected.length){
+      openConfirmModal('Delete this building entry?', affected.length+' conduit'+(affected.length===1?'':'s')+' will be unlinked from it (not deleted).', doDelete, 'Delete');
+    } else {
+      doDelete();
+    }
+  });
   openSheet('sheetProps');
 }
 
@@ -5265,17 +6189,28 @@ async function handleFileImport(file){
     tmp.width = viewport.width; tmp.height = viewport.height;
     await page.render({ canvasContext: tmp.getContext('2d'), viewport }).promise;
     const img = new Image();
-    img.onload = () => { currentFloor().planImage = img; currentFloor().scale = null; updateScaleBadge(); fitToScreen(); };
+    img.onload = () => { currentPlan().planImage = img; currentPlan().scale = null; updateScaleBadge(); fitToScreen(); };
     img.src = tmp.toDataURL();
   } else {
     const reader = new FileReader();
     reader.onload = (ev) => {
       const img = new Image();
-      img.onload = () => { currentFloor().planImage = img; currentFloor().scale = null; updateScaleBadge(); fitToScreen(); };
+      img.onload = () => { currentPlan().planImage = img; currentPlan().scale = null; updateScaleBadge(); fitToScreen(); };
       img.src = ev.target.result;
     };
     reader.readAsDataURL(file);
   }
+}
+// The "no plan imported yet" overlay reads differently depending on mode --
+// a civil plan takes a SITE plan (property boundary/site survey), not an
+// architectural floor plan, and the two aren't the same document. Called on
+// mode toggle and civil-plan switch (see civilModeToggle below).
+function updateImportPromptCopy(){
+  const isCivil = state.activePlanType === 'civil';
+  document.getElementById('importPromptBig').textContent = isCivil ? 'No site plan imported yet' : 'No plan imported yet';
+  document.getElementById('importPromptSub').textContent = isCivil
+    ? "Import a site plan (survey, site image, or PDF) showing the property boundary and building footprint. Once it's in, use Calibrate to set real-world scale before placing pits and conduits."
+    : "Import an architectural PDF or image. Once it's in, use Calibrate to set real-world scale before placing devices.";
 }
 fileImport.addEventListener('change', (e) => handleFileImport(e.target.files[0]));
 fileImportCenter.addEventListener('change', (e) => handleFileImport(e.target.files[0]));
@@ -5291,7 +6226,7 @@ function loadPdfScript(){
 }
 function updateScaleBadge(){
   const el = document.getElementById('scale-badge');
-  const f = currentFloor();
+  const f = currentPlan();
   if(f.scale){
     el.innerHTML = '✓ Calibrated <span style="opacity:.65">· tap to redo</span>';
     el.classList.add('calibrated');
@@ -5320,6 +6255,7 @@ function buildProjectData(){
     id: state.currentProjectId,
     name: document.getElementById('projName').value,
     activeFloorIndex: state.activeFloorIndex,
+    activeCivilPlanIndex: state.activeCivilPlanIndex, activePlanType: state.activePlanType,
     customSymbols: state.customSymbols, symbolSize: state.symbolSize, gridOverlay: !!state.gridOverlay,
     priceListOverrides: SYMBOL_LIBRARY.map(s => ({ id:s.id, label:s.label, material_cost:s.defaultProps.material_cost, labour_hours:s.defaultProps.labour_hours, watts:s.defaultProps.watts })),
     boardMainSwitchAmps: state.boardMainSwitchAmps,
@@ -5331,6 +6267,12 @@ function buildProjectData(){
       objects: f.objects, cables: f.cables, dimensions: f.dimensions, switchLinks: f.switchLinks,
       walls: f.walls, rooms: f.rooms, bankNames: f.bankNames || {},
       planImageData: f.planImage ? f.planImage.src : null,
+    })),
+    civilPlans: state.civilPlans.map(cp => ({
+      id: cp.id, name: cp.name, scale: cp.scale, gridSpacingMM: cp.gridSpacingMM, snapEnabled: cp.snapEnabled,
+      gridOriginX: cp.gridOriginX || 0, gridOriginY: cp.gridOriginY || 0, gridVisible: cp.gridVisible !== false,
+      pits: cp.pits, conduits: cp.conduits, buildingEntries: cp.buildingEntries, dimensions: cp.dimensions,
+      planImageData: cp.planImage ? cp.planImage.src : null,
     })),
     layers: state.layers.filter(l => l.id !== 'cable'), circuits: state.circuits, elevations: state.elevations,
     rateLabour: document.getElementById('rateLabour').value, rateMargin: document.getElementById('rateMargin').value,
@@ -5600,6 +6542,42 @@ function buildProjectData(){
     e.preventDefault();
     const rect = canvas.getBoundingClientRect();
     const world = screenToWorld(e.clientX-rect.left, e.clientY-rect.top);
+
+    if(state.activePlanType==='civil'){
+      const plan = currentCivilPlan();
+      const selectedConduit = state.selectedConduitId ? plan.conduits.find(c=>c.id===state.selectedConduitId) : null;
+      const hitVertexIdx = selectedConduit ? hitTestConduitVertex(world, selectedConduit) : null;
+      const hitPit = (hitVertexIdx===null) ? hitTestPit(world) : null;
+      const hitBE = (hitVertexIdx===null && !hitPit) ? hitTestBuildingEntry(world) : null;
+      const hitSeg = (hitVertexIdx===null && !hitPit && !hitBE) ? hitTestConduitSegment(world) : null;
+      if(hitVertexIdx!==null){
+        openCtx(e.clientX, e.clientY, [
+          { label:'Delete this point', danger:true, action:() => deleteConduitVertex(selectedConduit.id, hitVertexIdx) },
+          { label:'Delete conduit', danger:true, action:() => deleteConduit(selectedConduit.id) },
+        ]);
+      } else if(hitPit){
+        openPitProps(hitPit.id); render();
+        openCtx(e.clientX, e.clientY, [
+          { label:'Delete pit', key:'Del', danger:true, action:() => document.getElementById('btnDeletePit')?.click() },
+        ]);
+      } else if(hitBE){
+        openBuildingEntryProps(hitBE.id); render();
+        openCtx(e.clientX, e.clientY, [
+          { label:'Delete building entry', key:'Del', danger:true, action:() => document.getElementById('btnDeleteBuildingEntry')?.click() },
+        ]);
+      } else if(hitSeg){
+        state.selectedConduitId = hitSeg.conduit.id; state.selectedPitId = null; state.selectedBuildingEntryId = null;
+        render();
+        openCtx(e.clientX, e.clientY, [
+          { label:'Insert point here', action:() => insertConduitVertex(hitSeg.conduit.id, hitSeg.segmentIndex, world) },
+          { label:'Delete conduit', key:'Del', danger:true, action:() => deleteConduit(hitSeg.conduit.id) },
+        ]);
+      } else {
+        closeCtx();
+      }
+      return;
+    }
+
     const hitObj = hitTestObject(world);
     const hitCable = !hitObj ? hitTestCable(world) : null;
     if(hitObj){
@@ -5795,6 +6773,9 @@ function applyLoadedProject(d){
   state.gridOverlay = !!d.gridOverlay;
   state.selectedObjectId = null;
   state.selectedCableId = null;
+  state.selectedPitId = null; state.selectedBuildingEntryId = null; state.selectedConduitId = null;
+  cancelConduitDraft();
+  dragPitId = null; dragBuildingEntryId = null; dragConduitVertex = null;
   // a circuit isolate filter left over from the previous project would
   // otherwise silently hide every device here, since none of them match
   // an id that doesn't exist in this project's circuits
@@ -5840,11 +6821,41 @@ function applyLoadedProject(d){
       img.src = fd.planImageData;
     } else resolve(floor);
   }));
-  Promise.all(floorPromises).then(floors => {
+  // Same reconstruction pattern as floors above (id defaults, field
+  // fallbacks for older saves, async planImage rehydration from a data
+  // URL) — a civil plan predating this feature simply doesn't exist in
+  // d.civilPlans yet, so it defaults to one fresh "Civil" plan exactly
+  // like a floor-less project defaults to one fresh "Ground Floor".
+  const civilPlanPromises = (d.civilPlans && d.civilPlans.length ? d.civilPlans : [{ name:'Civil' }]).map(cpd => new Promise(resolve => {
+    const plan = {
+      id: cpd.id || ('CP-'+Date.now()+Math.random()), name: cpd.name || 'Civil', scale: cpd.scale || null,
+      gridSpacingMM: cpd.gridSpacingMM || 1000, snapEnabled: cpd.snapEnabled !== false,
+      gridOriginX: cpd.gridOriginX || 0, gridOriginY: cpd.gridOriginY || 0, gridVisible: cpd.gridVisible !== false,
+      pits: cpd.pits || [], conduits: cpd.conduits || [], buildingEntries: cpd.buildingEntries || [], dimensions: cpd.dimensions || [],
+      planImage: null, view: { zoom:1, offsetX:0, offsetY:0 },
+    };
+    if(cpd.planImageData){
+      const img = new Image();
+      img.onload = () => { plan.planImage = img; resolve(plan); };
+      img.onerror = () => resolve(plan);
+      img.src = cpd.planImageData;
+    } else resolve(plan);
+  }));
+  Promise.all([Promise.all(floorPromises), Promise.all(civilPlanPromises)]).then(([floors, civilPlans]) => {
     state.floors = floors;
     state.activeFloorIndex = Math.min(d.activeFloorIndex || 0, state.floors.length - 1);
+    state.civilPlans = civilPlans;
+    state.activeCivilPlanIndex = Math.min(d.activeCivilPlanIndex || 0, state.civilPlans.length - 1);
     resyncNextId();
-    updateFloorBadge(); fitToScreen(); renderSchedule(); updateQuote(); updateScaleBadge(); renderLayersMobile();
+    updateFloorBadge(); updateCivilPlanBadge(); fitToScreen(); renderSchedule(); updateQuote(); updateScaleBadge(); renderLayersMobile();
+    // Restore which mode the project was last viewed in. setActivePlanType()
+    // no-ops when the target already matches state.activePlanType, so force
+    // the flag to 'floor' first (its always-valid default) whenever the
+    // saved mode was civil, ensuring the toggle actually runs and applies
+    // the civil-mode CSS class / palette / badge visibility correctly.
+    const wantCivil = d.activePlanType === 'civil';
+    state.activePlanType = wantCivil ? 'floor' : 'civil';
+    setActivePlanType(wantCivil ? 'civil' : 'floor');
     history = []; historyIndex = -1; pushHistory();
     clearTimeout(autosaveTimer);
     state.saveStatus = 'saved'; updateSaveStatusUI();
@@ -5874,6 +6885,7 @@ function resyncNextId(){
   });
   state.floors.forEach(f => { scan(f.objects); scan(f.cables); scan(f.dimensions); scan(f.walls); scan(f.rooms); });
   scan(state.elevations);
+  state.civilPlans.forEach(cp => { scan(cp.pits); scan(cp.conduits); scan(cp.buildingEntries); scan(cp.dimensions); });
   state.nextId = maxId + 1;
 }
 
