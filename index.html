@@ -1077,6 +1077,14 @@ html.force-desktop{
   <div class="sheet-header"><div class="sheet-title">More tools</div><div class="sheet-close" data-close>✕</div></div>
   <div class="sheet-body">
     <div class="tool-group">
+      <div class="tool-group-label">Civil / underground works</div>
+      <div class="tool-row">
+        <div class="tool-card" id="moreCivilToggle"><span class="icon">🚧</span><span class="lbl" id="moreCivilToggleLbl">Switch to civil plan</span></div>
+        <div class="tool-card civil-only" id="moreCivilPlans"><span class="icon">🗺</span><span class="lbl">Civil plans</span></div>
+        <div class="tool-card civil-only" id="moreCivilMaterials"><span class="icon">🧱</span><span class="lbl">Civil materials</span></div>
+      </div>
+    </div>
+    <div class="tool-group civil-hide">
       <div class="tool-group-label">Draw</div>
       <div class="tool-row">
         <div class="tool-card" id="moreCable"><span class="icon">╱</span><span class="lbl">Cable route</span></div>
@@ -1088,7 +1096,7 @@ html.force-desktop{
         <div class="tool-card hidden-feature" id="moreWall"><span class="icon">▬</span><span class="lbl">Mark wall</span></div>
       </div>
     </div>
-    <div class="tool-group">
+    <div class="tool-group civil-hide">
       <div class="tool-group-label">Layout</div>
       <div class="tool-row">
         <div class="tool-card" id="moreFloors"><span class="icon">🏢</span><span class="lbl">Floors</span></div>
@@ -1099,7 +1107,7 @@ html.force-desktop{
         <div class="tool-card" id="moreGrid"><span class="icon">▦</span><span class="lbl">Grid &amp; snap</span></div>
       </div>
     </div>
-    <div class="tool-group">
+    <div class="tool-group civil-hide">
       <div class="tool-group-label">Circuits &amp; costs</div>
       <div class="tool-row">
         <div class="tool-card" id="moreCircuits"><span class="icon">⏚</span><span class="lbl">Circuits</span></div>
@@ -1114,12 +1122,15 @@ html.force-desktop{
       <div class="tool-group-label">Manage</div>
       <div class="tool-row">
         <div class="tool-card" id="moreVersions"><span class="icon">🕐</span><span class="lbl">History</span></div>
-        <div class="tool-card" id="moreDuplicates"><span class="icon">🧹</span><span class="lbl">Find duplicates</span></div>
+        <div class="tool-card civil-hide" id="moreDuplicates"><span class="icon">🧹</span><span class="lbl">Find duplicates</span></div>
       </div>
     </div>
-    <div class="tool-row">
+    <div class="tool-row civil-hide">
       <div class="tool-card" id="moreCommsRacks"><span class="icon">🗄</span><span class="lbl">Comms racks</span></div>
       <div class="tool-card" id="moreReportProblem"><span class="icon">🚩</span><span class="lbl">Report a problem</span></div>
+    </div>
+    <div class="tool-row civil-only">
+      <div class="tool-card" id="moreReportProblemCivil"><span class="icon">🚩</span><span class="lbl">Report a problem</span></div>
     </div>
     <div class="tool-row">
       <div class="tool-card" id="morePrintExport"><span class="icon">🖨</span><span class="lbl">Print / PDF export</span></div>
@@ -3798,7 +3809,14 @@ document.getElementById('quoteSummaryToggle').addEventListener('click', () => {
 document.getElementById('moreCircuits').addEventListener('click', () => { renderCircuits(); openSheet('sheetCircuits'); });
 document.getElementById('moreCommsRacks').addEventListener('click', () => { renderCommsRacksSheet(); openSheet('sheetCommsRacks'); });
 document.getElementById('moreReportProblem').addEventListener('click', () => { closeSheets(); openReportProblemForm(); });
+document.getElementById('moreReportProblemCivil').addEventListener('click', () => { closeSheets(); openReportProblemForm(); });
 document.getElementById('dtbReportProblem').addEventListener('click', openReportProblemForm);
+document.getElementById('moreCivilToggle').addEventListener('click', () => {
+  closeSheets();
+  setActivePlanType(state.activePlanType==='civil' ? 'floor' : 'civil');
+});
+document.getElementById('moreCivilPlans').addEventListener('click', () => { renderCivilPlans(); openSheet('sheetCivilPlans'); });
+document.getElementById('moreCivilMaterials').addEventListener('click', () => { updateCivilQuote(); openSheet('sheetCivilMaterials'); });
 document.getElementById('moreElevation').addEventListener('click', () => { renderElevationSelect(); openSheet('sheetElevation'); });
 document.getElementById('moreFloors').addEventListener('click', () => { renderFloors(); openSheet('sheetFloors'); });
 document.getElementById('moreGrid').addEventListener('click', () => { openGridSheet(); openSheet('sheetGrid'); });
@@ -4264,6 +4282,7 @@ function setActivePlanType(type){
   document.getElementById('propsTitle').textContent = 'Properties';
   document.querySelectorAll('.dtb-btn[data-dtool]').forEach(b=>b.classList.toggle('active', b.dataset.dtool==='select'));
   document.getElementById('railPlace').title = type==='civil' ? 'Civil tools (P)' : 'Place a device (P)';
+  document.getElementById('moreCivilToggleLbl').textContent = type==='civil' ? 'Switch to rough-in plan' : 'Switch to civil plan';
   const bbPlaceLbl = document.querySelector('#bbPlace .icon')?.nextSibling;
   if(bbPlaceLbl) bbPlaceLbl.textContent = type==='civil' ? 'Civil' : 'Place';
   updateImportPromptCopy();
@@ -6694,6 +6713,9 @@ function buildProjectData(){
     { label:'Measure tool', keywords:'measure distance', shortcut:'M', action:() => runTool('measure') },
     { label:'Link switch tool', keywords:'link switch light', shortcut:'K', action:() => runTool('link') },
     { label:'Calibrate', keywords:'calibrate scale', shortcut:'C', action:() => runTool('calibrate') },
+    { label:'Switch civil / rough-in plan', keywords:'civil underground pits conduit rough-in toggle mode', action:() => document.getElementById('civilModeToggle')?.click() },
+    { label:'Civil plans', keywords:'civil underground plans switch', action:() => { renderCivilPlans(); openSheet('sheetCivilPlans'); } },
+    { label:'Civil materials', keywords:'civil underground pit conduit materials cost takeoff', action:() => { updateCivilQuote(); openSheet('sheetCivilMaterials'); } },
     { label:'Layers', keywords:'layers visibility', shortcut:'L', action:() => { document.getElementById('railLayers')?.click(); document.getElementById('bbLayers')?.click(); } },
     { label:'Cable route', keywords:'cable route wire', action:() => document.getElementById('moreCable')?.click() },
     { label:'Grid & snap', keywords:'grid snap', action:() => { openGridSheet(); openSheet('sheetGrid'); } },
