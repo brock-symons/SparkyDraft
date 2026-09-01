@@ -2530,6 +2530,18 @@ function drawGrid(overlay){
   }
 }
 function fitToScreen(){
+  // Civil mode always has a content-based fallback (fitViewToContentCivil
+  // already branches on plan.planImage internally) — a civil plan with no
+  // background image still has pits/conduits/etc. worth fitting to, unlike
+  // a bare floor with nothing imported yet, so this doesn't just no-op the
+  // way it used to (that was the whole "Fit does nothing / zoom feels
+  // stuck" bug in civil mode before any image was uploaded).
+  if(state.activePlanType==='civil'){
+    const plan = currentPlan();
+    fitViewToContentCivil(plan);
+    render(); document.getElementById('zoom-badge').textContent = Math.round(plan.view.zoom*100)+'%';
+    return;
+  }
   if(!currentPlan().planImage) return;
   const margin=30;
   const sX=(canvas.width-margin*2)/currentPlan().planImage.width, sY=(canvas.height-margin*2)/currentPlan().planImage.height;
@@ -3031,7 +3043,12 @@ canvas.addEventListener('wheel', (e) => {
   const sx = e.clientX-rect.left, sy = e.clientY-rect.top;
   const worldBefore = screenToWorld(sx, sy);
   const factor = e.deltaY < 0 ? 1.12 : 1/1.12;
-  const v = currentFloor().view;
+  // Was hardcoded to currentFloor() — harmless in floor mode (they're the
+  // same object) but silently zoomed the wrong, off-screen floor's view
+  // instead of the visible civil plan whenever this ran in civil mode,
+  // making wheel-zoom look completely dead there. Pinch-zoom (below) was
+  // already fixed to use currentPlan(); this brings wheel-zoom in line.
+  const v = currentPlan().view;
   v.zoom = Math.max(0.1, Math.min(8, v.zoom*factor));
   const worldAfter = screenToWorld(sx, sy);
   v.offsetX += (worldAfter.x - worldBefore.x) * v.zoom;
@@ -5268,9 +5285,27 @@ function fitViewToContent(floor){
   floor.view.offsetX = (canvas.width - (minX+maxX)*floor.view.zoom)/2;
   floor.view.offsetY = (canvas.height - (minY+maxY)*floor.view.zoom)/2;
 }
-// Same auto-fit logic as fitViewToContent() above, but bounding pits and
-// building entries instead of floor.objects — a civil plan has no
-// equivalent of .objects, so this isn't a simple parameter swap.
+// Bounding box over everything actually placed on a civil plan — pits,
+// building entries, poles, and every conduit/overhead-run vertex. Shared
+// by fitViewToContentCivil() (print/export auto-fit) and fitToScreen()'s
+// live Fit button, so the two never drift apart. (plan.poles/
+// plan.overheadRuns are guarded with `||[]` since older saves/undo
+// snapshots predating those fields won't have them.) Returns null if
+// there's nothing placed yet.
+function civilContentBounds(plan){
+  const points = [
+    ...plan.pits, ...plan.buildingEntries, ...(plan.poles||[]),
+    ...plan.conduits.flatMap(cd=>cd.points), ...(plan.overheadRuns||[]).flatMap(r=>r.points),
+  ];
+  if(!points.length) return null;
+  let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;
+  points.forEach(p => { minX=Math.min(minX,p.x); minY=Math.min(minY,p.y); maxX=Math.max(maxX,p.x); maxY=Math.max(maxY,p.y); });
+  return { minX, minY, maxX, maxY };
+}
+// Same auto-fit logic as fitViewToContent() above, but bounding pits/
+// buildingEntries/poles/conduits/overheadRuns instead of floor.objects —
+// a civil plan has no equivalent of .objects, so this isn't a simple
+// parameter swap.
 function fitViewToContentCivil(plan){
   const margin = 30;
   if(plan.planImage){
@@ -5280,15 +5315,13 @@ function fitViewToContentCivil(plan){
     plan.view.offsetY = (canvas.height - plan.planImage.height*plan.view.zoom)/2;
     return;
   }
-  const points = [...plan.pits, ...plan.buildingEntries, ...plan.conduits.flatMap(cd=>cd.points)];
-  if(!points.length){ plan.view.zoom = 1; plan.view.offsetX = canvas.width/2; plan.view.offsetY = canvas.height/2; return; }
-  let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;
-  points.forEach(p => { minX=Math.min(minX,p.x); minY=Math.min(minY,p.y); maxX=Math.max(maxX,p.x); maxY=Math.max(maxY,p.y); });
-  const w = Math.max(maxX-minX, 200), h = Math.max(maxY-minY, 200);
+  const bounds = civilContentBounds(plan);
+  if(!bounds){ plan.view.zoom = 1; plan.view.offsetX = canvas.width/2; plan.view.offsetY = canvas.height/2; return; }
+  const w = Math.max(bounds.maxX-bounds.minX, 200), h = Math.max(bounds.maxY-bounds.minY, 200);
   const sX = (canvas.width-margin*2)/w, sY = (canvas.height-margin*2)/h;
   plan.view.zoom = Math.min(sX,sY,4);
-  plan.view.offsetX = (canvas.width - (minX+maxX)*plan.view.zoom)/2;
-  plan.view.offsetY = (canvas.height - (minY+maxY)*plan.view.zoom)/2;
+  plan.view.offsetX = (canvas.width - (bounds.minX+bounds.maxX)*plan.view.zoom)/2;
+  plan.view.offsetY = (canvas.height - (bounds.minY+bounds.maxY)*plan.view.zoom)/2;
 }
 // Legend for a civil plan's print/PDF page — pit types (by count), the
 // same conduit-metreage-by-size breakdown as the Civil Materials sheet,
