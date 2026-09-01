@@ -1027,12 +1027,28 @@ html.force-desktop{
     <div class="quote-line"><span>Margin</span><span id="qMargin">$0.00</span></div>
     <div class="quote-line"><span>GST (10%)</span><span id="qGst">$0.00</span></div>
     <div class="quote-line total"><span>Total</span><span id="qTotal">$0.00</span></div>
+    <div class="quote-line" style="margin-top:4px; font-size:11.5px; color:var(--text-dim);"><span>+ Civil (see Civil materials)</span><span id="qCivilTotal">$0.00</span></div>
     <div style="font-size:10.5px; color:var(--text-dim); margin-top:8px;">* = device has a price override, not using the product default</div>
     <button class="add-btn" id="btnExportQuote" style="background:var(--panel2); border-color:var(--line); color:var(--text);">📋 Export summary (copy text)</button>
     <div class="prop-row" style="margin-top:10px;"><label>Itemized (one row per device)</label>
       <div class="toggle" id="quoteSummaryToggle"><div class="knob"></div></div>
     </div>
     <table><thead><tr><th>ID</th><th>Type</th><th>Floor</th><th>Qty</th><th>Total</th></tr></thead><tbody id="scheduleBody"></tbody></table>
+  </div>
+</div>
+
+<div class="sheet" id="sheetCivilMaterials">
+  <div class="sheet-handle"></div>
+  <div class="sheet-header"><div class="sheet-title">Civil materials</div><div class="sheet-close" data-close>✕</div></div>
+  <div class="sheet-body">
+    <div style="font-size:11.5px; color:var(--text-dim); margin-bottom:10px;">Kept separate from the electrical Quote — this is the pits/conduit/building-entry takeoff for the civil plan(s) on this project.</div>
+    <table><thead><tr><th>Pit type</th><th>Qty</th><th>$ each</th><th>Total</th></tr></thead><tbody id="civilPitsBody"></tbody></table>
+    <table style="margin-top:12px;"><thead><tr><th>Conduit size</th><th>Metres</th><th>$/m</th><th>Total</th></tr></thead><tbody id="civilConduitsBody"></tbody></table>
+    <div class="quote-line" style="margin-top:10px;"><span>Building entries</span><span id="civilBuildingEntryCount">0</span></div>
+    <div class="quote-line"><span>Materials</span><span id="civilMaterialsTotal">$0.00</span></div>
+    <div class="quote-line"><span>Labour</span><span id="civilLabourTotal">$0.00</span></div>
+    <div class="quote-line total"><span>Civil total</span><span id="civilGrandTotal">$0.00</span></div>
+    <div id="civilUncalibratedNote" style="font-size:10.5px; color:var(--amber); margin-top:8px;"></div>
   </div>
 </div>
 
@@ -1136,6 +1152,16 @@ html.force-desktop{
   <div class="sheet-body">
     <div id="floorList"></div>
     <button class="add-btn" id="btnAddFloor">+ New floor</button>
+  </div>
+</div>
+
+<div class="sheet" id="sheetCivilPlans">
+  <div class="sheet-handle"></div>
+  <div class="sheet-header"><div class="sheet-title">Civil plans</div><div class="sheet-close" data-close>✕</div></div>
+  <div class="sheet-body">
+    <div style="font-size:11.5px; color:var(--text-dim); margin-bottom:10px;">Separate underground-works plans for this address — e.g. electrical services vs stormwater — each with its own site plan image and takeoff.</div>
+    <div id="civilPlanList"></div>
+    <button class="add-btn" id="btnAddCivilPlan">+ New civil plan</button>
   </div>
 </div>
 
@@ -1262,6 +1288,10 @@ html.force-desktop{
 <div id="printView">
   <div id="printViewBar">
     <div class="pv-title">Print / PDF export</div>
+    <div class="pv-toggle-row" style="display:flex; align-items:center; gap:6px; margin:0 10px;">
+      <span style="font-size:11.5px; color:var(--text-dim);">Include civil plan pages</span>
+      <div class="toggle" id="includeCivilToggle"><div class="knob"></div></div>
+    </div>
     <button class="pv-btn" id="btnDoPrint">🖨 Print</button>
     <button class="pv-btn" id="btnSavePdf">⬇ Save as PDF</button>
     <button class="pv-btn pv-close" id="btnClosePrintView">✕ Close</button>
@@ -1556,6 +1586,7 @@ let state = {
   selectedPitId:null, selectedBuildingEntryId:null, selectedConduitId:null,
   activePitTypeId: PIT_LIBRARY[0].id, activeBuildingEntryServiceTypes:['power'],
   activeConduitSize: CONDUIT_SIZES[3], // 40mm default — a common general-purpose underground size
+  includeCivilInExport: true, // "Include civil plan pages" toggle in Print/PDF export — on by default once civil content exists
 };
 // Product default price + object-level override (section 17-18 of the
 // revision brief). If no override, always resolve to the CURRENT product
@@ -3540,7 +3571,7 @@ document.getElementById('multiAssignSwitch').addEventListener('click', () => {
 // BOTTOM TOOLBAR + SHEETS
 // ===================================================================
 const backdrop = document.getElementById('backdrop');
-const sheets = ['sheetSymbols','sheetLayers','sheetProps','sheetQuote','sheetMore','sheetCableSize','sheetCircuits','sheetElevation','sheetFloors','sheetExport','sheetGrid','sheetAssignSwitch','sheetPriceList','sheetVersions','sheetRooms','sheetDuplicates','sheetAccount','sheetSaveOptions','sheetOrg','sheetPanelSchedule','sheetCommsRacks','sheetProjectAccess'].map(id=>document.getElementById(id));
+const sheets = ['sheetSymbols','sheetLayers','sheetProps','sheetQuote','sheetMore','sheetCableSize','sheetCircuits','sheetElevation','sheetFloors','sheetExport','sheetGrid','sheetAssignSwitch','sheetPriceList','sheetVersions','sheetRooms','sheetDuplicates','sheetAccount','sheetSaveOptions','sheetOrg','sheetPanelSchedule','sheetCommsRacks','sheetProjectAccess','sheetCivilMaterials','sheetCivilPlans'].map(id=>document.getElementById(id));
 function closeSheets(){ sheets.forEach(s=>{ s.classList.remove('open'); if(s._resetSheetSize) s._resetSheetSize(); }); backdrop.classList.remove('open'); }
 // Layers/Symbols/Properties are permanently docked side panels on desktop
 // (not floating dialogs), so the backdrop shouldn't cover the canvas for
@@ -4296,6 +4327,62 @@ document.getElementById('btnAddFloor').addEventListener('click', () => {
     showToast('Added "' + vals.name + '" — import its plan next');
   }, 'Add floor');
 });
+// Civil plans list — same add/rename/delete/switch pattern as renderFloors()
+// above, just for state.civilPlans. A project always keeps at least one,
+// same "can't delete the last one" guard as floors.
+function renderCivilPlans(){
+  const el = document.getElementById('civilPlanList');
+  el.innerHTML = '';
+  state.civilPlans.forEach((cp, idx) => {
+    const row = document.createElement('div');
+    row.className = 'floor-row' + (idx===state.activeCivilPlanIndex ? ' active' : '');
+    row.innerHTML = `
+      <div class="factive-dot"></div>
+      <div class="fname">${cp.name}</div>
+      <div class="lock-btn" data-rename-civil="${idx}">✎</div>
+      <div class="lock-btn" data-del-civil="${idx}">🗑</div>
+    `;
+    row.querySelector('.fname').addEventListener('click', () => {
+      state.activeCivilPlanIndex = idx;
+      cancelConduitDraft();
+      state.selectedPitId = null; state.selectedBuildingEntryId = null; state.selectedConduitId = null;
+      setDeviceEditorActive(false);
+      updateCivilPlanBadge(); updateScaleBadge(); render();
+      closeSheets();
+      markDirty();
+    });
+    el.appendChild(row);
+  });
+  el.querySelectorAll('[data-rename-civil]').forEach(b => b.addEventListener('click', () => {
+    const idx = parseInt(b.dataset.renameCivil, 10);
+    openFormModal('Rename civil plan', [{ id:'name', label:'Plan name', type:'text', value:state.civilPlans[idx].name }], (vals) => {
+      if(!vals.name) return;
+      state.civilPlans[idx].name = vals.name;
+      if(idx===state.activeCivilPlanIndex) updateCivilPlanBadge();
+      renderCivilPlans(); markDirty();
+    }, 'Rename');
+  }));
+  el.querySelectorAll('[data-del-civil]').forEach(b => b.addEventListener('click', () => {
+    const idx = parseInt(b.dataset.delCivil, 10);
+    if(state.civilPlans.length <= 1){ showToast('A project needs at least one civil plan'); return; }
+    openConfirmModal('Delete "' + state.civilPlans[idx].name + '"?', 'All pits, conduits, and building entries on this civil plan will be deleted.', () => {
+      state.civilPlans.splice(idx, 1);
+      if(state.activeCivilPlanIndex >= state.civilPlans.length) state.activeCivilPlanIndex = state.civilPlans.length - 1;
+      else if(idx < state.activeCivilPlanIndex) state.activeCivilPlanIndex--;
+      updateCivilPlanBadge(); updateScaleBadge(); render(); renderCivilPlans(); markDirty();
+    });
+  }));
+}
+document.getElementById('btnAddCivilPlan').addEventListener('click', () => {
+  openFormModal('New civil plan', [{ id:'name', label:'Plan name', type:'text', value:'Civil ' + (state.civilPlans.length+1) }], (vals) => {
+    if(!vals.name) return;
+    state.civilPlans.push(makeCivilPlan(vals.name));
+    state.activeCivilPlanIndex = state.civilPlans.length - 1;
+    updateCivilPlanBadge(); updateScaleBadge(); render(); renderCivilPlans(); markDirty();
+    showToast('Added "' + vals.name + '" — import its site plan next');
+  }, 'Add civil plan');
+});
+document.getElementById('civilPlanBadge').addEventListener('click', () => { renderCivilPlans(); openSheet('sheetCivilPlans'); });
 
 // ===================================================================
 // UNDO / REDO
@@ -5133,6 +5220,68 @@ function fitViewToContent(floor){
   floor.view.offsetX = (canvas.width - (minX+maxX)*floor.view.zoom)/2;
   floor.view.offsetY = (canvas.height - (minY+maxY)*floor.view.zoom)/2;
 }
+// Same auto-fit logic as fitViewToContent() above, but bounding pits and
+// building entries instead of floor.objects — a civil plan has no
+// equivalent of .objects, so this isn't a simple parameter swap.
+function fitViewToContentCivil(plan){
+  const margin = 30;
+  if(plan.planImage){
+    const sX = (canvas.width-margin*2)/plan.planImage.width, sY = (canvas.height-margin*2)/plan.planImage.height;
+    plan.view.zoom = Math.min(sX,sY,4);
+    plan.view.offsetX = (canvas.width - plan.planImage.width*plan.view.zoom)/2;
+    plan.view.offsetY = (canvas.height - plan.planImage.height*plan.view.zoom)/2;
+    return;
+  }
+  const points = [...plan.pits, ...plan.buildingEntries, ...plan.conduits.flatMap(cd=>cd.points)];
+  if(!points.length){ plan.view.zoom = 1; plan.view.offsetX = canvas.width/2; plan.view.offsetY = canvas.height/2; return; }
+  let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;
+  points.forEach(p => { minX=Math.min(minX,p.x); minY=Math.min(minY,p.y); maxX=Math.max(maxX,p.x); maxY=Math.max(maxY,p.y); });
+  const w = Math.max(maxX-minX, 200), h = Math.max(maxY-minY, 200);
+  const sX = (canvas.width-margin*2)/w, sY = (canvas.height-margin*2)/h;
+  plan.view.zoom = Math.min(sX,sY,4);
+  plan.view.offsetX = (canvas.width - (minX+maxX)*plan.view.zoom)/2;
+  plan.view.offsetY = (canvas.height - (minY+maxY)*plan.view.zoom)/2;
+}
+// Legend for a civil plan's print/PDF page — pit types (by count), the
+// same conduit-metreage-by-size breakdown as the Civil Materials sheet,
+// and a building-entry count. Not a reuse of computeLegendEntries() above
+// (that walks floor.objects against SYMBOL_LIBRARY, which doesn't apply
+// to pits/conduits/buildingEntries at all).
+function computeCivilLegendEntries(plan){
+  const pitEntries = [...new Set(plan.pits.map(p=>p.typeId))].map(typeId => {
+    const type = PIT_LIBRARY.find(t=>t.id===typeId);
+    return { kind:'pit', color: type?type.color:'#94a3b8', abbr: type?type.abbr:'?', label: type?type.label:typeId, count: plan.pits.filter(p=>p.typeId===typeId).length };
+  });
+  const conduitEntries = [...new Set(plan.conduits.map(cd=>cd.sizeId))].map(sizeId => {
+    const size = CONDUIT_SIZES.find(s=>s.id===sizeId);
+    const cds = plan.conduits.filter(cd=>cd.sizeId===sizeId);
+    const lenWorld = cds.reduce((s,cd)=>s+conduitLength(cd), 0);
+    const lenM = plan.scale ? lenWorld/plan.scale : null;
+    return { kind:'conduit', color: size?size.color:'#f97316', abbr: size?size.size.replace('mm',''):'?', label: (size?size.size:sizeId) + ' conduit', count: cds.length, lengthM: lenM };
+  });
+  const beCount = plan.buildingEntries.length;
+  const beEntry = beCount ? [{ kind:'buildingEntry', color:'#38bdf8', abbr:'BE', label:'Building entry', count:beCount }] : [];
+  return [...pitEntries, ...conduitEntries, ...beEntry];
+}
+// Mirrors captureFloorSnapshot() below exactly, but for a civil plan.
+// render()'s dispatch now depends on state.activePlanType, which
+// captureFloorSnapshot() never had to manage — this must save AND restore
+// that flag (not just activeCivilPlanIndex/view) or a page captured mid-
+// export would render the wrong mode's content, or leave the live editing
+// session stuck showing the wrong canvas afterward.
+function captureCivilPlanSnapshot(civilIndex){
+  const plan = state.civilPlans[civilIndex];
+  const savedView = { ...plan.view };
+  const savedPlanType = state.activePlanType;
+  state.activePlanType = 'civil';
+  state.activeCivilPlanIndex = civilIndex;
+  fitViewToContentCivil(plan);
+  render();
+  const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
+  plan.view = savedView;
+  state.activePlanType = savedPlanType;
+  return dataUrl;
+}
 // Renders one floor onto the real plan canvas (temporarily, at export
 // resolution, with a white background) and returns a PNG data URL.
 // Everything mutated here -- canvas size, that floor's view, selection/
@@ -5162,6 +5311,7 @@ function captureFloorSnapshot(floorIndex){
 let printPagesData = [];
 function openPrintView(){
   const savedFloorIndex = state.activeFloorIndex;
+  const savedCivilPlanIndex = state.activeCivilPlanIndex;
   const savedSelected = state.selectedObjectId, savedMulti = state.multiSelectedIds, savedMultiMode = state.multiSelectMode;
   const savedCanvasW = canvas.width, savedCanvasH = canvas.height;
   const savedShowCircuitLabels = state.showCircuitLabels;
@@ -5185,33 +5335,60 @@ function openPrintView(){
     const entries = computeLegendEntries(floor);
     const total = entries.reduce((s,e) => s+e.count, 0);
     const hasContent = !!(floor.planImage || floor.objects.length);
-    return { floorName: floor.name, calibrated: !!floor.scale, imgSrc, hasContent, entries, total };
+    return { kind:'floor', floorName: floor.name, calibrated: !!floor.scale, imgSrc, hasContent, entries, total };
   });
+  // "Include civil plan pages" — see the toggle in #printViewBar. When on,
+  // every civil plan gets its own page appended after the rough-in floor
+  // pages, feeding the exact same printPagesData/downloadPdfExport pipeline
+  // — this is what lets a combined PDF ("a full file of plans for that
+  // address") include both, or the toggle can be switched off to export
+  // rough-in only.
+  if(state.includeCivilInExport){
+    state.civilPlans.forEach((plan, i) => {
+      const imgSrc = captureCivilPlanSnapshot(i);
+      const entries = computeCivilLegendEntries(plan);
+      const total = entries.reduce((s,e) => s+e.count, 0);
+      const hasContent = !!(plan.planImage || plan.pits.length || plan.conduits.length || plan.buildingEntries.length);
+      printPagesData.push({ kind:'civil', floorName: plan.name, calibrated: !!plan.scale, imgSrc, hasContent, entries, total });
+    });
+  }
   const pagesHtml = printPagesData.map(p => {
-    const legendRows = p.entries.map(e => `
-      <tr>
+    const legendRows = p.entries.map(e => {
+      if(p.kind==='civil'){
+        const lenLabel = e.kind==='conduit' ? (e.lengthM!=null ? ' — ' + e.lengthM.toFixed(1)+'m' : ' — not calibrated') : '';
+        return `<tr>
+          <td><span class="pl-swatch" style="background:${e.color};">${e.abbr}</span>${e.label}${lenLabel}</td>
+          <td class="pl-qty">× ${e.count}</td>
+        </tr>`;
+      }
+      return `<tr>
         <td><span class="pl-swatch" style="background:${e.sym.color};">${e.gang ? e.gang+'G' : e.sym.abbr}</span>${e.sym.label}${e.gang ? ' — '+e.gang+' gang' : ''}</td>
         <td class="pl-qty">× ${e.count}</td>
-      </tr>`).join('');
+      </tr>`;
+    }).join('');
+    const totalLabel = p.kind==='civil' ? (p.total+' item'+(p.total===1?'':'s')+' total') : (p.total+' device'+(p.total===1?'':'s')+' total');
+    const emptyLabel = p.kind==='civil' ? 'Nothing placed on this civil plan yet.' : 'Nothing placed on this floor yet.';
     return `
       <div class="print-page">
         <div class="print-page-header">
-          <div class="ph-name">${projName} — ${p.floorName}</div>
+          <div class="ph-name">${projName} — ${p.floorName}${p.kind==='civil' ? ' (Civil)' : ''}</div>
           <div class="ph-meta">${dateStr}${p.calibrated ? '<br>Calibrated' : '<br>Not calibrated'}</div>
         </div>
         <div class="print-page-body">
-          <div class="print-plan-col">${p.hasContent ? `<img src="${p.imgSrc}">` : '<span class="pv-empty">Nothing on this floor yet</span>'}</div>
+          <div class="print-plan-col">${p.hasContent ? `<img src="${p.imgSrc}">` : `<span class="pv-empty">${emptyLabel}</span>`}</div>
           <div class="print-legend-col">
             <h3>Legend</h3>
-            ${p.entries.length ? `<table class="print-legend-table">${legendRows}</table><div class="print-legend-total">${p.total} device${p.total===1?'':'s'} total</div>` : '<div class="pv-empty" style="font-size:11px; color:#888;">Nothing placed on this floor yet.</div>'}
+            ${p.entries.length ? `<table class="print-legend-table">${legendRows}</table><div class="print-legend-total">${totalLabel}</div>` : `<div class="pv-empty" style="font-size:11px; color:#888;">${emptyLabel}</div>`}
           </div>
         </div>
       </div>`;
   }).join('');
   document.getElementById('printViewPages').innerHTML = pagesHtml;
+  document.getElementById('includeCivilToggle').classList.toggle('on', state.includeCivilInExport);
 
   // restore the live editing session exactly as it was before capture
   state.activeFloorIndex = savedFloorIndex;
+  state.activeCivilPlanIndex = savedCivilPlanIndex;
   state.selectedObjectId = savedSelected; state.multiSelectedIds = savedMulti; state.multiSelectMode = savedMultiMode;
   state.printMode = false;
   state.showCircuitLabels = savedShowCircuitLabels;
@@ -5221,6 +5398,10 @@ function openPrintView(){
   document.getElementById('printView').classList.add('open');
 }
 function closePrintView(){ document.getElementById('printView').classList.remove('open'); }
+document.getElementById('includeCivilToggle').addEventListener('click', () => {
+  state.includeCivilInExport = !state.includeCivilInExport;
+  openPrintView(); // rebuild the page list with/without civil pages
+});
 document.getElementById('dtbPrintExport').addEventListener('click', openPrintView);
 document.getElementById('morePrintExport').addEventListener('click', () => { closeSheets(); openPrintView(); });
 document.getElementById('btnClosePrintView').addEventListener('click', closePrintView);
@@ -5242,7 +5423,7 @@ async function downloadPdfExport(){
     if(i>0) doc.addPage();
     // header
     doc.setFont('helvetica','bold'); doc.setFontSize(14); doc.setTextColor(17,17,17);
-    doc.text(`${projName} — ${p.floorName}`, margin, margin+2);
+    doc.text(`${projName} — ${p.floorName}${p.kind==='civil' ? ' (Civil)' : ''}`, margin, margin+2);
     doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(85,85,85);
     doc.text(new Date().toLocaleDateString('en-AU') + (p.calibrated ? ' · Calibrated' : ' · Not calibrated'), pageW-margin, margin+2, { align:'right' });
     doc.setDrawColor(17,17,17); doc.setLineWidth(0.5);
@@ -5264,7 +5445,7 @@ async function downloadPdfExport(){
     } else {
       doc.setDrawColor(200,200,200); doc.rect(planX, bodyTop, planW, bodyH);
       doc.setFontSize(9); doc.setTextColor(136,136,136);
-      doc.text('Nothing on this floor yet', planX+planW/2, bodyTop+bodyH/2, { align:'center' });
+      doc.text(p.kind==='civil' ? 'Nothing on this civil plan yet' : 'Nothing on this floor yet', planX+planW/2, bodyTop+bodyH/2, { align:'center' });
     }
 
     // legend, drawn as real text/vector shapes -- not a screenshot
@@ -5275,10 +5456,12 @@ async function downloadPdfExport(){
     doc.setFont('helvetica','normal'); doc.setFontSize(8.5);
     p.entries.forEach(e => {
       if(ly > bodyBottom-6) return; // ran out of room on the page -- rare, but don't draw off the edge
-      const [r,g,b] = hexToRgb(e.sym.color);
+      const [r,g,b] = hexToRgb(p.kind==='civil' ? e.color : e.sym.color);
       doc.setFillColor(r,g,b); doc.circle(legendX+2, ly-1, 1.6, 'F');
       doc.setTextColor(30,30,30);
-      const label = e.sym.label + (e.gang ? ' — '+e.gang+'g' : '');
+      const label = p.kind==='civil'
+        ? e.label + (e.kind==='conduit' ? (e.lengthM!=null ? ' — '+e.lengthM.toFixed(1)+'m' : ' — n/c') : '')
+        : e.sym.label + (e.gang ? ' — '+e.gang+'g' : '');
       doc.text(label, legendX+5.5, ly, { maxWidth: legendW-13 });
       doc.text('×'+e.count, legendX+legendW, ly, { align:'right' });
       ly += 6;
@@ -5908,8 +6091,76 @@ function updateQuote(){
   document.getElementById('qMargin').textContent = fmt(margin);
   document.getElementById('qGst').textContent = fmt(gst);
   document.getElementById('qTotal').textContent = fmt(total);
+  document.getElementById('qCivilTotal').textContent = fmt(computeAllCivilTotals().total);
 }
 function fmt(n){ return '$'+n.toLocaleString('en-AU',{minimumFractionDigits:2,maximumFractionDigits:2}); }
+// Materials + labour cost across ALL civil plans (not just the currently
+// active one) — used for the small whole-job visibility line on the main
+// Quote sheet. Kept deliberately simple (no per-type/size breakdown, that
+// lives in updateCivilQuote() below for the active plan only) since this
+// is just a "does civil work add real money to this job" indicator.
+function computeAllCivilTotals(){
+  const labourRate = parseFloat(document.getElementById('rateLabour').value)||0;
+  let materials = 0, labourCost = 0;
+  state.civilPlans.forEach(plan => {
+    plan.pits.forEach(p => { materials += p.props.material_cost||0; labourCost += (p.props.labour_hours||0)*labourRate; });
+    plan.conduits.forEach(cd => {
+      const size = CONDUIT_SIZES.find(s=>s.id===cd.sizeId);
+      if(!size || !plan.scale) return;
+      const lenM = conduitLength(cd)/plan.scale;
+      materials += lenM*size.material_cost_per_m; labourCost += lenM*size.labour_hours_per_m*labourRate;
+    });
+  });
+  return { materials, labourCost, total: materials+labourCost };
+}
+// Civil Materials sheet — pit/conduit/building-entry takeoff for the
+// CURRENTLY ACTIVE civil plan (mirrors how the electrical Panel Schedule
+// is scoped to what's on screen), kept deliberately separate from
+// updateQuote()/allObjects() above since those only ever see state.floors
+// data by construction — civil objects live in state.civilPlans instead.
+function updateCivilQuote(){
+  const labourRate = parseFloat(document.getElementById('rateLabour').value)||0;
+  const plan = currentCivilPlan();
+  let materials = 0, labourCost = 0;
+
+  const pitTypeIds = [...new Set(plan.pits.map(p=>p.typeId))];
+  const pitsBody = document.getElementById('civilPitsBody');
+  pitsBody.innerHTML = '';
+  pitTypeIds.forEach(typeId => {
+    const type = PIT_LIBRARY.find(t=>t.id===typeId);
+    const pitsOfType = plan.pits.filter(p=>p.typeId===typeId);
+    const cost = pitsOfType.reduce((s,p)=>s+(p.props.material_cost||0), 0);
+    const labour = pitsOfType.reduce((s,p)=>s+(p.props.labour_hours||0), 0);
+    materials += cost; labourCost += labour*labourRate;
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${type?type.label:typeId}</td><td>${pitsOfType.length}</td><td>${fmt(pitsOfType.length?cost/pitsOfType.length:0)}</td><td>${fmt(cost)}</td>`;
+    pitsBody.appendChild(tr);
+  });
+  if(!pitTypeIds.length) pitsBody.innerHTML = '<tr><td colspan="4" style="color:var(--text-dim);">No pits placed yet</td></tr>';
+
+  const conduitSizeIds = [...new Set(plan.conduits.map(cd=>cd.sizeId))];
+  const conduitsBody = document.getElementById('civilConduitsBody');
+  conduitsBody.innerHTML = '';
+  conduitSizeIds.forEach(sizeId => {
+    const size = CONDUIT_SIZES.find(s=>s.id===sizeId);
+    const cds = plan.conduits.filter(cd=>cd.sizeId===sizeId);
+    const lenWorld = cds.reduce((s,cd)=>s+conduitLength(cd), 0);
+    const lenM = plan.scale ? lenWorld/plan.scale : 0;
+    const cost = size ? lenM*size.material_cost_per_m : 0;
+    const labour = size ? lenM*size.labour_hours_per_m : 0;
+    materials += cost; labourCost += labour*labourRate;
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${size?size.size:sizeId}</td><td>${lenM.toFixed(1)}</td><td>${size?'$'+size.material_cost_per_m.toFixed(2):'-'}</td><td>${fmt(cost)}</td>`;
+    conduitsBody.appendChild(tr);
+  });
+  if(!conduitSizeIds.length) conduitsBody.innerHTML = '<tr><td colspan="4" style="color:var(--text-dim);">No conduit runs yet</td></tr>';
+
+  document.getElementById('civilBuildingEntryCount').textContent = plan.buildingEntries.length;
+  document.getElementById('civilMaterialsTotal').textContent = fmt(materials);
+  document.getElementById('civilLabourTotal').textContent = fmt(labourCost);
+  document.getElementById('civilGrandTotal').textContent = fmt(materials+labourCost);
+  document.getElementById('civilUncalibratedNote').textContent = plan.scale ? '' : "This civil plan isn't calibrated yet — conduit metreage (and cost) reads as 0 until you Calibrate.";
+}
 ['rateLabour','costEquipment','costTravel','rateMargin'].forEach(id => {
   document.getElementById(id).addEventListener('input', () => { updateQuote(); if(typeof markDirty==='function') markDirty(); });
 });
@@ -8154,6 +8405,8 @@ document.getElementById('dtbVersions').addEventListener('click', () => { renderV
 document.getElementById('dtbDuplicates').addEventListener('click', () => { renderDuplicatesReport(); openSheet('sheetDuplicates'); });
 document.getElementById('dtbPanelSchedule').addEventListener('click', () => { renderPanelSchedule(); openSheet('sheetPanelSchedule'); });
 document.getElementById('dtbQuote').addEventListener('click', () => { updateQuote(); renderSchedule(); openSheet('sheetQuote'); });
+document.getElementById('dtbCivilMaterials').addEventListener('click', () => { updateCivilQuote(); openSheet('sheetCivilMaterials'); });
+document.getElementById('dtbCivilPlans').addEventListener('click', () => { renderCivilPlans(); openSheet('sheetCivilPlans'); });
 
 // Hot-task rail's Place/Layers buttons just bring the already-docked panel
 // back into view if the user had collapsed it — they aren't sheets of
