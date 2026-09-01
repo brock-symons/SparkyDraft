@@ -1055,8 +1055,12 @@ html.force-desktop{
   <div class="sheet-body">
     <div style="font-size:11.5px; color:var(--text-dim); margin-bottom:10px;">Kept separate from the electrical Quote — this is the pits/conduit/building-entry takeoff for the civil plan(s) on this project.</div>
     <table><thead><tr><th>Pit type</th><th>Qty</th><th>$ each</th><th>Total</th></tr></thead><tbody id="civilPitsBody"></tbody></table>
-    <table style="margin-top:12px;"><thead><tr><th>Conduit size</th><th>Metres</th><th>$/m</th><th>Total</th></tr></thead><tbody id="civilConduitsBody"></tbody></table>
+    <table style="margin-top:12px;"><thead><tr><th>Electrical conduit</th><th>Metres</th><th>$/m</th><th>Total</th></tr></thead><tbody id="civilConduitsBody"></tbody></table>
+    <table style="margin-top:12px;"><thead><tr><th>Comms conduit (NBN)</th><th>Metres</th><th>$/m</th><th>Total</th></tr></thead><tbody id="civilCommsConduitsBody"></tbody></table>
+    <table style="margin-top:12px;"><thead><tr><th>Pole</th><th>Qty</th><th>$ each</th><th>Total</th></tr></thead><tbody id="civilPolesBody"></tbody></table>
+    <table style="margin-top:12px;"><thead><tr><th>Overhead run</th><th>Metres</th><th>$/m</th><th>Total</th></tr></thead><tbody id="civilOverheadBody"></tbody></table>
     <div class="quote-line" style="margin-top:10px;"><span>Building entries</span><span id="civilBuildingEntryCount">0</span></div>
+    <div class="quote-line"><span>UGOH / OHUG transitions</span><span id="civilTransitionCount">0</span></div>
     <div class="quote-line"><span>Materials</span><span id="civilMaterialsTotal">$0.00</span></div>
     <div class="quote-line"><span>Labour</span><span id="civilLabourTotal">$0.00</span></div>
     <div class="quote-line total"><span>Civil total</span><span id="civilGrandTotal">$0.00</span></div>
@@ -1487,10 +1491,10 @@ const CABLE_SIZES = [
   { size:'25mm²',  color:'#f472b6' },
 ];
 // ===================================================================
-// CIVIL / UNDERGROUND WORKS — pit and conduit type libraries. Same
-// editable-data-table idiom as SYMBOL_LIBRARY/CABLE_SIZES: costs and
-// sizes here are sensible AU/NZ-typical starting defaults, not gospel —
-// tune them from the Pit & Conduit Library sheet.
+// CIVIL / UNDERGROUND WORKS — pit, conduit, pole, and overhead-conductor
+// type libraries. Same editable-data-table idiom as SYMBOL_LIBRARY/
+// CABLE_SIZES: costs and sizes here are sensible AU/NZ-typical starting
+// defaults, not gospel — tune them from the Pit & Conduit Library sheet.
 // ===================================================================
 const PIT_LIBRARY = [
   { id:'pit_300', label:'300×300 inspection pit', abbr:'P3', color:'#94a3b8', defaultProps:{ material_cost:45, labour_hours:0.75 } },
@@ -1498,6 +1502,8 @@ const PIT_LIBRARY = [
   { id:'pit_600', label:'600×600 pit', abbr:'P6', color:'#94a3b8', defaultProps:{ material_cost:150, labour_hours:1.5 } },
   { id:'pit_pull', label:'Pull pit / junction pit', abbr:'PJ', color:'#60a5fa', defaultProps:{ material_cost:65, labour_hours:0.75 } },
   { id:'pit_meter', label:'Meter / service pit', abbr:'PM', color:'#facc15', defaultProps:{ material_cost:120, labour_hours:1.25 } },
+  { id:'pit_pos', label:'Point of supply pit', abbr:'PS', color:'#f87171', defaultProps:{ material_cost:180, labour_hours:1.5 } },
+  { id:'pit_pillar', label:'Electrical supply pillar', abbr:'PL', color:'#fb7185', defaultProps:{ material_cost:350, labour_hours:2 } },
 ];
 const CONDUIT_SIZES = [
   { id:'c20',  size:'20mm',  color:'#f97316', material_cost_per_m:1.8, labour_hours_per_m:0.05 },
@@ -1510,12 +1516,42 @@ const CONDUIT_SIZES = [
   { id:'c100', size:'100mm', color:'#7c2d12', material_cost_per_m:14.2, labour_hours_per_m:0.1 },
   { id:'c150', size:'150mm', color:'#5c1a09', material_cost_per_m:24.0, labour_hours_per_m:0.12 },
 ];
+// Kept as a separate table (not a filtered subset of CONDUIT_SIZES) since
+// NBN Co's standard underground sizes — 40/50/63mm — don't line up 1:1
+// with the electrical table (63mm has no electrical equivalent; the
+// electrical table's other sizes don't apply to comms) and a distinct
+// blue/teal colour family keeps comms runs visually unmistakable from
+// electrical ones on the plan and in the legend.
+const COMMS_CONDUIT_SIZES = [
+  { id:'nbn40', size:'40mm', color:'#38bdf8', material_cost_per_m:2.6, labour_hours_per_m:0.055 },
+  { id:'nbn50', size:'50mm', color:'#0ea5e9', material_cost_per_m:3.6, labour_hours_per_m:0.065 },
+  { id:'nbn63', size:'63mm', color:'#0284c7', material_cost_per_m:5.1, labour_hours_per_m:0.075 },
+];
 const BUILDING_ENTRY_SERVICE_TYPES = [
   { id:'power', label:'Power', color:'#f97316' },
   { id:'data', label:'Data / comms', color:'#4ade80' },
   { id:'comms', label:'Telco', color:'#60a5fa' },
   { id:'water', label:'Water', color:'#38bdf8' },
   { id:'gas', label:'Gas', color:'#facc15' },
+];
+// Private poles only — a "network pole" (Ausgrid/Endeavour/etc-owned) is
+// a placeholder attachment POINT, not a fully-specified object like these,
+// so it's placed via the same tool/array (see civilPoleCardClick) but
+// skips typeId/height/stay-wire entirely rather than picking one of these.
+const POLE_LIBRARY = [
+  { id:'pole_timber', label:'Timber pole', abbr:'PT', color:'#8b5e34', defaultProps:{ material_cost:420, labour_hours:4 } },
+  { id:'pole_concrete', label:'Concrete pole', abbr:'PC', color:'#94a3b8', defaultProps:{ material_cost:680, labour_hours:5 } },
+  { id:'pole_steel', label:'Steel pole', abbr:'PS', color:'#64748b', defaultProps:{ material_cost:750, labour_hours:5 } },
+];
+// Aerial Bundled Cable sizes (typical AU overhead service/consumer-mains
+// conductor) — a distinct purple family, visually unmistakable from both
+// the underground electrical (orange) and comms (blue) conduit families.
+const OVERHEAD_CONDUCTOR_SIZES = [
+  { id:'abc16', label:'16mm² ABC', color:'#7c3aed', material_cost_per_m:4.5, labour_hours_per_m:0.08 },
+  { id:'abc25', label:'25mm² ABC', color:'#8b5cf6', material_cost_per_m:5.8, labour_hours_per_m:0.09 },
+  { id:'abc35', label:'35mm² ABC', color:'#a78bfa', material_cost_per_m:7.2, labour_hours_per_m:0.1 },
+  { id:'abc50', label:'50mm² ABC', color:'#c4b5fd', material_cost_per_m:9.0, labour_hours_per_m:0.11 },
+  { id:'abc70', label:'70mm² ABC', color:'#ddd6fe', material_cost_per_m:12.0, labour_hours_per_m:0.12 },
 ];
 // Protection devices as real priced entities (section 21-22 of the revision
 // brief). Costs are editable defaults, same override pattern as product pricing.
@@ -1556,7 +1592,7 @@ function makeCivilPlan(name){
     view:{ zoom:1, offsetX:0, offsetY:0 },
     gridSpacingMM: 1000, snapEnabled: true,
     gridOriginX: 0, gridOriginY: 0, gridVisible: true,
-    pits:[], conduits:[], buildingEntries:[], dimensions:[] };
+    pits:[], conduits:[], buildingEntries:[], dimensions:[], poles:[], overheadRuns:[] };
 }
 // Stable identity for a project's storage record -- local AND cloud --
 // separate from its display name, so renaming or sharing a name with
@@ -1604,11 +1640,15 @@ let state = {
   // here instead of being silently dropped. See migrateLegacyCommsData().
   unassignedCommsPorts:[],
   // Civil mode selection + active placement type. activeTool doubles for
-  // civil tools too ('placePit'/'placeBuildingEntry'/'conduit' alongside
-  // the shared 'select'/'pan'/'calibrate'/'measure').
+  // civil tools too ('placePit'/'placeBuildingEntry'/'conduit'/'placePole'/
+  // 'overheadRun' alongside the shared 'select'/'pan'/'calibrate'/'measure').
   selectedPitId:null, selectedBuildingEntryId:null, selectedConduitId:null,
+  selectedPoleId:null, selectedOverheadRunId:null,
   activePitTypeId: PIT_LIBRARY[0].id, activeBuildingEntryServiceTypes:['power'],
   activeConduitSize: CONDUIT_SIZES[3], // 40mm default — a common general-purpose underground size
+  activeConduitCategory: 'electrical',
+  activePoleTypeId: POLE_LIBRARY[0].id, activePoleOwnership: 'private',
+  activeOverheadSize: OVERHEAD_CONDUCTOR_SIZES[1], // 25mm² ABC default — a common single-phase service size
   includeCivilInExport: true, // "Include civil plan pages" toggle in Print/PDF export — on by default once civil content exists
 };
 // Product default price + object-level override (section 17-18 of the
@@ -2351,8 +2391,12 @@ function renderCivil(){
 
   // Conduits — the one genuinely new geometry primitive in this app: a
   // vertex array instead of a 2-point line, drawn as a connected polyline.
+  // Comms runs (category:'comms') look up COMMS_CONDUIT_SIZES instead of
+  // CONDUIT_SIZES, which is what actually gives them their distinct
+  // blue/teal colour family on the plan — the two tables never mix.
   plan.conduits.forEach(cd => {
-    const size = CONDUIT_SIZES.find(s=>s.id===cd.sizeId) || CONDUIT_SIZES[0];
+    const sizeTable = cd.category==='comms' ? COMMS_CONDUIT_SIZES : CONDUIT_SIZES;
+    const size = sizeTable.find(s=>s.id===cd.sizeId) || sizeTable[0];
     const selected = cd.id === state.selectedConduitId;
     ctx.strokeStyle = size.color; ctx.lineWidth = selected ? 5 : 3.5; ctx.lineCap='round'; ctx.lineJoin='round';
     ctx.beginPath();
@@ -2371,7 +2415,7 @@ function renderCivil(){
     if(midPt && midPt2){
       const mp1 = worldToScreen(midPt.x, midPt.y), mp2 = worldToScreen(midPt2.x, midPt2.y);
       const mx = (mp1.x+mp2.x)/2, my = (mp1.y+mp2.y)/2;
-      const label = size.size + (plan.scale ? ' · ' + (totalLen/plan.scale).toFixed(1)+'m' : '');
+      const label = size.size + (cd.category==='comms'?' comms':'') + (cd.transition==='ugoh'?' · UGOH':'') + (plan.scale ? ' · ' + (totalLen/plan.scale).toFixed(1)+'m' : '');
       ctx.font='11px JetBrains Mono'; ctx.textAlign='center';
       const w = ctx.measureText(label).width + 10;
       ctx.fillStyle='#0c1116'; ctx.fillRect(mx-w/2,my-9,w,16);
@@ -2382,7 +2426,8 @@ function renderCivil(){
   // In-progress conduit draft (mid-draw) — dashed, with a rubber-band
   // segment following the cursor out to the next un-committed point.
   if(conduitDraft && conduitDraft.points.length){
-    const size = CONDUIT_SIZES.find(s=>s.id===conduitDraft.sizeId) || CONDUIT_SIZES[0];
+    const sizeTable = conduitDraft.category==='comms' ? COMMS_CONDUIT_SIZES : CONDUIT_SIZES;
+    const size = sizeTable.find(s=>s.id===conduitDraft.sizeId) || sizeTable[0];
     ctx.strokeStyle = size.color; ctx.lineWidth = 3; ctx.setLineDash([6,4]);
     ctx.beginPath();
     conduitDraft.points.forEach((pt,i) => { const p = worldToScreen(pt.x,pt.y); if(i===0) ctx.moveTo(p.x,p.y); else ctx.lineTo(p.x,p.y); });
@@ -2394,8 +2439,52 @@ function renderCivil(){
     });
   }
 
+  // Overhead runs — aerial, drawn dashed to read as "not buried" at a
+  // glance, distinct purple/violet family from both conduit colour groups.
+  (plan.overheadRuns||[]).forEach(run => {
+    const size = OVERHEAD_CONDUCTOR_SIZES.find(s=>s.id===run.sizeId) || OVERHEAD_CONDUCTOR_SIZES[0];
+    const selected = run.id === state.selectedOverheadRunId;
+    ctx.strokeStyle = size.color; ctx.lineWidth = selected ? 4.5 : 3; ctx.lineCap='round'; ctx.lineJoin='round'; ctx.setLineDash([10,6]);
+    ctx.beginPath();
+    run.points.forEach((pt,i) => { const p = worldToScreen(pt.x,pt.y); if(i===0) ctx.moveTo(p.x,p.y); else ctx.lineTo(p.x,p.y); });
+    ctx.stroke(); ctx.setLineDash([]);
+    if(selected){
+      run.points.forEach(pt => {
+        const p = worldToScreen(pt.x,pt.y);
+        ctx.fillStyle = '#ffffff'; ctx.fillRect(p.x-5,p.y-5,10,10);
+        ctx.strokeStyle = size.color; ctx.lineWidth = 2; ctx.strokeRect(p.x-5,p.y-5,10,10);
+      });
+    }
+    const totalLen = conduitLength(run);
+    const midPt = run.points[Math.floor((run.points.length-1)/2)];
+    const midPt2 = run.points[Math.ceil((run.points.length-1)/2)];
+    if(midPt && midPt2){
+      const mp1 = worldToScreen(midPt.x, midPt.y), mp2 = worldToScreen(midPt2.x, midPt2.y);
+      const mx = (mp1.x+mp2.x)/2, my = (mp1.y+mp2.y)/2;
+      const label = size.label + (run.transition==='ohug'?' · OHUG':'') + (plan.scale ? ' · ' + (totalLen/plan.scale).toFixed(1)+'m' : '');
+      ctx.font='11px JetBrains Mono'; ctx.textAlign='center';
+      const w = ctx.measureText(label).width + 10;
+      ctx.fillStyle='#0c1116'; ctx.fillRect(mx-w/2,my-9,w,16);
+      ctx.fillStyle=size.color; ctx.fillText(label, mx, my+3);
+    }
+  });
+  if(overheadRunDraft && overheadRunDraft.points.length){
+    const size = OVERHEAD_CONDUCTOR_SIZES.find(s=>s.id===overheadRunDraft.sizeId) || OVERHEAD_CONDUCTOR_SIZES[0];
+    ctx.strokeStyle = size.color; ctx.lineWidth = 3; ctx.setLineDash([4,3]);
+    ctx.beginPath();
+    overheadRunDraft.points.forEach((pt,i) => { const p = worldToScreen(pt.x,pt.y); if(i===0) ctx.moveTo(p.x,p.y); else ctx.lineTo(p.x,p.y); });
+    if(overheadRunDraftHover){ const p = worldToScreen(overheadRunDraftHover.x, overheadRunDraftHover.y); ctx.lineTo(p.x,p.y); }
+    ctx.stroke(); ctx.setLineDash([]);
+    overheadRunDraft.points.forEach(pt => {
+      const p = worldToScreen(pt.x,pt.y);
+      ctx.beginPath(); ctx.arc(p.x,p.y,4,0,Math.PI*2); ctx.fillStyle = size.color; ctx.fill();
+    });
+  }
+
   // Building service-entry points — a distinct rotated-square icon so they
-  // never read as "just another pit" at a glance.
+  // never read as "just another pit" at a glance. Role-tag letters (S/N/E)
+  // stack under the BE badge when tagged, so a switchboard/NBN/eave
+  // connection is readable without opening its properties.
   plan.buildingEntries.forEach(be => {
     const p = worldToScreen(be.x, be.y);
     const r = state.symbolSize;
@@ -2408,6 +2497,11 @@ function renderCivil(){
     ctx.restore();
     ctx.fillStyle='#0c1116'; ctx.font='bold 10px JetBrains Mono'; ctx.textAlign='center'; ctx.textBaseline='middle';
     ctx.fillText('BE', p.x, p.y);
+    const roleTags = [be.isSwitchboardConnection?'SB':null, be.isNbnConnection?'NBN':null, be.isOverheadAttachment?'EAVE':null].filter(Boolean);
+    if(roleTags.length){
+      ctx.font='9px JetBrains Mono'; ctx.fillStyle='#38bdf8';
+      ctx.fillText(roleTags.join('/'), p.x, p.y + r + 10);
+    }
   });
 
   // Pits — same visual language as electrical device symbols (filled
@@ -2423,6 +2517,29 @@ function renderCivil(){
     if(selected){ ctx.strokeStyle='#ffffff'; ctx.lineWidth=2.5; ctx.stroke(); }
     ctx.fillStyle='#0c1116'; ctx.font='bold 11px JetBrains Mono'; ctx.textAlign='center'; ctx.textBaseline='middle';
     ctx.fillText(type.abbr, p.x, p.y);
+  });
+
+  // Poles — a private pole renders filled (it's an owned asset, same
+  // visual weight as a pit); a network pole renders hollow/outline-only so
+  // it never reads as something this job owns or installs (per the plan
+  // doc's placeholder-attachment-point treatment).
+  (plan.poles||[]).forEach(pole => {
+    const isPrivate = pole.ownership==='private';
+    const type = isPrivate ? (POLE_LIBRARY.find(t=>t.id===pole.typeId) || POLE_LIBRARY[0]) : null;
+    const color = isPrivate ? type.color : '#94a3b8';
+    const p = worldToScreen(pole.x, pole.y);
+    const r = state.symbolSize;
+    const selected = pole.id === state.selectedPoleId;
+    ctx.beginPath(); ctx.arc(p.x,p.y,r,0,Math.PI*2);
+    if(isPrivate){
+      ctx.fillStyle = color + (selected ? 'ff' : 'dd'); ctx.fill();
+    } else {
+      ctx.fillStyle = '#0c1116'; ctx.fill();
+      ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.setLineDash([3,2]); ctx.stroke(); ctx.setLineDash([]);
+    }
+    if(selected){ ctx.strokeStyle='#ffffff'; ctx.lineWidth=2.5; ctx.setLineDash([]); ctx.stroke(); }
+    ctx.fillStyle = isPrivate ? '#0c1116' : color; ctx.font='bold 10px JetBrains Mono'; ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillText(isPrivate ? type.abbr : 'NP', p.x, p.y);
   });
 
   // Snap guides/target — same visual feedback system as the electrical
@@ -2460,6 +2577,18 @@ function renderCivil(){
     ctx.save(); ctx.globalAlpha = 0.5;
     ctx.translate(hoverScreen.x, hoverScreen.y); ctx.rotate(Math.PI/4);
     ctx.fillStyle = '#38bdf8'; ctx.fillRect(-r*0.72, -r*0.72, r*1.44, r*1.44);
+    ctx.restore();
+  }
+  if(state.activeTool==='placePole' && hoverScreen && !dragPoleId){
+    const isPrivate = (state.activePoleOwnership||'private')==='private';
+    const type = isPrivate ? (POLE_LIBRARY.find(t=>t.id===state.activePoleTypeId) || POLE_LIBRARY[0]) : null;
+    const color = isPrivate ? type.color : '#94a3b8';
+    ctx.save(); ctx.globalAlpha = 0.5;
+    ctx.beginPath(); ctx.arc(hoverScreen.x, hoverScreen.y, state.symbolSize, 0, Math.PI*2);
+    ctx.fillStyle = color; ctx.fill();
+    ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1.5; ctx.setLineDash([3,3]); ctx.stroke(); ctx.setLineDash([]);
+    ctx.fillStyle = isPrivate ? '#0c1116' : color; ctx.font = 'bold 10px JetBrains Mono'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(isPrivate ? type.abbr : 'NP', hoverScreen.x, hoverScreen.y);
     ctx.restore();
   }
 }
@@ -2728,6 +2857,33 @@ function hitTestBuildingEntry(world){
   const tol = (state.symbolSize+4) / currentCivilPlan().view.zoom;
   return currentCivilPlan().buildingEntries.slice().reverse().find(b => Math.hypot(b.x-world.x, b.y-world.y) < tol);
 }
+function hitTestPole(world){
+  const tol = (state.symbolSize+4) / currentCivilPlan().view.zoom;
+  return currentCivilPlan().poles.slice().reverse().find(p => Math.hypot(p.x-world.x, p.y-world.y) < tol);
+}
+// Overhead-run segment/vertex hit-testing — literal clones of
+// hitTestConduitSegment/hitTestConduitVertex, kept as separate functions
+// per this codebase's "mirror, don't abstract" convention for civil
+// entity types (see the header comment on the civil pointer-handler block).
+function hitTestOverheadRunSegment(world){
+  const tol = 14 / currentCivilPlan().view.zoom;
+  let best = null, bestDist = tol;
+  currentCivilPlan().overheadRuns.slice().reverse().forEach(run => {
+    for(let i=0;i<run.points.length-1;i++){
+      const d = distToSegment(world, run.points[i], run.points[i+1]);
+      if(d < bestDist){ bestDist = d; best = { run, segmentIndex: i }; }
+    }
+  });
+  return best;
+}
+function hitTestOverheadRunVertex(world, run){
+  if(!run) return null;
+  const tol = 10 / currentCivilPlan().view.zoom;
+  for(let i=0;i<run.points.length;i++){
+    if(Math.hypot(run.points[i].x-world.x, run.points[i].y-world.y) < tol) return i;
+  }
+  return null;
+}
 // Returns { conduit, segmentIndex } for the closest conduit within
 // tolerance, or null. segmentIndex is the index of the FIRST vertex of
 // the hit segment (segment i runs from points[i] to points[i+1]).
@@ -2782,6 +2938,11 @@ function snapPointCivil(world, opts){
     const d = Math.hypot(b.x-world.x, b.y-world.y);
     if(d < bestDist){ bestDist = d; best = { x:b.x, y:b.y, hit:{ kind:'buildingEntry', id:b.id } }; }
   });
+  (plan.poles||[]).forEach(pl => {
+    if(pl.id === opts.excludePoleId) return;
+    const d = Math.hypot(pl.x-world.x, pl.y-world.y);
+    if(d < bestDist){ bestDist = d; best = { x:pl.x, y:pl.y, hit:{ kind:'pole', id:pl.id } }; }
+  });
   if(best){
     state.snapGuides = []; state.snapTarget = { x:best.x, y:best.y };
     return best;
@@ -2832,10 +2993,13 @@ const DRAG_THRESHOLD = 8; // px before a touch on an object promotes to a drag/p
 // them in distinct variables avoids any risk of one mode's cleanup
 // accidentally clearing state the other mode still needs.
 // ===================================================================
-let dragPitId = null, dragBuildingEntryId = null;
+let dragPitId = null, dragBuildingEntryId = null, dragPoleId = null;
 let dragConduitVertex = null; // { conduitId, vertexIndex } | null
-let conduitDraft = null; // { points:[{x,y},...], sizeId, fromPitId, fromBuildingEntryId } | null — the in-progress multi-click run
+let dragOverheadRunVertex = null; // { runId, vertexIndex } | null
+let conduitDraft = null; // { points:[{x,y},...], sizeId, category, fromPitId, fromBuildingEntryId, fromPoleId } | null — the in-progress multi-click run
 let conduitDraftHover = null; // last cursor world point while drafting, so the not-yet-placed final segment can preview
+let overheadRunDraft = null; // { points:[{x,y},...], sizeId, fromPoleId, fromBuildingEntryId } | null — cloned lifecycle from conduitDraft
+let overheadRunDraftHover = null;
 
 canvas.addEventListener('pointerdown', (e) => {
   canvas.setPointerCapture(e.pointerId);
@@ -3094,12 +3258,17 @@ window.addEventListener('keydown', (e) => {
     else if(state.selectedPitId){ e.preventDefault(); document.getElementById('btnDeletePit')?.click(); }
     else if(state.selectedBuildingEntryId){ e.preventDefault(); document.getElementById('btnDeleteBuildingEntry')?.click(); }
     else if(state.selectedConduitId){ e.preventDefault(); document.getElementById('btnDeleteConduit')?.click(); }
+    else if(state.selectedPoleId){ e.preventDefault(); document.getElementById('btnDeletePole')?.click(); }
+    else if(state.selectedOverheadRunId){ e.preventDefault(); document.getElementById('btnDeleteOverheadRun')?.click(); }
   }
-  else if(e.key==='Escape' && state.activePlanType==='civil' && conduitDraft){
-    e.preventDefault(); cancelConduitDraft();
+  else if(e.key==='Escape' && state.activePlanType==='civil' && (conduitDraft || overheadRunDraft)){
+    e.preventDefault(); cancelAllCivilDrafts();
   }
   else if(e.key==='Enter' && state.activePlanType==='civil' && conduitDraft && conduitDraft.points.length>=2){
     e.preventDefault(); finishConduitDraft();
+  }
+  else if(e.key==='Enter' && state.activePlanType==='civil' && overheadRunDraft && overheadRunDraft.points.length>=2){
+    e.preventDefault(); finishOverheadRunDraft();
   }
   // Single-key tool shortcuts (CAD-style: V=select, H=pan, etc.) — only
   // when nothing is held down, so they don't fire alongside Ctrl/Cmd combos.
@@ -3141,11 +3310,12 @@ window.addEventListener('keydown', (e) => {
 canvas.addEventListener('pointermove', (e) => {
   // ghost preview: track the cursor even when no pointer is "down" (plain
   // mouse hover) so a device selected for placement previews where it'll land
-  const civilGhostActive = state.activePlanType==='civil' && (state.activeTool==='placePit' || state.activeTool==='placeBuildingEntry' || conduitDraft);
+  const civilGhostActive = state.activePlanType==='civil' && (state.activeTool==='placePit' || state.activeTool==='placeBuildingEntry' || state.activeTool==='placePole' || conduitDraft || overheadRunDraft);
   if(state.activeSymbol || civilGhostActive){
     const rect = canvas.getBoundingClientRect();
     hoverScreen = { x:e.clientX-rect.left, y:e.clientY-rect.top };
     if(conduitDraft) conduitDraftHover = screenToWorld(hoverScreen.x, hoverScreen.y);
+    if(overheadRunDraft) overheadRunDraftHover = screenToWorld(hoverScreen.x, hoverScreen.y);
     if(!pointers.has(e.pointerId)) render();
   }
   if(!pointers.has(e.pointerId)) return;
@@ -3307,21 +3477,63 @@ function pointerdownCivil(world, e){
     return;
   }
 
+  if(state.activeTool==='placePole'){
+    const type = POLE_LIBRARY.find(t=>t.id===state.activePoleTypeId) || POLE_LIBRARY[0];
+    const ownership = state.activePoleOwnership || 'private';
+    const snapped = snapPointCivil(world, {});
+    const pole = { id:'PL-'+String(state.nextId++).padStart(3,'0'), ownership, typeId: ownership==='private' ? type.id : null,
+      x:snapped.x, y:snapped.y, label:'', notes:'', height: ownership==='private' ? 8 : null,
+      stayWire: false, stayRod: false,
+      props: ownership==='private' ? { material_cost: type.defaultProps.material_cost, labour_hours: type.defaultProps.labour_hours } : { material_cost:0, labour_hours:0 } };
+    currentCivilPlan().poles.push(pole);
+    state.snapGuides = []; state.snapTarget = null;
+    pushHistory(); render(); markDirty();
+    if(!e.shiftKey) state.activeTool = 'select';
+    openPoleProps(pole.id);
+    return;
+  }
+
+  if(state.activeTool==='overheadRun'){
+    const snapped = snapPointCivil(world, {});
+    if(!overheadRunDraft){
+      overheadRunDraft = { points:[{x:snapped.x,y:snapped.y}], sizeId: state.activeOverheadSize.id,
+        fromPoleId: snapped.hit && snapped.hit.kind==='pole' ? snapped.hit.id : null,
+        fromBuildingEntryId: snapped.hit && snapped.hit.kind==='buildingEntry' ? snapped.hit.id : null };
+      overheadRunDraftHover = null;
+      setHint('Click to add a span point, or click a pole/building entry to finish there. Escape cancels, Enter finishes unlinked.');
+      state.snapGuides = []; state.snapTarget = null;
+      render();
+      return;
+    }
+    overheadRunDraft.points.push({ x:snapped.x, y:snapped.y });
+    if(snapped.hit && (snapped.hit.kind==='pole' || snapped.hit.kind==='buildingEntry')){
+      if(snapped.hit.kind==='pole') overheadRunDraft.toPoleId = snapped.hit.id; else overheadRunDraft.toBuildingEntryId = snapped.hit.id;
+      finishOverheadRunDraft();
+    } else {
+      state.snapGuides = []; state.snapTarget = null;
+      render();
+    }
+    return;
+  }
+
   if(state.activeTool==='conduit'){
     const snapped = snapPointCivil(world, {});
     if(!conduitDraft){
-      conduitDraft = { points:[{x:snapped.x,y:snapped.y}], sizeId: state.activeConduitSize.id,
+      conduitDraft = { points:[{x:snapped.x,y:snapped.y}], sizeId: state.activeConduitSize.id, category: state.activeConduitCategory||'electrical',
         fromPitId: snapped.hit && snapped.hit.kind==='pit' ? snapped.hit.id : null,
-        fromBuildingEntryId: snapped.hit && snapped.hit.kind==='buildingEntry' ? snapped.hit.id : null };
+        fromBuildingEntryId: snapped.hit && snapped.hit.kind==='buildingEntry' ? snapped.hit.id : null,
+        fromPoleId: snapped.hit && snapped.hit.kind==='pole' ? snapped.hit.id : null };
       conduitDraftHover = null;
-      setHint('Click to add a bend, or click a pit/building entry to finish there. Escape cancels, Enter finishes unlinked.');
+      setHint('Click to add a bend, or click a pit/building entry/pole to finish there. Escape cancels, Enter finishes unlinked.');
       state.snapGuides = []; state.snapTarget = null;
       render();
       return;
     }
     conduitDraft.points.push({ x:snapped.x, y:snapped.y });
-    if(snapped.hit && (snapped.hit.kind==='pit' || snapped.hit.kind==='buildingEntry')){
-      if(snapped.hit.kind==='pit') conduitDraft.toPitId = snapped.hit.id; else conduitDraft.toBuildingEntryId = snapped.hit.id;
+    if(snapped.hit && (snapped.hit.kind==='pit' || snapped.hit.kind==='buildingEntry' || snapped.hit.kind==='pole')){
+      if(snapped.hit.kind==='pit') conduitDraft.toPitId = snapped.hit.id;
+      else if(snapped.hit.kind==='buildingEntry') conduitDraft.toBuildingEntryId = snapped.hit.id;
+      else conduitDraft.toPoleId = snapped.hit.id;
       finishConduitDraft();
     } else {
       state.snapGuides = []; state.snapTarget = null;
@@ -3330,40 +3542,58 @@ function pointerdownCivil(world, e){
     return;
   }
 
-  // Select tool: a vertex handle on the ALREADY-selected conduit takes
-  // priority over everything else (it's drawn on top and is the more
-  // specific target); otherwise hit-test pits, then building entries,
-  // then conduit segments; nothing hit falls back to pan (mirrors the
-  // electrical select tool's own "nothing under the cursor = pan").
+  // Select tool: a vertex handle on the ALREADY-selected conduit/overhead
+  // run takes priority over everything else (it's drawn on top and is the
+  // more specific target); otherwise hit-test pits, then building entries,
+  // then poles, then conduit segments, then overhead-run segments; nothing
+  // hit falls back to pan (mirrors the electrical select tool's own
+  // "nothing under the cursor = pan").
   const selectedConduitForDrag = state.selectedConduitId ? currentCivilPlan().conduits.find(c=>c.id===state.selectedConduitId) : null;
+  const selectedRunForDrag = state.selectedOverheadRunId ? currentCivilPlan().overheadRuns.find(r=>r.id===state.selectedOverheadRunId) : null;
   const hitVertexIdx = selectedConduitForDrag ? hitTestConduitVertex(world, selectedConduitForDrag) : null;
-  const hitPit = (hitVertexIdx===null) ? hitTestPit(world) : null;
-  const hitBE = (hitVertexIdx===null && !hitPit) ? hitTestBuildingEntry(world) : null;
-  const hitCD = (hitVertexIdx===null && !hitPit && !hitBE) ? hitTestConduitSegment(world) : null;
+  const hitRunVertexIdx = (hitVertexIdx===null && selectedRunForDrag) ? hitTestOverheadRunVertex(world, selectedRunForDrag) : null;
+  const hitPit = (hitVertexIdx===null && hitRunVertexIdx===null) ? hitTestPit(world) : null;
+  const hitBE = (hitVertexIdx===null && hitRunVertexIdx===null && !hitPit) ? hitTestBuildingEntry(world) : null;
+  const hitPole = (hitVertexIdx===null && hitRunVertexIdx===null && !hitPit && !hitBE) ? hitTestPole(world) : null;
+  const hitCD = (hitVertexIdx===null && hitRunVertexIdx===null && !hitPit && !hitBE && !hitPole) ? hitTestConduitSegment(world) : null;
+  const hitOH = (hitVertexIdx===null && hitRunVertexIdx===null && !hitPit && !hitBE && !hitPole && !hitCD) ? hitTestOverheadRunSegment(world) : null;
   pendingTap = { startX:e.clientX, startY:e.clientY, world,
-    hitPitId: hitPit?hitPit.id:null, hitBuildingEntryId: hitBE?hitBE.id:null, hitConduitId: hitCD?hitCD.conduit.id:null,
-    hitVertexConduitId: hitVertexIdx!==null ? selectedConduitForDrag.id : null, hitVertexIndex: hitVertexIdx };
-  isPanningCanvas = false; dragPitId = null; dragBuildingEntryId = null; dragConduitVertex = null;
+    hitPitId: hitPit?hitPit.id:null, hitBuildingEntryId: hitBE?hitBE.id:null, hitPoleId: hitPole?hitPole.id:null,
+    hitConduitId: hitCD?hitCD.conduit.id:null, hitOverheadRunId: hitOH?hitOH.run.id:null,
+    hitVertexConduitId: hitVertexIdx!==null ? selectedConduitForDrag.id : null, hitVertexIndex: hitVertexIdx,
+    hitVertexRunId: hitRunVertexIdx!==null ? selectedRunForDrag.id : null, hitVertexRunIndex: hitRunVertexIdx };
+  isPanningCanvas = false; dragPitId = null; dragBuildingEntryId = null; dragPoleId = null; dragConduitVertex = null; dragOverheadRunVertex = null;
   panLast = { x:e.clientX, y:e.clientY };
 }
 
+function clearCivilSelection(){
+  state.selectedPitId = null; state.selectedBuildingEntryId = null; state.selectedConduitId = null;
+  state.selectedPoleId = null; state.selectedOverheadRunId = null;
+}
 function pointermoveCivil(e){
-  if(pendingTap && !dragPitId && !dragBuildingEntryId && !dragConduitVertex && !isPanningCanvas){
+  if(pendingTap && !dragPitId && !dragBuildingEntryId && !dragPoleId && !dragConduitVertex && !dragOverheadRunVertex && !isPanningCanvas){
     const moved = Math.hypot(e.clientX-pendingTap.startX, e.clientY-pendingTap.startY);
     if(moved > DRAG_THRESHOLD){
       if(pendingTap.hitVertexConduitId){
         dragConduitVertex = { conduitId: pendingTap.hitVertexConduitId, vertexIndex: pendingTap.hitVertexIndex };
+      } else if(pendingTap.hitVertexRunId){
+        dragOverheadRunVertex = { runId: pendingTap.hitVertexRunId, vertexIndex: pendingTap.hitVertexRunIndex };
       } else if(pendingTap.hitPitId){
         dragPitId = pendingTap.hitPitId;
-        state.selectedPitId = pendingTap.hitPitId; state.selectedBuildingEntryId = null; state.selectedConduitId = null;
+        clearCivilSelection(); state.selectedPitId = pendingTap.hitPitId;
       } else if(pendingTap.hitBuildingEntryId){
         dragBuildingEntryId = pendingTap.hitBuildingEntryId;
-        state.selectedBuildingEntryId = pendingTap.hitBuildingEntryId; state.selectedPitId = null; state.selectedConduitId = null;
+        clearCivilSelection(); state.selectedBuildingEntryId = pendingTap.hitBuildingEntryId;
+      } else if(pendingTap.hitPoleId){
+        dragPoleId = pendingTap.hitPoleId;
+        clearCivilSelection(); state.selectedPoleId = pendingTap.hitPoleId;
       } else if(pendingTap.hitConduitId){
-        state.selectedConduitId = pendingTap.hitConduitId; state.selectedPitId = null; state.selectedBuildingEntryId = null;
+        clearCivilSelection(); state.selectedConduitId = pendingTap.hitConduitId;
+      } else if(pendingTap.hitOverheadRunId){
+        clearCivilSelection(); state.selectedOverheadRunId = pendingTap.hitOverheadRunId;
       } else {
         isPanningCanvas = true;
-        state.selectedPitId = null; state.selectedBuildingEntryId = null; state.selectedConduitId = null;
+        clearCivilSelection();
         setDeviceEditorActive(false);
       }
       pendingTap = null;
@@ -3378,15 +3608,35 @@ function pointermoveCivil(e){
     if(!cd){ dragConduitVertex = null; return; }
     const snapped = snapPointCivil(world, { excludeVertex: dragConduitVertex });
     cd.points[dragConduitVertex.vertexIndex] = { x:snapped.x, y:snapped.y };
-    // Dragging an endpoint onto a pit/building-entry re-links that end;
-    // dragging it off one (no snap hit) unlinks it. Interior vertices
+    // Dragging an endpoint onto a pit/building-entry/pole re-links that
+    // end; dragging it off one (no snap hit) unlinks it. Interior vertices
     // (a bend, not an endpoint) never carry a link either way.
     if(dragConduitVertex.vertexIndex===0){
       cd.fromPitId = snapped.hit && snapped.hit.kind==='pit' ? snapped.hit.id : null;
       cd.fromBuildingEntryId = snapped.hit && snapped.hit.kind==='buildingEntry' ? snapped.hit.id : null;
+      cd.fromPoleId = snapped.hit && snapped.hit.kind==='pole' ? snapped.hit.id : null;
     } else if(dragConduitVertex.vertexIndex===cd.points.length-1){
       cd.toPitId = snapped.hit && snapped.hit.kind==='pit' ? snapped.hit.id : null;
       cd.toBuildingEntryId = snapped.hit && snapped.hit.kind==='buildingEntry' ? snapped.hit.id : null;
+      cd.toPoleId = snapped.hit && snapped.hit.kind==='pole' ? snapped.hit.id : null;
+    }
+    render();
+    return;
+  }
+
+  if(dragOverheadRunVertex){
+    const rect = canvas.getBoundingClientRect();
+    const world = screenToWorld(e.clientX-rect.left, e.clientY-rect.top);
+    const run = currentCivilPlan().overheadRuns.find(r=>r.id===dragOverheadRunVertex.runId);
+    if(!run){ dragOverheadRunVertex = null; return; }
+    const snapped = snapPointCivil(world, {});
+    run.points[dragOverheadRunVertex.vertexIndex] = { x:snapped.x, y:snapped.y };
+    if(dragOverheadRunVertex.vertexIndex===0){
+      run.fromPoleId = snapped.hit && snapped.hit.kind==='pole' ? snapped.hit.id : null;
+      run.fromBuildingEntryId = snapped.hit && snapped.hit.kind==='buildingEntry' ? snapped.hit.id : null;
+    } else if(dragOverheadRunVertex.vertexIndex===run.points.length-1){
+      run.toPoleId = snapped.hit && snapped.hit.kind==='pole' ? snapped.hit.id : null;
+      run.toBuildingEntryId = snapped.hit && snapped.hit.kind==='buildingEntry' ? snapped.hit.id : null;
     }
     render();
     return;
@@ -3412,6 +3662,16 @@ function pointermoveCivil(e){
     render();
     return;
   }
+  if(dragPoleId){
+    const rect = canvas.getBoundingClientRect();
+    const world = screenToWorld(e.clientX-rect.left, e.clientY-rect.top);
+    const pole = currentCivilPlan().poles.find(p=>p.id===dragPoleId);
+    if(!pole){ dragPoleId = null; return; }
+    const snapped = snapPointCivil(world, { excludePoleId: pole.id });
+    pole.x = snapped.x; pole.y = snapped.y;
+    render();
+    return;
+  }
 
   if(isPanningCanvas && panLast){
     currentPlan().view.offsetX += (e.clientX - panLast.x);
@@ -3423,22 +3683,26 @@ function pointermoveCivil(e){
 
 function endPointerCivil(e){
   const draggedConduitId = dragConduitVertex ? dragConduitVertex.conduitId : null;
-  if(dragPitId || dragBuildingEntryId || dragConduitVertex){ pushHistory(); markDirty(); }
+  const draggedRunId = dragOverheadRunVertex ? dragOverheadRunVertex.runId : null;
+  if(dragPitId || dragBuildingEntryId || dragPoleId || dragConduitVertex || dragOverheadRunVertex){ pushHistory(); markDirty(); }
   if(pendingTap && state.activeTool==='select'){
-    if(pendingTap.hitVertexConduitId){ /* a plain tap on a vertex handle (no drag) — nothing to do, it's already selected */ }
+    if(pendingTap.hitVertexConduitId || pendingTap.hitVertexRunId){ /* a plain tap on a vertex handle (no drag) — nothing to do, it's already selected */ }
     else if(pendingTap.hitPitId){ openPitProps(pendingTap.hitPitId); }
     else if(pendingTap.hitBuildingEntryId){ openBuildingEntryProps(pendingTap.hitBuildingEntryId); }
+    else if(pendingTap.hitPoleId){ openPoleProps(pendingTap.hitPoleId); }
     else if(pendingTap.hitConduitId){ openConduitProps(pendingTap.hitConduitId); }
+    else if(pendingTap.hitOverheadRunId){ openOverheadRunProps(pendingTap.hitOverheadRunId); }
     else {
-      state.selectedPitId = null; state.selectedBuildingEntryId = null; state.selectedConduitId = null;
+      clearCivilSelection();
       setDeviceEditorActive(false); render();
-      document.getElementById('propsBody').innerHTML = '<div class="empty-state">Select a pit, conduit, or building entry on the plan to see and edit its properties here.</div>';
+      document.getElementById('propsBody').innerHTML = '<div class="empty-state">Select a pit, conduit, pole, overhead run, or building entry on the plan to see and edit its properties here.</div>';
       document.getElementById('propsTitle').textContent = 'Properties';
     }
   }
   if(draggedConduitId) openConduitProps(draggedConduitId);
+  if(draggedRunId) openOverheadRunProps(draggedRunId);
   pendingTap = null;
-  dragPitId = null; dragBuildingEntryId = null; dragConduitVertex = null;
+  dragPitId = null; dragBuildingEntryId = null; dragPoleId = null; dragConduitVertex = null; dragOverheadRunVertex = null;
   isPanningCanvas = false; panLast = null;
 }
 // Double-click finishes an in-progress conduit run at the last point,
@@ -3810,7 +4074,7 @@ function setTool(tool){
   // via any of those must cancel the draft the same way switching civil
   // plans, switching app mode, or undo already do, or the half-drawn
   // polyline is left stuck on screen with no tool left armed to finish it.
-  cancelConduitDraft();
+  cancelAllCivilDrafts();
   if(tool !== 'select' && state.multiSelectMode){
     exitMultiSelect();
   }
@@ -4302,7 +4566,7 @@ function updateCivilPlanBadge(){
 // happens while looking at the other mode.
 function setActivePlanType(type){
   if(state.activePlanType === type) return;
-  cancelConduitDraft();
+  cancelAllCivilDrafts();
   state.activePlanType = type;
   document.documentElement.classList.toggle('civil-mode', type==='civil');
   document.getElementById('civilModeToggle').classList.toggle('active', type==='civil');
@@ -4409,8 +4673,8 @@ function renderCivilPlans(){
     `;
     row.querySelector('.fname').addEventListener('click', () => {
       state.activeCivilPlanIndex = idx;
-      cancelConduitDraft();
-      state.selectedPitId = null; state.selectedBuildingEntryId = null; state.selectedConduitId = null;
+      cancelAllCivilDrafts();
+      clearCivilSelection();
       setDeviceEditorActive(false);
       updateCivilPlanBadge(); updateScaleBadge(); render();
       closeSheets();
@@ -4430,7 +4694,7 @@ function renderCivilPlans(){
   el.querySelectorAll('[data-del-civil]').forEach(b => b.addEventListener('click', () => {
     const idx = parseInt(b.dataset.delCivil, 10);
     if(state.civilPlans.length <= 1){ showToast('A project needs at least one civil plan'); return; }
-    openConfirmModal('Delete "' + state.civilPlans[idx].name + '"?', 'All pits, conduits, and building entries on this civil plan will be deleted.', () => {
+    openConfirmModal('Delete "' + state.civilPlans[idx].name + '"?', 'All pits, conduits, poles, overhead runs, and building entries on this civil plan will be deleted.', () => {
       state.civilPlans.splice(idx, 1);
       if(state.activeCivilPlanIndex >= state.civilPlans.length) state.activeCivilPlanIndex = state.civilPlans.length - 1;
       else if(idx < state.activeCivilPlanIndex) state.activeCivilPlanIndex--;
@@ -4490,10 +4754,10 @@ function restoreSnapshot(entry){
   if(state.activeCivilPlanIndex >= state.civilPlans.length || state.activeCivilPlanIndex < 0){
     state.activeCivilPlanIndex = Math.max(0, state.civilPlans.length - 1);
   }
-  // A conduit draft undone mid-draw could reference a pit/vertex that no
-  // longer exists after this restore — always drop it rather than risk
-  // that dangling reference.
-  cancelConduitDraft();
+  // A conduit/overhead-run draft undone mid-draw could reference a
+  // pit/pole/vertex that no longer exists after this restore — always
+  // drop it rather than risk that dangling reference.
+  cancelAllCivilDrafts();
   state.layers = d.layers; state.circuits = d.circuits;
   // an isolate filter pointed at a circuit that existed later than this
   // snapshot would otherwise hide every device after undoing past its
@@ -4722,18 +4986,49 @@ function renderCivilPalette(){
   beCard.addEventListener('click', () => civilBuildingEntryCardClick());
   symbolGrid.appendChild(buildSymbolCategory('Building entries', 'civil_be', [beCard], true));
 
+  const poleCards = POLE_LIBRARY.map(t => {
+    const el = document.createElement('div');
+    el.className = 'symbol-card';
+    el.innerHTML = `<div class="sw" style="background:${t.color}22;color:${t.color};border:1px solid ${t.color}55;">${t.abbr}</div><div class="lbl">${t.label}</div>`;
+    el.addEventListener('click', () => civilPoleCardClick(t, 'private'));
+    return el;
+  });
+  const networkPoleCard = document.createElement('div');
+  networkPoleCard.className = 'symbol-card';
+  networkPoleCard.innerHTML = `<div class="sw" style="background:#94a3b822;color:#94a3b8;border:1px dashed #94a3b8aa;">NP</div><div class="lbl">Network pole (attachment point)</div>`;
+  networkPoleCard.addEventListener('click', () => civilPoleCardClick(null, 'network'));
+  symbolGrid.appendChild(buildSymbolCategory('Poles', 'civil_poles', [...poleCards, networkPoleCard], true));
+
   const conduitCards = CONDUIT_SIZES.map(sz => {
     const el = document.createElement('div');
     el.className = 'symbol-card';
     el.innerHTML = `<div class="sw" style="background:${sz.color}22;color:${sz.color};border:1px solid ${sz.color}55;">${sz.size.replace('mm','')}</div><div class="lbl">${sz.size} conduit</div>`;
-    el.addEventListener('click', () => civilConduitCardClick(sz));
+    el.addEventListener('click', () => civilConduitCardClick(sz, 'electrical'));
     return el;
   });
-  symbolGrid.appendChild(buildSymbolCategory('Draw conduit', 'civil_conduit', conduitCards, true));
+  symbolGrid.appendChild(buildSymbolCategory('Draw electrical conduit', 'civil_conduit', conduitCards, true));
+
+  const commsConduitCards = COMMS_CONDUIT_SIZES.map(sz => {
+    const el = document.createElement('div');
+    el.className = 'symbol-card';
+    el.innerHTML = `<div class="sw" style="background:${sz.color}22;color:${sz.color};border:1px solid ${sz.color}55;">${sz.size.replace('mm','')}</div><div class="lbl">${sz.size} comms (NBN)</div>`;
+    el.addEventListener('click', () => civilConduitCardClick(sz, 'comms'));
+    return el;
+  });
+  symbolGrid.appendChild(buildSymbolCategory('Draw comms conduit', 'civil_comms_conduit', commsConduitCards, true));
+
+  const overheadCards = OVERHEAD_CONDUCTOR_SIZES.map(sz => {
+    const el = document.createElement('div');
+    el.className = 'symbol-card';
+    el.innerHTML = `<div class="sw" style="background:${sz.color}22;color:${sz.color};border:1px solid ${sz.color}55;">OH</div><div class="lbl">${sz.label}</div>`;
+    el.addEventListener('click', () => civilOverheadCardClick(sz));
+    return el;
+  });
+  symbolGrid.appendChild(buildSymbolCategory('Draw overhead run', 'civil_overhead', overheadCards, true));
 }
 function civilPitCardClick(type){
   exitMultiSelect();
-  cancelConduitDraft();
+  cancelAllCivilDrafts();
   state.activePitTypeId = type.id;
   state.activeTool = 'placePit';
   document.querySelectorAll('.bb-btn').forEach(b=>b.classList.remove('active'));
@@ -4742,19 +5037,39 @@ function civilPitCardClick(type){
 }
 function civilBuildingEntryCardClick(){
   exitMultiSelect();
-  cancelConduitDraft();
+  cancelAllCivilDrafts();
   state.activeTool = 'placeBuildingEntry';
   document.querySelectorAll('.bb-btn').forEach(b=>b.classList.remove('active'));
   setHint('Tap the plan to place a building service entry');
   closeSheets();
 }
-function civilConduitCardClick(size){
+function civilPoleCardClick(type, ownership){
   exitMultiSelect();
-  cancelConduitDraft();
+  cancelAllCivilDrafts();
+  state.activePoleOwnership = ownership;
+  if(type) state.activePoleTypeId = type.id;
+  state.activeTool = 'placePole';
+  document.querySelectorAll('.bb-btn').forEach(b=>b.classList.remove('active'));
+  setHint(ownership==='network' ? 'Tap the plan to place a network-pole attachment point' : 'Tap the plan to place a ' + type.label);
+  closeSheets();
+}
+function civilConduitCardClick(size, category){
+  exitMultiSelect();
+  cancelAllCivilDrafts();
   state.activeConduitSize = size;
+  state.activeConduitCategory = category || 'electrical';
   state.activeTool = 'conduit';
   document.querySelectorAll('.bb-btn').forEach(b=>b.classList.remove('active'));
-  setHint('Tap to start a ' + size.size + ' conduit run — click to add bends, click a pit/entry to finish there, Escape to cancel, Enter to finish unlinked');
+  setHint('Tap to start a ' + size.size + ' ' + (state.activeConduitCategory==='comms'?'comms':'electrical') + ' conduit run — click to add bends, click a pit/entry/pole to finish there, Escape to cancel, Enter to finish unlinked');
+  closeSheets();
+}
+function civilOverheadCardClick(size){
+  exitMultiSelect();
+  cancelAllCivilDrafts();
+  state.activeOverheadSize = size;
+  state.activeTool = 'overheadRun';
+  document.querySelectorAll('.bb-btn').forEach(b=>b.classList.remove('active'));
+  setHint('Tap to start a ' + size.label + ' overhead run — click to add span points, click a pole/eave to finish there, Escape to cancel, Enter to finish unlinked');
   closeSheets();
 }
 function openCustomFittingModal(){
@@ -5333,16 +5648,51 @@ function computeCivilLegendEntries(plan){
     const type = PIT_LIBRARY.find(t=>t.id===typeId);
     return { kind:'pit', color: type?type.color:'#94a3b8', abbr: type?type.abbr:'?', label: type?type.label:typeId, count: plan.pits.filter(p=>p.typeId===typeId).length };
   });
-  const conduitEntries = [...new Set(plan.conduits.map(cd=>cd.sizeId))].map(sizeId => {
+  // Conduits split by category (UG electrical vs UG comms — item 6's
+  // tagging vocabulary) before grouping by size, each category looking up
+  // its own size table so an electrical 40mm and a comms 40mm never merge
+  // into one legend row despite sharing a sizeId string.
+  const ugElecConduits = plan.conduits.filter(cd => cd.category!=='comms');
+  const ugCommsConduits = plan.conduits.filter(cd => cd.category==='comms');
+  const conduitEntries = [...new Set(ugElecConduits.map(cd=>cd.sizeId))].map(sizeId => {
     const size = CONDUIT_SIZES.find(s=>s.id===sizeId);
-    const cds = plan.conduits.filter(cd=>cd.sizeId===sizeId);
+    const cds = ugElecConduits.filter(cd=>cd.sizeId===sizeId);
     const lenWorld = cds.reduce((s,cd)=>s+conduitLength(cd), 0);
     const lenM = plan.scale ? lenWorld/plan.scale : null;
-    return { kind:'conduit', color: size?size.color:'#f97316', abbr: size?size.size.replace('mm',''):'?', label: (size?size.size:sizeId) + ' conduit', count: cds.length, lengthM: lenM };
+    return { kind:'conduit', color: size?size.color:'#f97316', abbr: size?size.size.replace('mm',''):'?', label: 'UG electrical — ' + (size?size.size:sizeId) + ' conduit', count: cds.length, lengthM: lenM };
+  });
+  const commsConduitEntries = [...new Set(ugCommsConduits.map(cd=>cd.sizeId))].map(sizeId => {
+    const size = COMMS_CONDUIT_SIZES.find(s=>s.id===sizeId);
+    const cds = ugCommsConduits.filter(cd=>cd.sizeId===sizeId);
+    const lenWorld = cds.reduce((s,cd)=>s+conduitLength(cd), 0);
+    const lenM = plan.scale ? lenWorld/plan.scale : null;
+    return { kind:'conduit-comms', color: size?size.color:'#38bdf8', abbr: size?size.size.replace('mm',''):'?', label: 'UG comms — ' + (size?size.size:sizeId) + ' conduit', count: cds.length, lengthM: lenM };
   });
   const beCount = plan.buildingEntries.length;
   const beEntry = beCount ? [{ kind:'buildingEntry', color:'#38bdf8', abbr:'BE', label:'Building entry', count:beCount }] : [];
-  return [...pitEntries, ...conduitEntries, ...beEntry];
+  const poleEntries = [...new Set((plan.poles||[]).map(p => p.ownership+'|'+(p.typeId||'')))].map(key => {
+    const [ownership, typeId] = key.split('|');
+    const type = ownership==='private' ? POLE_LIBRARY.find(t=>t.id===typeId) : null;
+    const poles = (plan.poles||[]).filter(p => p.ownership===ownership && (p.typeId||'')===typeId);
+    return { kind:'pole', color: type?type.color:'#94a3b8', abbr: type?type.abbr:'NP', label: ownership==='network' ? 'Network pole' : (type?type.label:'Pole'), count: poles.length };
+  });
+  const overheadEntries = [...new Set((plan.overheadRuns||[]).map(r=>r.sizeId))].map(sizeId => {
+    const size = OVERHEAD_CONDUCTOR_SIZES.find(s=>s.id===sizeId);
+    const runs = (plan.overheadRuns||[]).filter(r=>r.sizeId===sizeId);
+    const lenWorld = runs.reduce((s,r)=>s+conduitLength(r), 0);
+    const lenM = plan.scale ? lenWorld/plan.scale : null;
+    return { kind:'overhead', color: size?size.color:'#7c3aed', abbr:'OH', label: 'OH electrical — ' + (size?size.label:sizeId), count: runs.length, lengthM: lenM };
+  });
+  // Transition tallies — UGOH/OHUG are counted separately from plain
+  // UG/OH metreage above, per item 6 (they're a distinct legend concept:
+  // a run tagged as changing medium at a pole, not just "another run").
+  const ugohCount = plan.conduits.filter(cd => cd.transition==='ugoh').length;
+  const ohugCount = (plan.overheadRuns||[]).filter(r => r.transition==='ohug').length;
+  const transitionEntries = [
+    ...(ugohCount ? [{ kind:'transition', color:'#facc15', abbr:'UGOH', label:'UGOH transition (underground → overhead)', count: ugohCount }] : []),
+    ...(ohugCount ? [{ kind:'transition', color:'#facc15', abbr:'OHUG', label:'OHUG transition (overhead → underground)', count: ohugCount }] : []),
+  ];
+  return [...pitEntries, ...conduitEntries, ...commsConduitEntries, ...overheadEntries, ...beEntry, ...poleEntries, ...transitionEntries];
 }
 // Mirrors captureFloorSnapshot() below exactly, but for a civil plan.
 // render()'s dispatch now depends on state.activePlanType, which
@@ -5429,14 +5779,14 @@ function openPrintView(){
       const imgSrc = captureCivilPlanSnapshot(i);
       const entries = computeCivilLegendEntries(plan);
       const total = entries.reduce((s,e) => s+e.count, 0);
-      const hasContent = !!(plan.planImage || plan.pits.length || plan.conduits.length || plan.buildingEntries.length);
+      const hasContent = !!(plan.planImage || plan.pits.length || plan.conduits.length || plan.buildingEntries.length || (plan.poles||[]).length || (plan.overheadRuns||[]).length);
       printPagesData.push({ kind:'civil', floorName: plan.name, calibrated: !!plan.scale, imgSrc, hasContent, entries, total });
     });
   }
   const pagesHtml = printPagesData.map(p => {
     const legendRows = p.entries.map(e => {
       if(p.kind==='civil'){
-        const lenLabel = e.kind==='conduit' ? (e.lengthM!=null ? ' — ' + e.lengthM.toFixed(1)+'m' : ' — not calibrated') : '';
+        const lenLabel = (e.kind==='conduit' || e.kind==='conduit-comms' || e.kind==='overhead') ? (e.lengthM!=null ? ' — ' + e.lengthM.toFixed(1)+'m' : ' — not calibrated') : '';
         return `<tr>
           <td><span class="pl-swatch" style="background:${e.color};">${e.abbr}</span>${e.label}${lenLabel}</td>
           <td class="pl-qty">× ${e.count}</td>
@@ -5541,7 +5891,7 @@ async function downloadPdfExport(){
       doc.setFillColor(r,g,b); doc.circle(legendX+2, ly-1, 1.6, 'F');
       doc.setTextColor(30,30,30);
       const label = p.kind==='civil'
-        ? e.label + (e.kind==='conduit' ? (e.lengthM!=null ? ' — '+e.lengthM.toFixed(1)+'m' : ' — n/c') : '')
+        ? e.label + ((e.kind==='conduit' || e.kind==='conduit-comms' || e.kind==='overhead') ? (e.lengthM!=null ? ' — '+e.lengthM.toFixed(1)+'m' : ' — n/c') : '')
         : e.sym.label + (e.gang ? ' — '+e.gang+'g' : '');
       doc.text(label, legendX+5.5, ly, { maxWidth: legendW-13 });
       doc.text('×'+e.count, legendX+legendW, ly, { align:'right' });
@@ -5898,6 +6248,7 @@ function civilEndpointLabel(cd, end){
   const plan = currentCivilPlan();
   const pitId = end==='from' ? cd.fromPitId : cd.toPitId;
   const beId = end==='from' ? cd.fromBuildingEntryId : cd.toBuildingEntryId;
+  const poleId = end==='from' ? cd.fromPoleId : cd.toPoleId;
   if(pitId){
     const p = plan.pits.find(x=>x.id===pitId);
     if(!p) return 'Pit (deleted)';
@@ -5908,21 +6259,35 @@ function civilEndpointLabel(cd, end){
     const b = plan.buildingEntries.find(x=>x.id===beId);
     return b ? (b.label || 'Building entry') : 'Building entry (deleted)';
   }
+  if(poleId){
+    const pl = plan.poles.find(x=>x.id===poleId);
+    if(!pl) return 'Pole (deleted)';
+    return pl.label || (pl.ownership==='network' ? 'Network pole' : (POLE_LIBRARY.find(t=>t.id===pl.typeId)||{}).label || 'Pole');
+  }
   return 'Unlinked';
 }
 function openConduitProps(id){
   const plan = currentCivilPlan();
   const cd = plan.conduits.find(c=>c.id===id);
   if(!cd) return;
-  state.selectedConduitId = id; state.selectedPitId = null; state.selectedBuildingEntryId = null;
+  clearCivilSelection(); state.selectedConduitId = id;
   render();
   setDeviceEditorActive(true);
-  const size = CONDUIT_SIZES.find(s=>s.id===cd.sizeId) || CONDUIT_SIZES[0];
-  document.getElementById('propsTitle').textContent = size.size + ' conduit';
-  const sizeOptions = CONDUIT_SIZES.map(s => `<option value="${s.id}" ${s.id===cd.sizeId?'selected':''}>${s.size}</option>`).join('');
+  const isComms = cd.category==='comms';
+  const sizeTable = isComms ? COMMS_CONDUIT_SIZES : CONDUIT_SIZES;
+  const size = sizeTable.find(s=>s.id===cd.sizeId) || sizeTable[0];
+  document.getElementById('propsTitle').textContent = size.size + ' ' + (isComms?'comms':'electrical') + ' conduit';
+  const sizeOptions = sizeTable.map(s => `<option value="${s.id}" ${s.id===cd.sizeId?'selected':''}>${s.size}</option>`).join('');
   const lenWorld = conduitLength(cd);
   const lenLabel = plan.scale ? (lenWorld/plan.scale).toFixed(1)+' m' : Math.round(lenWorld)+' px — calibrate the plan for metres';
+  // A UGOH (underground-to-overhead) transition only makes sense once one
+  // end is actually linked to a pole — the riser conduit segment that
+  // carries the run up the pole into an overhead run. Manual flag, not
+  // auto-detected (see plan doc: a pole can anchor unrelated underground
+  // and overhead infrastructure with no transition intended).
+  const linkedToPole = !!(cd.fromPoleId || cd.toPoleId);
   document.getElementById('propsBody').innerHTML = `
+    <div class="prop-row"><label>Category</label><select id="cv_cd_category"><option value="electrical" ${!isComms?'selected':''}>Electrical</option><option value="comms" ${isComms?'selected':''}>Comms (NBN)</option></select></div>
     <div class="prop-row"><label>Conduit size</label><select id="cv_cd_size">${sizeOptions}</select></div>
     <div class="prop-grid2">
       <div class="prop-row"><label>From</label><input value="${civilEndpointLabel(cd,'from')}" disabled></div>
@@ -5930,13 +6295,22 @@ function openConduitProps(id){
     </div>
     <div class="prop-row"><label>Length</label><input value="${lenLabel}" disabled></div>
     <div class="prop-row"><label>Points</label><span style="color:var(--text-dim); font-size:12px;">${cd.points.length} — right-click a point on the plan to insert/delete one</span></div>
+    <div class="prop-row"><label style="display:flex; align-items:center; gap:6px; ${linkedToPole?'':'opacity:0.45;'}"><input type="checkbox" id="cv_cd_transition" ${cd.transition==='ugoh'?'checked':''} ${linkedToPole?'':'disabled'}> UGOH — transitions to an overhead run at this pole</label></div>
     <button class="danger-btn" id="btnDeleteConduit">Delete conduit</button>
   `;
+  document.getElementById('cv_cd_category').addEventListener('change', (e) => {
+    const newTable = e.target.value==='comms' ? COMMS_CONDUIT_SIZES : CONDUIT_SIZES;
+    cd.category = e.target.value; cd.sizeId = newTable[0].id;
+    pushHistory(); render(); markDirty(); openConduitProps(id);
+  });
   document.getElementById('cv_cd_size').addEventListener('change', (e) => {
     cd.sizeId = e.target.value; pushHistory(); render(); markDirty(); openConduitProps(id);
   });
+  document.getElementById('cv_cd_transition').addEventListener('change', (e) => {
+    cd.transition = e.target.checked ? 'ugoh' : null; pushHistory(); markDirty();
+  });
   document.getElementById('btnDeleteConduit').addEventListener('click', () => {
-    openConfirmModal('Delete this conduit?', 'This removes the whole run. Any pit or building entry it was linked to stays in place.', () => deleteConduit(id), 'Delete');
+    openConfirmModal('Delete this conduit?', 'This removes the whole run. Any pit, pole, or building entry it was linked to stays in place.', () => deleteConduit(id), 'Delete');
   });
   openSheet('sheetProps');
 }
@@ -5953,8 +6327,8 @@ function deleteConduitVertex(conduitId, vertexIndex){
   const cd = plan.conduits.find(c=>c.id===conduitId);
   if(!cd) return;
   if(cd.points.length <= 2){ showToast('A conduit needs at least 2 points — delete the whole conduit instead'); return; }
-  if(vertexIndex===0){ cd.fromPitId = null; cd.fromBuildingEntryId = null; }
-  if(vertexIndex===cd.points.length-1){ cd.toPitId = null; cd.toBuildingEntryId = null; }
+  if(vertexIndex===0){ cd.fromPitId = null; cd.fromBuildingEntryId = null; cd.fromPoleId = null; }
+  if(vertexIndex===cd.points.length-1){ cd.toPitId = null; cd.toBuildingEntryId = null; cd.toPoleId = null; }
   cd.points.splice(vertexIndex, 1);
   pushHistory(); render(); markDirty();
   if(state.selectedConduitId===conduitId) openConduitProps(conduitId);
@@ -5982,17 +6356,22 @@ function finishConduitDraft(){
   const cd = {
     id: 'CD-'+String(state.nextId++).padStart(3,'0'),
     points: conduitDraft.points,
+    category: conduitDraft.category || 'electrical',
     sizeId: conduitDraft.sizeId,
     fromPitId: conduitDraft.fromPitId || null,
     fromBuildingEntryId: conduitDraft.fromBuildingEntryId || null,
+    fromPoleId: conduitDraft.fromPoleId || null,
     toPitId: conduitDraft.toPitId || null,
     toBuildingEntryId: conduitDraft.toBuildingEntryId || null,
+    toPoleId: conduitDraft.toPoleId || null,
+    transition: null, // 'ugoh' | null — set from the props panel once linked to a pole
   };
   currentCivilPlan().conduits.push(cd);
-  const sizeLabel = (CONDUIT_SIZES.find(s=>s.id===cd.sizeId)||{}).size || '';
+  const sizeTable = cd.category==='comms' ? COMMS_CONDUIT_SIZES : CONDUIT_SIZES;
+  const sizeLabel = (sizeTable.find(s=>s.id===cd.sizeId)||{}).size || '';
   conduitDraft = null; conduitDraftHover = null;
   state.snapGuides = []; state.snapTarget = null;
-  state.selectedConduitId = cd.id; state.selectedPitId = null; state.selectedBuildingEntryId = null;
+  clearCivilSelection(); state.selectedConduitId = cd.id;
   pushHistory(); render(); markDirty();
   setHint('Conduit placed. Tap the plan to start another ' + sizeLabel + ' run, or press Escape/switch tools to stop.');
 }
@@ -6007,11 +6386,54 @@ function cancelConduitDraft(){
   setHint(null);
   render();
 }
+// Overhead runs (aerial, pole-to-pole/building-eave) — literal clone of the
+// conduit draft/finish/cancel lifecycle (see finishConduitDraft/
+// cancelConduitDraft above), kept as a separate function set rather than
+// generalized per this codebase's "mirror, don't abstract" convention.
+function finishOverheadRunDraft(){
+  if(!overheadRunDraft){ return; }
+  if(overheadRunDraft.points.length < 2 || conduitLength(overheadRunDraft) < 2){
+    overheadRunDraft = null; overheadRunDraftHover = null; state.snapGuides = []; state.snapTarget = null; render();
+    return;
+  }
+  const run = {
+    id: 'OH-'+String(state.nextId++).padStart(3,'0'),
+    points: overheadRunDraft.points,
+    sizeId: overheadRunDraft.sizeId,
+    fromPoleId: overheadRunDraft.fromPoleId || null,
+    fromBuildingEntryId: overheadRunDraft.fromBuildingEntryId || null,
+    toPoleId: overheadRunDraft.toPoleId || null,
+    toBuildingEntryId: overheadRunDraft.toBuildingEntryId || null,
+    transition: null, // 'ohug' | null — set from the props panel once linked to a pole
+  };
+  currentCivilPlan().overheadRuns.push(run);
+  const sizeLabel = (OVERHEAD_CONDUCTOR_SIZES.find(s=>s.id===run.sizeId)||{}).label || '';
+  overheadRunDraft = null; overheadRunDraftHover = null;
+  state.snapGuides = []; state.snapTarget = null;
+  clearCivilSelection(); state.selectedOverheadRunId = run.id;
+  pushHistory(); render(); markDirty();
+  setHint('Overhead run placed. Tap the plan to start another ' + sizeLabel + ' run, or press Escape/switch tools to stop.');
+}
+function cancelOverheadRunDraft(){
+  if(!overheadRunDraft) return;
+  overheadRunDraft = null; overheadRunDraftHover = null;
+  state.snapGuides = []; state.snapTarget = null;
+  setHint(null);
+  render();
+}
+// Called wherever a stale draft of EITHER polyline type must not be left
+// dangling — switching tools, switching civil plans, leaving civil mode,
+// Escape, undo, project load. See the 5-call-site list for
+// cancelConduitDraft in the civil module plan doc.
+function cancelAllCivilDrafts(){
+  cancelConduitDraft();
+  cancelOverheadRunDraft();
+}
 function openPitProps(id){
   const plan = currentCivilPlan();
   const pit = plan.pits.find(p=>p.id===id);
   if(!pit) return;
-  state.selectedPitId = id; state.selectedBuildingEntryId = null; state.selectedConduitId = null;
+  clearCivilSelection(); state.selectedPitId = id;
   render();
   setDeviceEditorActive(true);
   const type = PIT_LIBRARY.find(t=>t.id===pit.typeId) || PIT_LIBRARY[0];
@@ -6062,7 +6484,7 @@ function openBuildingEntryProps(id){
   const plan = currentCivilPlan();
   const be = plan.buildingEntries.find(b=>b.id===id);
   if(!be) return;
-  state.selectedBuildingEntryId = id; state.selectedPitId = null; state.selectedConduitId = null;
+  clearCivilSelection(); state.selectedBuildingEntryId = id;
   render();
   setDeviceEditorActive(true);
   document.getElementById('propsTitle').textContent = be.label || 'Building entry';
@@ -6071,18 +6493,33 @@ function openBuildingEntryProps(id){
       <input type="checkbox" class="cv_be_service" value="${st.id}" ${be.serviceTypes.includes(st.id)?'checked':''}> ${st.label}
     </label>`).join('');
   const linkedConduits = plan.conduits.filter(cd => cd.fromBuildingEntryId===id || cd.toBuildingEntryId===id);
-  const linkedHtml = linkedConduits.length
-    ? `<div class="prop-row"><label>Conduits connected here</label><div style="font-size:12.5px; color:var(--text);">${linkedConduits.length} conduit${linkedConduits.length===1?'':'s'}</div></div>`
-    : `<div class="prop-row"><label>Conduits connected here</label><span style="color:var(--text-dim); font-size:12px;">None yet</span></div>`;
+  const linkedRuns = plan.overheadRuns.filter(r => r.fromBuildingEntryId===id || r.toBuildingEntryId===id);
+  const linkedCount = linkedConduits.length + linkedRuns.length;
+  const linkedHtml = linkedCount
+    ? `<div class="prop-row"><label>Runs connected here</label><div style="font-size:12.5px; color:var(--text);">${linkedConduits.length} conduit${linkedConduits.length===1?'':'s'}, ${linkedRuns.length} overhead run${linkedRuns.length===1?'':'s'}</div></div>`
+    : `<div class="prop-row"><label>Runs connected here</label><span style="color:var(--text-dim); font-size:12px;">None yet</span></div>`;
+  // Role tags — a building entry can be tagged for run-linking purposes
+  // independent of serviceTypes (what physically enters there). This is
+  // deliberately NOT a reference to the floor plan's switchboard object
+  // (see the plan doc's pillar→switchboard resolution): a human reads
+  // "switchboard-tagged" off the civil plan and correlates it themselves.
   document.getElementById('propsBody').innerHTML = `
     <div class="prop-row"><label>Label</label><input id="cv_be_label" value="${be.label||''}" placeholder="e.g. Main switchboard entry"></div>
     <div class="prop-row"><label>Services entering here</label>${serviceCheckboxes}</div>
+    <div class="prop-row"><label>Run-linking role</label>
+      <label style="display:flex; align-items:center; gap:6px; font-size:12.5px; margin-bottom:4px;"><input type="checkbox" id="cv_be_switchboard" ${be.isSwitchboardConnection?'checked':''}> Switchboard connection (pillar → switchboard run terminates here)</label>
+      <label style="display:flex; align-items:center; gap:6px; font-size:12.5px; margin-bottom:4px;"><input type="checkbox" id="cv_be_nbn" ${be.isNbnConnection?'checked':''}> NBN connection (comms demarcation point)</label>
+      <label style="display:flex; align-items:center; gap:6px; font-size:12.5px;"><input type="checkbox" id="cv_be_eave" ${be.isOverheadAttachment?'checked':''}> Eave / overhead attachment bracket</label>
+    </div>
     ${linkedHtml}
     <div class="prop-row"><label>Notes</label><textarea id="cv_be_notes" placeholder="e.g. core through slab, sleeve required">${be.notes||''}</textarea></div>
     <button class="danger-btn" id="btnDeleteBuildingEntry">Delete building entry</button>
   `;
   document.getElementById('cv_be_label').addEventListener('change', (e) => { be.label = e.target.value.trim(); document.getElementById('propsTitle').textContent = be.label || 'Building entry'; pushHistory(); markDirty(); });
   document.getElementById('cv_be_notes').addEventListener('change', (e) => { be.notes = e.target.value; pushHistory(); markDirty(); });
+  document.getElementById('cv_be_switchboard').addEventListener('change', (e) => { be.isSwitchboardConnection = e.target.checked; pushHistory(); markDirty(); });
+  document.getElementById('cv_be_nbn').addEventListener('change', (e) => { be.isNbnConnection = e.target.checked; pushHistory(); markDirty(); });
+  document.getElementById('cv_be_eave').addEventListener('change', (e) => { be.isOverheadAttachment = e.target.checked; pushHistory(); markDirty(); });
   document.querySelectorAll('.cv_be_service').forEach(cb => {
     cb.addEventListener('change', () => {
       be.serviceTypes = Array.from(document.querySelectorAll('.cv_be_service:checked')).map(x=>x.value);
@@ -6090,19 +6527,168 @@ function openBuildingEntryProps(id){
     });
   });
   document.getElementById('btnDeleteBuildingEntry').addEventListener('click', () => {
-    const affected = plan.conduits.filter(cd => cd.fromBuildingEntryId===id || cd.toBuildingEntryId===id);
+    const affected = linkedConduits;
+    const affectedRuns = linkedRuns;
     const doDelete = () => {
       affected.forEach(cd => { if(cd.fromBuildingEntryId===id) cd.fromBuildingEntryId=null; if(cd.toBuildingEntryId===id) cd.toBuildingEntryId=null; });
+      affectedRuns.forEach(r => { if(r.fromBuildingEntryId===id) r.fromBuildingEntryId=null; if(r.toBuildingEntryId===id) r.toBuildingEntryId=null; });
       plan.buildingEntries = plan.buildingEntries.filter(b=>b.id!==id);
       state.selectedBuildingEntryId = null; setDeviceEditorActive(false); closeSheets(); pushHistory(); render(); markDirty();
     };
-    if(affected.length){
-      openConfirmModal('Delete this building entry?', affected.length+' conduit'+(affected.length===1?'':'s')+' will be unlinked from it (not deleted).', doDelete, 'Delete');
+    if(linkedCount){
+      openConfirmModal('Delete this building entry?', linkedCount+' run'+(linkedCount===1?'':'s')+' will be unlinked from it (not deleted).', doDelete, 'Delete');
     } else {
       doDelete();
     }
   });
   openSheet('sheetProps');
+}
+function openPoleProps(id){
+  const plan = currentCivilPlan();
+  const pole = plan.poles.find(p=>p.id===id);
+  if(!pole) return;
+  clearCivilSelection(); state.selectedPoleId = id;
+  render();
+  setDeviceEditorActive(true);
+  const isPrivate = pole.ownership==='private';
+  const type = isPrivate ? (POLE_LIBRARY.find(t=>t.id===pole.typeId) || POLE_LIBRARY[0]) : null;
+  document.getElementById('propsTitle').textContent = pole.label || (isPrivate ? type.label : 'Network pole');
+  const linkedConduits = plan.conduits.filter(cd => cd.fromPoleId===id || cd.toPoleId===id);
+  const linkedRuns = plan.overheadRuns.filter(r => r.fromPoleId===id || r.toPoleId===id);
+  const linkedCount = linkedConduits.length + linkedRuns.length;
+  const linkedHtml = linkedCount
+    ? `<div class="prop-row"><label>Runs connected here</label><div style="font-size:12.5px; color:var(--text);">${linkedConduits.length} conduit${linkedConduits.length===1?'':'s'}, ${linkedRuns.length} overhead run${linkedRuns.length===1?'':'s'}</div></div>`
+    : `<div class="prop-row"><label>Runs connected here</label><span style="color:var(--text-dim); font-size:12px;">None yet</span></div>`;
+  // Network poles are a placeholder attachment POINT, not a fully-owned
+  // asset — deliberately reduced fields (label/notes only), per the plan
+  // doc: the electrician doesn't own or install it.
+  const ownedFieldsHtml = isPrivate ? `
+    <div class="prop-row"><label>Pole type</label><select id="cv_pl_type">${POLE_LIBRARY.map(t=>`<option value="${t.id}" ${t.id===pole.typeId?'selected':''}>${t.label}</option>`).join('')}</select></div>
+    <div class="prop-grid2">
+      <div class="prop-row"><label>Height (m)</label><input id="cv_pl_height" type="number" step="0.1" value="${pole.height||0}"></div>
+      <div class="prop-row"><label>&nbsp;</label><div style="display:flex; gap:10px; align-items:center; height:36px;">
+        <label style="display:flex; align-items:center; gap:5px; font-size:12.5px;"><input type="checkbox" id="cv_pl_stayWire" ${pole.stayWire?'checked':''}> Stay wire</label>
+        <label style="display:flex; align-items:center; gap:5px; font-size:12.5px;"><input type="checkbox" id="cv_pl_stayRod" ${pole.stayRod?'checked':''}> Stay rod</label>
+      </div></div>
+    </div>
+    <div class="prop-grid2">
+      <div class="prop-row"><label>Material cost</label><input id="cv_pl_cost" type="number" step="0.01" value="${pole.props.material_cost}"></div>
+      <div class="prop-row"><label>Labour (hrs)</label><input id="cv_pl_labour" type="number" step="0.05" value="${pole.props.labour_hours}"></div>
+    </div>` : `<div class="prop-row"><span style="color:var(--text-dim); font-size:12px;">Network pole — owned by the network operator, not this job. Only a label and notes are tracked here.</span></div>`;
+  document.getElementById('propsBody').innerHTML = `
+    <div class="prop-row"><label>Label</label><input id="cv_pl_label" value="${pole.label||''}" placeholder="${isPrivate ? type.label : 'Network pole'}"></div>
+    ${ownedFieldsHtml}
+    ${linkedHtml}
+    <div class="prop-row"><label>Notes</label><textarea id="cv_pl_notes" placeholder="e.g. pole number, easement notes">${pole.notes||''}</textarea></div>
+    <button class="danger-btn" id="btnDeletePole">Delete pole</button>
+  `;
+  document.getElementById('cv_pl_label').addEventListener('change', (e) => { pole.label = e.target.value.trim(); document.getElementById('propsTitle').textContent = pole.label || (isPrivate?type.label:'Network pole'); pushHistory(); markDirty(); });
+  document.getElementById('cv_pl_notes').addEventListener('change', (e) => { pole.notes = e.target.value; pushHistory(); markDirty(); });
+  if(isPrivate){
+    document.getElementById('cv_pl_type').addEventListener('change', (e) => {
+      const t = POLE_LIBRARY.find(x=>x.id===e.target.value); if(!t) return;
+      pole.typeId = t.id; pole.props.material_cost = t.defaultProps.material_cost; pole.props.labour_hours = t.defaultProps.labour_hours;
+      pushHistory(); render(); markDirty(); openPoleProps(id);
+    });
+    document.getElementById('cv_pl_height').addEventListener('change', (e) => { pole.height = parseFloat(e.target.value)||0; pushHistory(); markDirty(); });
+    document.getElementById('cv_pl_stayWire').addEventListener('change', (e) => { pole.stayWire = e.target.checked; pushHistory(); markDirty(); });
+    document.getElementById('cv_pl_stayRod').addEventListener('change', (e) => { pole.stayRod = e.target.checked; pushHistory(); markDirty(); });
+    document.getElementById('cv_pl_cost').addEventListener('change', (e) => { pole.props.material_cost = parseFloat(e.target.value)||0; pushHistory(); markDirty(); });
+    document.getElementById('cv_pl_labour').addEventListener('change', (e) => { pole.props.labour_hours = parseFloat(e.target.value)||0; pushHistory(); markDirty(); });
+  }
+  document.getElementById('btnDeletePole').addEventListener('click', () => {
+    const doDelete = () => {
+      linkedConduits.forEach(cd => { if(cd.fromPoleId===id) cd.fromPoleId=null; if(cd.toPoleId===id) cd.toPoleId=null; });
+      linkedRuns.forEach(r => { if(r.fromPoleId===id) r.fromPoleId=null; if(r.toPoleId===id) r.toPoleId=null; });
+      plan.poles = plan.poles.filter(p=>p.id!==id);
+      state.selectedPoleId = null; setDeviceEditorActive(false); closeSheets(); pushHistory(); render(); markDirty();
+    };
+    if(linkedCount){
+      openConfirmModal('Delete this pole?', linkedCount+' run'+(linkedCount===1?'':'s')+' will be unlinked from it (not deleted) — you can re-terminate them elsewhere afterwards.', doDelete, 'Delete');
+    } else {
+      doDelete();
+    }
+  });
+  openSheet('sheetProps');
+}
+function openOverheadRunProps(id){
+  const plan = currentCivilPlan();
+  const run = plan.overheadRuns.find(r=>r.id===id);
+  if(!run) return;
+  clearCivilSelection(); state.selectedOverheadRunId = id;
+  render();
+  setDeviceEditorActive(true);
+  const size = OVERHEAD_CONDUCTOR_SIZES.find(s=>s.id===run.sizeId) || OVERHEAD_CONDUCTOR_SIZES[0];
+  document.getElementById('propsTitle').textContent = size.label + ' overhead run';
+  const sizeOptions = OVERHEAD_CONDUCTOR_SIZES.map(s => `<option value="${s.id}" ${s.id===run.sizeId?'selected':''}>${s.label}</option>`).join('');
+  const lenWorld = conduitLength(run);
+  const lenLabel = plan.scale ? (lenWorld/plan.scale).toFixed(1)+' m' : Math.round(lenWorld)+' px — calibrate the plan for metres';
+  const linkedToPole = !!(run.fromPoleId || run.toPoleId);
+  document.getElementById('propsBody').innerHTML = `
+    <div class="prop-row"><label>Conductor</label><select id="cv_oh_size">${sizeOptions}</select></div>
+    <div class="prop-grid2">
+      <div class="prop-row"><label>From</label><input value="${overheadEndpointLabel(run,'from')}" disabled></div>
+      <div class="prop-row"><label>To</label><input value="${overheadEndpointLabel(run,'to')}" disabled></div>
+    </div>
+    <div class="prop-row"><label>Span distance</label><input value="${lenLabel}" disabled></div>
+    <div class="prop-row"><label>Points</label><span style="color:var(--text-dim); font-size:12px;">${run.points.length} — right-click a point on the plan to insert/delete one</span></div>
+    <div class="prop-row"><label style="display:flex; align-items:center; gap:6px; ${linkedToPole?'':'opacity:0.45;'}"><input type="checkbox" id="cv_oh_transition" ${run.transition==='ohug'?'checked':''} ${linkedToPole?'':'disabled'}> OHUG — transitions to underground conduit at this pole</label></div>
+    <button class="danger-btn" id="btnDeleteOverheadRun">Delete overhead run</button>
+  `;
+  document.getElementById('cv_oh_size').addEventListener('change', (e) => {
+    run.sizeId = e.target.value; pushHistory(); render(); markDirty(); openOverheadRunProps(id);
+  });
+  document.getElementById('cv_oh_transition').addEventListener('change', (e) => {
+    run.transition = e.target.checked ? 'ohug' : null; pushHistory(); markDirty();
+  });
+  document.getElementById('btnDeleteOverheadRun').addEventListener('click', () => {
+    openConfirmModal('Delete this overhead run?', 'This removes the whole span. Any pole or building entry it was linked to stays in place.', () => deleteOverheadRun(id), 'Delete');
+  });
+  openSheet('sheetProps');
+}
+function overheadEndpointLabel(run, end){
+  const plan = currentCivilPlan();
+  const poleId = end==='from' ? run.fromPoleId : run.toPoleId;
+  const beId = end==='from' ? run.fromBuildingEntryId : run.toBuildingEntryId;
+  if(poleId){
+    const pl = plan.poles.find(x=>x.id===poleId);
+    if(!pl) return 'Pole (deleted)';
+    return pl.label || (pl.ownership==='network' ? 'Network pole' : (POLE_LIBRARY.find(t=>t.id===pl.typeId)||{}).label || 'Pole');
+  }
+  if(beId){
+    const b = plan.buildingEntries.find(x=>x.id===beId);
+    return b ? (b.label || 'Building entry') : 'Building entry (deleted)';
+  }
+  return 'Unlinked';
+}
+function deleteOverheadRun(runId){
+  const plan = currentCivilPlan();
+  plan.overheadRuns = plan.overheadRuns.filter(r=>r.id!==runId);
+  if(state.selectedOverheadRunId===runId){
+    state.selectedOverheadRunId = null; setDeviceEditorActive(false); closeSheets();
+  }
+  pushHistory(); render(); markDirty();
+}
+function deleteOverheadRunVertex(runId, vertexIndex){
+  const plan = currentCivilPlan();
+  const run = plan.overheadRuns.find(r=>r.id===runId);
+  if(!run) return;
+  if(run.points.length <= 2){ showToast('An overhead run needs at least 2 points — delete the whole run instead'); return; }
+  if(vertexIndex===0){ run.fromPoleId = null; run.fromBuildingEntryId = null; }
+  if(vertexIndex===run.points.length-1){ run.toPoleId = null; run.toBuildingEntryId = null; }
+  run.points.splice(vertexIndex, 1);
+  pushHistory(); render(); markDirty();
+  if(state.selectedOverheadRunId===runId) openOverheadRunProps(runId);
+}
+function insertOverheadRunVertex(runId, segmentIndex, world){
+  const plan = currentCivilPlan();
+  const run = plan.overheadRuns.find(r=>r.id===runId);
+  if(!run) return;
+  const snapped = snapPointCivil(world, {});
+  run.points.splice(segmentIndex+1, 0, { x:snapped.x, y:snapped.y });
+  state.snapGuides = []; state.snapTarget = null;
+  pushHistory(); render(); markDirty();
+  if(state.selectedOverheadRunId===runId) openOverheadRunProps(runId);
 }
 
 function openCableProps(id){
@@ -6219,28 +6805,72 @@ function updateCivilQuote(){
   });
   if(!pitTypeIds.length) pitsBody.innerHTML = '<tr><td colspan="4" style="color:var(--text-dim);">No pits placed yet</td></tr>';
 
-  const conduitSizeIds = [...new Set(plan.conduits.map(cd=>cd.sizeId))];
-  const conduitsBody = document.getElementById('civilConduitsBody');
-  conduitsBody.innerHTML = '';
-  conduitSizeIds.forEach(sizeId => {
-    const size = CONDUIT_SIZES.find(s=>s.id===sizeId);
-    const cds = plan.conduits.filter(cd=>cd.sizeId===sizeId);
-    const lenWorld = cds.reduce((s,cd)=>s+conduitLength(cd), 0);
+  // Electrical and comms conduit runs get separate table sections/subtotal
+  // rows feeding the same shared materials/labour totals below — kept
+  // apart so a "how much comms conduit is this job" question doesn't
+  // require manually filtering the electrical metreage out.
+  function renderConduitTable(bodyId, cds, sizeTable, emptyLabel){
+    const sizeIds = [...new Set(cds.map(cd=>cd.sizeId))];
+    const body = document.getElementById(bodyId);
+    body.innerHTML = '';
+    sizeIds.forEach(sizeId => {
+      const size = sizeTable.find(s=>s.id===sizeId);
+      const group = cds.filter(cd=>cd.sizeId===sizeId);
+      const lenWorld = group.reduce((s,cd)=>s+conduitLength(cd), 0);
+      const lenM = plan.scale ? lenWorld/plan.scale : 0;
+      const cost = size ? lenM*size.material_cost_per_m : 0;
+      const labour = size ? lenM*size.labour_hours_per_m : 0;
+      materials += cost; labourCost += labour*labourRate;
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td>${size?size.size:sizeId}</td><td>${lenM.toFixed(1)}</td><td>${size?'$'+size.material_cost_per_m.toFixed(2):'-'}</td><td>${fmt(cost)}</td>`;
+      body.appendChild(tr);
+    });
+    if(!sizeIds.length) body.innerHTML = `<tr><td colspan="4" style="color:var(--text-dim);">${emptyLabel}</td></tr>`;
+  }
+  renderConduitTable('civilConduitsBody', plan.conduits.filter(cd=>cd.category!=='comms'), CONDUIT_SIZES, 'No electrical conduit runs yet');
+  renderConduitTable('civilCommsConduitsBody', plan.conduits.filter(cd=>cd.category==='comms'), COMMS_CONDUIT_SIZES, 'No comms conduit runs yet');
+
+  const poleKeys = [...new Set((plan.poles||[]).map(p => p.ownership+'|'+(p.typeId||'')))];
+  const polesBody = document.getElementById('civilPolesBody');
+  polesBody.innerHTML = '';
+  poleKeys.forEach(key => {
+    const [ownership, typeId] = key.split('|');
+    const type = ownership==='private' ? POLE_LIBRARY.find(t=>t.id===typeId) : null;
+    const polesOfType = (plan.poles||[]).filter(p => p.ownership===ownership && (p.typeId||'')===typeId);
+    const cost = polesOfType.reduce((s,p)=>s+(p.props.material_cost||0), 0);
+    const labour = polesOfType.reduce((s,p)=>s+(p.props.labour_hours||0), 0);
+    materials += cost; labourCost += labour*labourRate;
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${ownership==='network'?'Network pole':(type?type.label:'Pole')}</td><td>${polesOfType.length}</td><td>${fmt(polesOfType.length?cost/polesOfType.length:0)}</td><td>${fmt(cost)}</td>`;
+    polesBody.appendChild(tr);
+  });
+  if(!poleKeys.length) polesBody.innerHTML = '<tr><td colspan="4" style="color:var(--text-dim);">No poles placed yet</td></tr>';
+
+  const overheadSizeIds = [...new Set((plan.overheadRuns||[]).map(r=>r.sizeId))];
+  const overheadBody = document.getElementById('civilOverheadBody');
+  overheadBody.innerHTML = '';
+  overheadSizeIds.forEach(sizeId => {
+    const size = OVERHEAD_CONDUCTOR_SIZES.find(s=>s.id===sizeId);
+    const runs = (plan.overheadRuns||[]).filter(r=>r.sizeId===sizeId);
+    const lenWorld = runs.reduce((s,r)=>s+conduitLength(r), 0);
     const lenM = plan.scale ? lenWorld/plan.scale : 0;
     const cost = size ? lenM*size.material_cost_per_m : 0;
     const labour = size ? lenM*size.labour_hours_per_m : 0;
     materials += cost; labourCost += labour*labourRate;
     const tr = document.createElement('tr');
-    tr.innerHTML = `<td>${size?size.size:sizeId}</td><td>${lenM.toFixed(1)}</td><td>${size?'$'+size.material_cost_per_m.toFixed(2):'-'}</td><td>${fmt(cost)}</td>`;
-    conduitsBody.appendChild(tr);
+    tr.innerHTML = `<td>${size?size.label:sizeId}</td><td>${lenM.toFixed(1)}</td><td>${size?'$'+size.material_cost_per_m.toFixed(2):'-'}</td><td>${fmt(cost)}</td>`;
+    overheadBody.appendChild(tr);
   });
-  if(!conduitSizeIds.length) conduitsBody.innerHTML = '<tr><td colspan="4" style="color:var(--text-dim);">No conduit runs yet</td></tr>';
+  if(!overheadSizeIds.length) overheadBody.innerHTML = '<tr><td colspan="4" style="color:var(--text-dim);">No overhead runs yet</td></tr>';
 
+  const ugohCount = plan.conduits.filter(cd => cd.transition==='ugoh').length;
+  const ohugCount = (plan.overheadRuns||[]).filter(r => r.transition==='ohug').length;
   document.getElementById('civilBuildingEntryCount').textContent = plan.buildingEntries.length;
+  document.getElementById('civilTransitionCount').textContent = ugohCount + ohugCount + ' (' + ugohCount + ' UGOH, ' + ohugCount + ' OHUG)';
   document.getElementById('civilMaterialsTotal').textContent = fmt(materials);
   document.getElementById('civilLabourTotal').textContent = fmt(labourCost);
   document.getElementById('civilGrandTotal').textContent = fmt(materials+labourCost);
-  document.getElementById('civilUncalibratedNote').textContent = plan.scale ? '' : "This civil plan isn't calibrated yet — conduit metreage (and cost) reads as 0 until you Calibrate.";
+  document.getElementById('civilUncalibratedNote').textContent = plan.scale ? '' : "This civil plan isn't calibrated yet — conduit/overhead metreage (and cost) reads as 0 until you Calibrate.";
 }
 ['rateLabour','costEquipment','costTravel','rateMargin'].forEach(id => {
   document.getElementById(id).addEventListener('input', () => { updateQuote(); if(typeof markDirty==='function') markDirty(); });
@@ -6604,6 +7234,7 @@ function buildProjectData(){
       id: cp.id, name: cp.name, scale: cp.scale, gridSpacingMM: cp.gridSpacingMM, snapEnabled: cp.snapEnabled,
       gridOriginX: cp.gridOriginX || 0, gridOriginY: cp.gridOriginY || 0, gridVisible: cp.gridVisible !== false,
       pits: cp.pits, conduits: cp.conduits, buildingEntries: cp.buildingEntries, dimensions: cp.dimensions,
+      poles: cp.poles, overheadRuns: cp.overheadRuns,
       planImageData: cp.planImage ? cp.planImage.src : null,
     })),
     layers: state.layers.filter(l => l.id !== 'cable'), circuits: state.circuits, elevations: state.elevations,
@@ -6881,14 +7512,23 @@ function buildProjectData(){
     if(state.activePlanType==='civil'){
       const plan = currentCivilPlan();
       const selectedConduit = state.selectedConduitId ? plan.conduits.find(c=>c.id===state.selectedConduitId) : null;
+      const selectedRun = state.selectedOverheadRunId ? plan.overheadRuns.find(r=>r.id===state.selectedOverheadRunId) : null;
       const hitVertexIdx = selectedConduit ? hitTestConduitVertex(world, selectedConduit) : null;
-      const hitPit = (hitVertexIdx===null) ? hitTestPit(world) : null;
-      const hitBE = (hitVertexIdx===null && !hitPit) ? hitTestBuildingEntry(world) : null;
-      const hitSeg = (hitVertexIdx===null && !hitPit && !hitBE) ? hitTestConduitSegment(world) : null;
+      const hitRunVertexIdx = (hitVertexIdx===null && selectedRun) ? hitTestOverheadRunVertex(world, selectedRun) : null;
+      const hitPit = (hitVertexIdx===null && hitRunVertexIdx===null) ? hitTestPit(world) : null;
+      const hitBE = (hitVertexIdx===null && hitRunVertexIdx===null && !hitPit) ? hitTestBuildingEntry(world) : null;
+      const hitPole = (hitVertexIdx===null && hitRunVertexIdx===null && !hitPit && !hitBE) ? hitTestPole(world) : null;
+      const hitSeg = (hitVertexIdx===null && hitRunVertexIdx===null && !hitPit && !hitBE && !hitPole) ? hitTestConduitSegment(world) : null;
+      const hitOHSeg = (hitVertexIdx===null && hitRunVertexIdx===null && !hitPit && !hitBE && !hitPole && !hitSeg) ? hitTestOverheadRunSegment(world) : null;
       if(hitVertexIdx!==null){
         openCtx(e.clientX, e.clientY, [
           { label:'Delete this point', danger:true, action:() => deleteConduitVertex(selectedConduit.id, hitVertexIdx) },
           { label:'Delete conduit', danger:true, action:() => deleteConduit(selectedConduit.id) },
+        ]);
+      } else if(hitRunVertexIdx!==null){
+        openCtx(e.clientX, e.clientY, [
+          { label:'Delete this point', danger:true, action:() => deleteOverheadRunVertex(selectedRun.id, hitRunVertexIdx) },
+          { label:'Delete overhead run', danger:true, action:() => deleteOverheadRun(selectedRun.id) },
         ]);
       } else if(hitPit){
         openPitProps(hitPit.id); render();
@@ -6900,12 +7540,24 @@ function buildProjectData(){
         openCtx(e.clientX, e.clientY, [
           { label:'Delete building entry', key:'Del', danger:true, action:() => document.getElementById('btnDeleteBuildingEntry')?.click() },
         ]);
+      } else if(hitPole){
+        openPoleProps(hitPole.id); render();
+        openCtx(e.clientX, e.clientY, [
+          { label:'Delete pole', key:'Del', danger:true, action:() => document.getElementById('btnDeletePole')?.click() },
+        ]);
       } else if(hitSeg){
-        state.selectedConduitId = hitSeg.conduit.id; state.selectedPitId = null; state.selectedBuildingEntryId = null;
+        clearCivilSelection(); state.selectedConduitId = hitSeg.conduit.id;
         render();
         openCtx(e.clientX, e.clientY, [
           { label:'Insert point here', action:() => insertConduitVertex(hitSeg.conduit.id, hitSeg.segmentIndex, world) },
           { label:'Delete conduit', key:'Del', danger:true, action:() => deleteConduit(hitSeg.conduit.id) },
+        ]);
+      } else if(hitOHSeg){
+        clearCivilSelection(); state.selectedOverheadRunId = hitOHSeg.run.id;
+        render();
+        openCtx(e.clientX, e.clientY, [
+          { label:'Insert point here', action:() => insertOverheadRunVertex(hitOHSeg.run.id, hitOHSeg.segmentIndex, world) },
+          { label:'Delete overhead run', key:'Del', danger:true, action:() => deleteOverheadRun(hitOHSeg.run.id) },
         ]);
       } else {
         closeCtx();
@@ -7108,9 +7760,9 @@ function applyLoadedProject(d){
   state.gridOverlay = !!d.gridOverlay;
   state.selectedObjectId = null;
   state.selectedCableId = null;
-  state.selectedPitId = null; state.selectedBuildingEntryId = null; state.selectedConduitId = null;
-  cancelConduitDraft();
-  dragPitId = null; dragBuildingEntryId = null; dragConduitVertex = null;
+  clearCivilSelection();
+  cancelAllCivilDrafts();
+  dragPitId = null; dragBuildingEntryId = null; dragPoleId = null; dragConduitVertex = null; dragOverheadRunVertex = null;
   // a circuit isolate filter left over from the previous project would
   // otherwise silently hide every device here, since none of them match
   // an id that doesn't exist in this project's circuits
@@ -7167,6 +7819,7 @@ function applyLoadedProject(d){
       gridSpacingMM: cpd.gridSpacingMM || 1000, snapEnabled: cpd.snapEnabled !== false,
       gridOriginX: cpd.gridOriginX || 0, gridOriginY: cpd.gridOriginY || 0, gridVisible: cpd.gridVisible !== false,
       pits: cpd.pits || [], conduits: cpd.conduits || [], buildingEntries: cpd.buildingEntries || [], dimensions: cpd.dimensions || [],
+      poles: cpd.poles || [], overheadRuns: cpd.overheadRuns || [],
       planImage: null, view: { zoom:1, offsetX:0, offsetY:0 },
     };
     if(cpd.planImageData){
@@ -7220,7 +7873,7 @@ function resyncNextId(){
   });
   state.floors.forEach(f => { scan(f.objects); scan(f.cables); scan(f.dimensions); scan(f.walls); scan(f.rooms); });
   scan(state.elevations);
-  state.civilPlans.forEach(cp => { scan(cp.pits); scan(cp.conduits); scan(cp.buildingEntries); scan(cp.dimensions); });
+  state.civilPlans.forEach(cp => { scan(cp.pits); scan(cp.conduits); scan(cp.buildingEntries); scan(cp.dimensions); scan(cp.poles); scan(cp.overheadRuns); });
   state.nextId = maxId + 1;
 }
 
