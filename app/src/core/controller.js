@@ -448,6 +448,22 @@ export function createController({ doc, getView, setView, getViewport, onChange,
     notify();
   }
 
+  /**
+   * Right-click. Selects whatever is under the cursor first (unless it is
+   * already part of the selection, so right-clicking one of several
+   * selected devices acts on the whole group), then reports what was hit
+   * so the menu can offer the right commands.
+   */
+  function onContextMenu(e, rect) {
+    const world = toWorld(e.clientX, e.clientY, rect);
+    const tol = (DEVICE_R + (e.pointerType === 'touch' ? 10 : 2)) / getView().zoom;
+    const hit = hitTestObjects(drawing().objects, world, tol, selectable);
+    if (hit && !selectedIds.has(hit.id)) selectedIds = new Set([hit.id]);
+    if (!hit) selectedIds = new Set();
+    notify();
+    return { onDevice: !!hit };
+  }
+
   function onWheel(e, rect) {
     const factor = e.deltaY < 0 ? 1.12 : 1 / 1.12;
     setView(zoomAt(getView(), e.clientX - rect.left, e.clientY - rect.top, factor));
@@ -486,6 +502,6 @@ export function createController({ doc, getView, setView, getViewport, onChange,
     clearMeasure() { measure = null; notify(); },
 
     // input
-    onPointerDown, onPointerMove, onPointerUp, onWheel, setSpaceHeld, zoomBy,
+    onPointerDown, onPointerMove, onPointerUp, onWheel, onContextMenu, setSpaceHeld, zoomBy,
   };
 }

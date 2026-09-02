@@ -26,6 +26,7 @@ import { Workspace } from './ui/Workspace.jsx';
 import { Inspector, inspectorTitle } from './ui/Inspector.jsx';
 import { LibraryPanel, LayersPanel } from './ui/Panels.jsx';
 import { CommandPalette } from './ui/CommandPalette.jsx';
+import { CanvasContextMenu } from './ui/ContextMenu.jsx';
 import { ProjectPicker } from './ui/ProjectPicker.jsx';
 
 const { useState, useEffect, useRef, useMemo, useCallback } = React;
@@ -56,7 +57,13 @@ function WorkspaceRoot({ projectId, onExit, pushToast }) {
   // drawing is kept auto-framed on every layout change — which is what
   // makes the initial fit reliable regardless of when the canvas settles
   // to its real size, instead of depending on a one-shot guess about
-  // layout timing. Any pan/zoom hands control over for good.
+  // layout timing.
+  //
+  // It flips on ANY real interaction — panning, zooming, or editing the
+  // drawing — not just view changes. Once someone has started placing
+  // devices they are working at a chosen position, and having the view
+  // jump because a panel opened and changed the canvas width would move
+  // the drawing out from under them mid-task.
   const viewTouchedRef = useRef(false);
   const setViewFromUser = useCallback(v => { viewTouchedRef.current = true; setView(v); }, [setView]);
 
@@ -123,6 +130,7 @@ function WorkspaceRoot({ projectId, onExit, pushToast }) {
   const [saveError, setSaveError] = useState(null);
   const [lastSavedAt, setLastSavedAt] = useState(null);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [contextMenu, setContextMenu] = useState(null);
   const saveTimer = useRef(null);
 
   const doSave = useCallback(() => {
@@ -169,6 +177,8 @@ function WorkspaceRoot({ projectId, onExit, pushToast }) {
     return doc.subscribe((_, detail) => {
       rerender();
       if (!detail || detail.type === 'saved' || detail.type === 'load') return;
+      // Editing counts as taking control of the view (see viewTouchedRef).
+      viewTouchedRef.current = true;
       setSaveState(SaveState.UNSAVED);
       clearTimeout(saveTimer.current);
       saveTimer.current = setTimeout(doSave, AUTOSAVE_MS);
@@ -524,7 +534,14 @@ function WorkspaceRoot({ projectId, onExit, pushToast }) {
         rightPanelTitle={inspectorTitle(controller)}
         onFit={fit}
         onViewportChange={onViewportChange}
+        onContextMenu={setContextMenu}
         breakpoint={breakpoint}
+      />
+      <CanvasContextMenu
+        menu={contextMenu}
+        onClose={() => setContextMenu(null)}
+        registry={registry}
+        ctx={ctx}
       />
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} registry={registry} ctx={ctx} />
       <CalibrateDialog

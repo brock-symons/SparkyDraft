@@ -17,7 +17,7 @@ import { boundsOf, formatDistance } from '../core/geometry.js';
 
 const { useRef, useEffect, useCallback } = React;
 
-export function CanvasStage({ controller, doc, view, symbolFor, showLabels, onViewportChange, cursorClass }) {
+export function CanvasStage({ controller, doc, view, symbolFor, showLabels, onViewportChange, onContextMenu, cursorClass }) {
   const canvasRef = useRef(null);
   const wrapRef = useRef(null);
   const frameRef = useRef(0);
@@ -132,20 +132,28 @@ export function CanvasStage({ controller, doc, view, symbolFor, showLabels, onVi
       requestPaint();
     };
     const wheel = e => { e.preventDefault(); controller.onWheel(e, rect()); requestPaint(); };
+    const context = e => {
+      e.preventDefault();
+      const info = controller.onContextMenu(e, rect());
+      requestPaint();
+      onContextMenu && onContextMenu({ x: e.clientX, y: e.clientY, onDevice: info.onDevice });
+    };
 
+    canvas.addEventListener('contextmenu', context);
     canvas.addEventListener('pointerdown', down);
     canvas.addEventListener('pointermove', move);
     canvas.addEventListener('pointerup', up);
     canvas.addEventListener('pointercancel', up);
     canvas.addEventListener('wheel', wheel, { passive: false });
     return () => {
+      canvas.removeEventListener('contextmenu', context);
       canvas.removeEventListener('pointerdown', down);
       canvas.removeEventListener('pointermove', move);
       canvas.removeEventListener('pointerup', up);
       canvas.removeEventListener('pointercancel', up);
       canvas.removeEventListener('wheel', wheel);
     };
-  }, [controller, requestPaint]);
+  }, [controller, requestPaint, onContextMenu]);
 
   return (
     <div ref={wrapRef} className="absolute inset-0 overflow-hidden bg-canvas">

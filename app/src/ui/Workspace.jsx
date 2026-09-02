@@ -331,7 +331,7 @@ export function Workspace({
   saveState, saveError, lastSavedAt, onSave,
   panels, onTogglePanel, dockWidths, onDockResize,
   leftPanelContent, rightPanelContent, leftPanelTitle, rightPanelTitle,
-  onFit, onViewportChange, breakpoint,
+  onFit, onViewportChange, onContextMenu, breakpoint,
 }) {
   const tools = [
     { key: 'select', label: 'Select', shortLabel: 'Select', shortcut: 'V', icon: '⌖', primary: true,
@@ -415,6 +415,7 @@ export function Workspace({
           <CanvasStage
             controller={controller} doc={doc} view={view} symbolFor={symbolFor}
             cursorClass={cursorClass} onViewportChange={onViewportChange}
+            onContextMenu={onContextMenu}
           />
           <ModeHint controller={controller} />
           <ZoomCluster controller={controller} onFit={onFit} />
