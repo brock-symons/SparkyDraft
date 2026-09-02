@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="color-scheme" content="light">
+<title>SparkyDraft</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+// ===================================================================
+// DESIGN SYSTEM TOKENS  (directive §23)
+//
+// Restrained on purpose. This is professional software that someone
+// will stare at for hours, so: compact spacing, small radii, hairline
+// borders, one accent colour, near-flat surfaces. No gradients, no
+// glass, no oversized headings, no decorative shadows.
+//
+// The neutral ramp is very slightly blue — pure grey next to the dark
+// blue-black drawing surface reads as dirty brown by comparison.
+// ===================================================================
+tailwind.config = {
+  theme: {
+    extend: {
+      fontFamily: {
+        sans: ['Inter', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+        mono: ['ui-monospace', 'SFMono-Regular', 'Menlo', 'monospace'],
+      },
+      fontSize: {
+        // Denser than Tailwind's defaults — a drafting tool needs to show
+        // a lot without shouting (§22).
+        '2xs': ['10.5px', { lineHeight: '14px' }],
+        xs:    ['11.5px', { lineHeight: '16px' }],
+        sm:    ['12.5px', { lineHeight: '18px' }],
+        base:  ['13.5px', { lineHeight: '20px' }],
+        lg:    ['15px',   { lineHeight: '22px' }],
+        xl:    ['18px',   { lineHeight: '26px' }],
+      },
+      colors: {
+        // Contrast-audited against white (WCAG 2.1 AA, 4.5:1 for normal
+        // text). Steps 50–300 are SURFACE/BORDER tones and must never
+        // carry text; 400 and darker are text-safe:
+        //   400 #68768a → 4.62:1   500 #55637a → 6.08:1
+        //   600 #4c5a6e → 7.01:1   800 #252d3b → 13.8:1
+        // 400 was originally #93a1b3 (2.63:1) and 500 #68788d (4.51:1) —
+        // both measured failing/borderline on the small 10.5–11.5px text
+        // this UI leans on, so the ramp was darkened rather than the type
+        // being enlarged.
+        ink: {
+          50:'#f6f8fa', 100:'#eef1f5', 200:'#e0e5ec', 300:'#c8d1dc',
+          400:'#68768a', 500:'#55637a', 600:'#4c5a6e', 700:'#3a4557',
+          800:'#252d3b', 900:'#161d28', 950:'#0b0f14',
+        },
+        // accent-500 carries white button text, so it must clear 4.5:1
+        // itself. #2081f5 measured 3.8:1 and failed; #1a72e0 is 4.64:1.
+        accent: {
+          50:'#eef6ff', 100:'#d9ecff', 200:'#bcdcff', 300:'#8ac4ff',
+          400:'#4fa3ff', 500:'#1a72e0', 600:'#1263c4', 700:'#0f51ac',
+          800:'#12448a', 900:'#143a71',
+        },
+        surface: '#ffffff',
+        canvas: '#0b0f14',
+      },
+      borderRadius: { DEFAULT:'5px', sm:'4px', md:'6px', lg:'8px', xl:'11px' },
+      boxShadow: {
+        hair:  '0 0 0 1px rgba(22,29,40,0.07)',
+        panel: '0 1px 2px rgba(22,29,40,0.05), 0 6px 16px -6px rgba(22,29,40,0.12)',
+        pop:   '0 4px 10px -2px rgba(22,29,40,0.10), 0 14px 34px -10px rgba(22,29,40,0.22)',
+      },
+      keyframes: {
+        'fade-in':  { from:{opacity:0}, to:{opacity:1} },
+        'pop-in':   { from:{opacity:0, transform:'translateY(-3px) scale(0.985)'}, to:{opacity:1, transform:'none'} },
+        'slide-r':  { from:{opacity:0, transform:'translateX(8px)'},  to:{opacity:1, transform:'none'} },
+        'slide-l':  { from:{opacity:0, transform:'translateX(-8px)'}, to:{opacity:1, transform:'none'} },
+        'sheet-up': { from:{transform:'translateY(100%)'}, to:{transform:'translateY(0)'} },
+      },
+      animation: {
+        // Fast. Animation here is for orientation, not decoration (§24) —
+        // anything slower than ~180ms starts to feel like latency when
+        // you're opening the same panel for the fortieth time.
+        'fade-in': 'fade-in 120ms ease-out',
+        'pop-in':  'pop-in 130ms cubic-bezier(.16,1,.3,1)',
+        'slide-r': 'slide-r 160ms cubic-bezier(.16,1,.3,1)',
+        'slide-l': 'slide-l 160ms cubic-bezier(.16,1,.3,1)',
+        'sheet-up':'sheet-up 200ms cubic-bezier(.16,1,.3,1)',
+      },
+    },
+  },
+};
+</script>
+<style>
+  html,body,#root { height:100%; margin:0; }
+  body {
+    font-family:Inter, ui-sans-serif, system-ui, sans-serif;
+    -webkit-font-smoothing:antialiased;
+    overscroll-behavior:none;
+    color:#252d3b;
+  }
+  canvas { touch-action:none; display:block; }
+  /* Numeric fields in the inspector must not jitter as digits change. */
+  .tnum { font-variant-numeric: tabular-nums; }
+  ::-webkit-scrollbar { width:9px; height:9px; }
+  ::-webkit-scrollbar-thumb { background:#c8d1dc; border-radius:99px; border:2px solid #fff; }
+  ::-webkit-scrollbar-thumb:hover { background:#93a1b3; }
+  ::-webkit-scrollbar-track { background:transparent; }
+  /* §25 — honour the OS reduced-motion setting rather than overriding it. */
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration:0.01ms !important; transition-duration:0.01ms !important; }
+  }
+  [data-boot-error] { padding:24px; font:13px/1.6 Inter,sans-serif; color:#b91c1c; white-space:pre-wrap; }
+</style>
+</head>
+<body class="bg-ink-100">
+<div id="root"></div>
+
+<script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script>
+// ===================================================================
+// MODULE LOADER  (temporary — replaced by Vite once Node is available)
+//
+// There is no Node.js on the build machine, so there is no bundler.
+// This resolves the real ES-module graph in the browser: each file is
+// fetched once, JSX is transformed with Babel, relative specifiers are
+// rewritten to the blob URL of the already-loaded dependency, and the
+// result is imported.
+//
+// The module cache is the important part — it gives each file exactly
+// one blob URL, so shared modules are instantiated ONCE and singletons
+// (the command registry, the document) behave correctly. A naive
+// "transform each file independently" loader silently duplicates them.
+//
+// This is acknowledged technical debt, isolated to this one block, and
+// deletable in a single commit when a real build step lands.
+// ===================================================================
+(function () {
+  const cache = new Map(); // absolute URL -> Promise<blobURL>
+
+  function resolve(spec, baseUrl) {
+    return new URL(spec, baseUrl).href;
+  }
+
+  async function loadModule(url) {
+    if (cache.has(url)) return cache.get(url);
+    const promise = (async () => {
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`${res.status} loading ${url}`);
+      let code = await res.text();
+
+      if (/\.jsx($|\?)/.test(url)) {
+        code = Babel.transform(code, {
+          presets: [['react', { runtime: 'classic' }]],
+          filename: url.split('/').pop(),
+          sourceMaps: false,
+        }).code;
+      }
+
+      // Collect static specifiers: `from '...'` plus bare `import '...'`.
+      const specs = new Set();
+      const reFrom = /\bfrom\s*['"]([^'"]+)['"]/g;
+      const reBare = /\bimport\s*['"]([^'"]+)['"]/g;
+      let m;
+      while ((m = reFrom.exec(code))) specs.add(m[1]);
+      while ((m = reBare.exec(code))) specs.add(m[1]);
+
+      const relative = Array.from(specs).filter(s => s.startsWith('.') || s.startsWith('/'));
+      const mapping = new Map();
+      // Depth-first: dependencies get their blob URL before we rewrite.
+      for (const spec of relative) {
+        const abs = resolve(spec, url);
+        mapping.set(spec, await loadModule(abs));
+      }
+      for (const [spec, blobUrl] of mapping) {
+        const escaped = spec.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        code = code.replace(new RegExp(`(['"])${escaped}\\1`, 'g'), JSON.stringify(blobUrl));
+      }
+
+      const blob = new Blob([code], { type: 'text/javascript' });
+      return URL.createObjectURL(blob);
+    })();
+    cache.set(url, promise);
+    return promise;
+  }
+
+  const entry = new URL('src/main.jsx', location.href).href;
+  loadModule(entry)
+    .then(blobUrl => import(blobUrl))
+    .catch(err => {
+      console.error(err);
+      const el = document.getElementById('root');
+      el.setAttribute('data-boot-error', '');
+      el.textContent = 'SparkyDraft failed to start.\n\n' + (err && err.stack || err);
+    });
+})();
+</script>
+</body>
+</html>
