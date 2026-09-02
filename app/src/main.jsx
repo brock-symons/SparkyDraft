@@ -21,7 +21,7 @@ import {
   loadWorkspaceUI, saveWorkspaceUI, SaveState,
 } from './core/persistence.js';
 
-import { ToastHost, useToasts, useBreakpoint } from './ui/primitives.jsx';
+import { ToastHost, useToasts, useBreakpoint, Dialog, Button, TextInput, Select } from './ui/primitives.jsx';
 import { Workspace } from './ui/Workspace.jsx';
 import { Inspector, inspectorTitle } from './ui/Inspector.jsx';
 import { LibraryPanel, LayersPanel } from './ui/Panels.jsx';
@@ -52,15 +52,31 @@ function WorkspaceRoot({ projectId, onExit, pushToast }) {
   const setView = useCallback(v => { viewRef.current = v; setViewTick(t => t + 1); }, []);
   const getViewport = useCallback(() => viewportRef.current, []);
 
+  // "The user has taken control of the view." Until this flips true, the
+  // drawing is kept auto-framed on every layout change — which is what
+  // makes the initial fit reliable regardless of when the canvas settles
+  // to its real size, instead of depending on a one-shot guess about
+  // layout timing. Any pan/zoom hands control over for good.
+  const viewTouchedRef = useRef(false);
+  const setViewFromUser = useCallback(v => { viewTouchedRef.current = true; setView(v); }, [setView]);
+
   // --- controller ----------------------------------------------------
+  // Calibration is a two-step flow: the controller reports the drawn
+  // length, then the user says what that length really is. Held in a ref
+  // so the controller (created once) can reach the current handler.
+  const calibrationRef = useRef(null);
+  const [calibrateLength, setCalibrateLength] = useState(null);
+
   const controllerRef = useRef(null);
   if (!controllerRef.current) {
     controllerRef.current = createController({
-      doc, getView, setView, getViewport, onChange: rerender,
+      doc, getView, setView: setViewFromUser, getViewport, onChange: rerender,
+      onCalibrate: len => calibrationRef.current && calibrationRef.current(len),
     });
     controllerRef.current.setSymbolResolver(symbolFor);
   }
   const controller = controllerRef.current;
+  calibrationRef.current = len => setCalibrateLength(len);
 
   // --- workspace UI state (persisted, §3 "intelligently remembered") -
   const savedUI = useRef(loadWorkspaceUI()).current;
@@ -84,7 +100,7 @@ function WorkspaceRoot({ projectId, onExit, pushToast }) {
   const [favourites, setFavourites] = useState(savedUI.favourites || []);
   const [recent, setRecent] = useState(savedUI.recent || []);
   const [sections, setSections] = useState(
-    savedUI.sections || { drawing: true, grid: true, general: true, electrical: true, cost: false, align: true, actions: true }
+    savedUI.sections || { drawing: true, plan: true, grid: true, general: true, electrical: true, cost: false, align: true, actions: true }
   );
 
   useEffect(() => {
@@ -140,9 +156,11 @@ function WorkspaceRoot({ projectId, onExit, pushToast }) {
       doc.load(emptyDrawing());
     }
     setSaveState(SaveState.SAVED);
-    // Frame the drawing once the canvas has its real size.
-    const t = setTimeout(() => fit(), 60);
-    return () => clearTimeout(t);
+    // Opening a drawing resets view ownership, so it gets auto-framed
+    // again (and stays framed while the layout settles) until this user
+    // pans or zooms it themselves.
+    viewTouchedRef.current = false;
+    fit();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
 
@@ -178,11 +196,28 @@ function WorkspaceRoot({ projectId, onExit, pushToast }) {
   }, [doc]);
 
   // --- view helpers --------------------------------------------------
+  /**
+   * Frame everything in the drawing — devices AND the floor plan. Fitting
+   * to devices alone meant that importing a plan into an empty drawing
+   * left it half off-screen, because there were no objects to frame.
+   */
   const fit = useCallback(() => {
     const vp = viewportRef.current;
-    if (!vp.width) return;
-    const objs = doc.state.objects;
-    setView(viewForBounds(boundsOf(objs), vp.width, vp.height));
+    if (!vp.width || !vp.height) return;
+    const d = doc.state;
+    let b = boundsOf(d.objects);
+    if (d.planImage) {
+      const s = d.planImage.scale || 1;
+      const px1 = d.planImage.x, py1 = d.planImage.y;
+      const px2 = px1 + d.planImage.width * s, py2 = py1 + d.planImage.height * s;
+      b = b
+        ? { minX: Math.min(b.minX, px1), minY: Math.min(b.minY, py1),
+            maxX: Math.max(b.maxX, px2), maxY: Math.max(b.maxY, py2) }
+        : { minX: px1, minY: py1, maxX: px2, maxY: py2 };
+      b.cx = (b.minX + b.maxX) / 2;
+      b.cy = (b.minY + b.maxY) / 2;
+    }
+    setView(viewForBounds(b, vp.width, vp.height));
   }, [doc, setView]);
 
   const zoomToSelection = useCallback(() => {
@@ -192,7 +227,14 @@ function WorkspaceRoot({ projectId, onExit, pushToast }) {
     setView(viewForBounds(boundsOf(sel), vp.width, vp.height, 120));
   }, [controller, setView]);
 
-  const onViewportChange = useCallback(size => { viewportRef.current = size; }, []);
+  const onViewportChange = useCallback(size => {
+    viewportRef.current = size;
+    // Re-frame on every layout change until the user takes over the view.
+    // This is what makes the initial fit correct without guessing when
+    // layout settles: an early stub measurement simply gets superseded by
+    // the next, real one.
+    if (!viewTouchedRef.current) fit();
+  }, [fit]);
 
   // --- panels --------------------------------------------------------
   const togglePanel = useCallback((slot, value) => {
@@ -210,6 +252,61 @@ function WorkspaceRoot({ projectId, onExit, pushToast }) {
       return { ...w, [slot]: next };
     });
   }, []);
+
+  // --- floor plan import ----------------------------------------------
+  const fileInputRef = useRef(null);
+
+  const importPlan = useCallback(() => { fileInputRef.current && fileInputRef.current.click(); }, []);
+
+  const onPlanFile = useCallback(e => {
+    const file = e.target.files && e.target.files[0];
+    e.target.value = '';                      // allow re-picking the same file
+    if (!file) return;
+    if (!/^image\//.test(file.type)) { pushToast('That file is not an image', 'error'); return; }
+    // 8MB guard: localStorage tops out around 5–10MB, and a plan larger
+    // than this will fail the save rather than the import, which is a far
+    // more confusing place to discover the problem.
+    if (file.size > 8 * 1024 * 1024) {
+      pushToast('Plan is too large — under 8 MB, please', 'error');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onerror = () => pushToast('Could not read that file', 'error');
+    reader.onload = () => {
+      const src = String(reader.result);
+      const probe = new Image();
+      probe.onerror = () => pushToast('That image could not be opened', 'error');
+      probe.onload = () => {
+        doc.commit('Import floor plan', d => {
+          // Centre the plan on the origin so it lands somewhere sensible
+          // rather than off in a corner the user has to hunt for.
+          d.planImage = {
+            src, width: probe.width, height: probe.height,
+            x: -probe.width / 2, y: -probe.height / 2,
+            scale: 1, opacity: 0.85,
+          };
+        });
+        setTimeout(() => fit(), 40);
+        pushToast('Floor plan imported');
+      };
+      probe.src = src;
+    };
+    reader.readAsDataURL(file);
+  }, [doc, fit, pushToast]);
+
+  const startCalibrate = useCallback(() => {
+    controller.setTool('calibrate');
+    if (breakpoint !== 'desktop') setPanels(p => ({ ...p, right: null }));
+  }, [controller, breakpoint]);
+
+  const applyCalibration = useCallback(realMm => {
+    if (!calibrateLength || !(realMm > 0)) return;
+    doc.commit('Set scale', d => { d.scale = realMm / calibrateLength; });
+    setCalibrateLength(null);
+    controller.clearMeasure();
+    controller.setTool('select');
+    pushToast('Scale set');
+  }, [calibrateLength, doc, controller, pushToast]);
 
   const noteRecent = useCallback(symbolId => {
     setRecent(r => [symbolId, ...r.filter(x => x !== symbolId)].slice(0, 6));
@@ -242,6 +339,16 @@ function WorkspaceRoot({ projectId, onExit, pushToast }) {
         keywords: 'hand scroll move view', run: c => c.controller.setTool('pan') },
       { id: 'tool.measure', title: 'Measure tool', group: 'Tools', shortcut: 'M', icon: '↔',
         keywords: 'distance dimension ruler', run: c => c.controller.setTool('measure') },
+      { id: 'tool.calibrate', title: 'Calibrate scale', group: 'Tools', shortcut: 'C', icon: '⚖',
+        keywords: 'scale real units mm metres set', run: c => c.startCalibrate() },
+
+      // Plan
+      { id: 'plan.import', title: 'Import floor plan', group: 'Plan', icon: '⇧',
+        keywords: 'background image trace pdf png jpg underlay', run: c => c.importPlan() },
+      { id: 'plan.remove', title: 'Remove floor plan', group: 'Plan', icon: '⌫', danger: true,
+        keywords: 'delete background underlay',
+        when: c => !!c.doc.state.planImage,
+        run: c => c.doc.commit('Remove plan', d => { d.planImage = null; }) },
 
       // Edit
       { id: 'edit.undo', title: 'Undo', group: 'Edit', shortcut: 'Mod+Z', icon: '↶',
@@ -302,9 +409,10 @@ function WorkspaceRoot({ projectId, onExit, pushToast }) {
   // Context object handed to every command's `when` and `run`.
   const ctx = useMemo(() => ({
     doc, controller, fit, zoomToSelection, togglePanel, doSave, onExit,
+    importPlan, startCalibrate,
     openPalette: () => setPaletteOpen(true),
     pushToast,
-  }), [doc, controller, fit, zoomToSelection, togglePanel, doSave, onExit, pushToast]);
+  }), [doc, controller, fit, zoomToSelection, togglePanel, doSave, onExit, importPlan, startCalibrate, pushToast]);
 
   // --- keyboard layer (§10) ------------------------------------------
   useEffect(() => {
@@ -374,10 +482,24 @@ function WorkspaceRoot({ projectId, onExit, pushToast }) {
         />
       : null;
 
-  const rightPanel = <Inspector doc={doc} controller={controller} sections={sections} toggleSection={toggleSection} />;
+  const rightPanel = (
+    <Inspector
+      doc={doc} controller={controller} sections={sections} toggleSection={toggleSection}
+      onImportPlan={importPlan} onCalibrate={startCalibrate}
+    />
+  );
 
   return (
     <>
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/png,image/jpeg,image/webp"
+        onChange={onPlanFile}
+        className="hidden"
+        aria-hidden="true"
+        tabIndex={-1}
+      />
       <Workspace
         doc={doc}
         controller={controller}
@@ -405,7 +527,74 @@ function WorkspaceRoot({ projectId, onExit, pushToast }) {
         breakpoint={breakpoint}
       />
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} registry={registry} ctx={ctx} />
+      <CalibrateDialog
+        length={calibrateLength}
+        onCancel={() => { setCalibrateLength(null); controller.clearMeasure(); }}
+        onApply={applyCalibration}
+      />
     </>
+  );
+}
+
+/**
+ * Asks what the just-measured span really is. Offers metres as well as
+ * millimetres because plans get dimensioned both ways and making the
+ * user convert in their head is exactly the kind of friction §29 is
+ * about.
+ */
+function CalibrateDialog({ length, onCancel, onApply }) {
+  const [value, setValue] = useState('');
+  const [unit, setUnit] = useState('mm');
+
+  useEffect(() => { if (length != null) { setValue(''); setUnit('mm'); } }, [length]);
+  if (length == null) return null;
+
+  const n = parseFloat(value);
+  const valid = isFinite(n) && n > 0;
+  const mm = unit === 'm' ? n * 1000 : n;
+
+  function submit(e) {
+    e && e.preventDefault();
+    if (valid) onApply(mm);
+  }
+
+  return (
+    <Dialog
+      open
+      onClose={onCancel}
+      title="Set scale"
+      footer={
+        <>
+          <Button onClick={onCancel}>Cancel</Button>
+          <Button variant="primary" disabled={!valid} onClick={submit}>Set scale</Button>
+        </>
+      }
+    >
+      <form onSubmit={submit}>
+        <p className="mb-3 text-sm leading-relaxed text-ink-600">
+          How long is the line you just drew?
+        </p>
+        <div className="flex gap-2">
+          <TextInput
+            autoFocus
+            inputMode="decimal"
+            value={value}
+            onChange={e => setValue(e.target.value)}
+            placeholder="e.g. 820"
+            aria-label="Real length"
+          />
+          <Select value={unit} onChange={e => setUnit(e.target.value)} className="w-20" aria-label="Unit">
+            <option value="mm">mm</option>
+            <option value="m">m</option>
+          </Select>
+        </div>
+        {valid && (
+          <p className="mt-2.5 text-2xs text-ink-400 tnum">
+            Scale becomes {(mm / length).toFixed(2)} mm per drawing unit.
+          </p>
+        )}
+      </form>
+    </Dialog>
   );
 }
 

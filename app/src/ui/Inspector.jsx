@@ -41,7 +41,7 @@ function SymbolChip({ sym, size = 'md' }) {
 
 // --- nothing selected -------------------------------------------------
 
-function DrawingProperties({ doc, controller, sections, toggleSection }) {
+function DrawingProperties({ doc, controller, sections, toggleSection, onImportPlan, onCalibrate }) {
   const d = doc.state;
   const counts = useMemo(() => {
     const by = {};
@@ -69,6 +69,49 @@ function DrawingProperties({ doc, controller, sections, toggleSection }) {
                   {CATEGORY_LABELS[cat] || cat} <span className="tnum font-medium">{n}</span>
                 </span>
               ))}
+            </div>
+          </div>
+        )}
+      </Section>
+
+      {/* Tracing over an imported floor plan is the normal way an
+          electrical drawing starts, so plan controls sit in the
+          nothing-selected state rather than behind a menu. */}
+      <Section title="Floor plan" open={sections.plan} onToggle={() => toggleSection('plan')}>
+        {d.planImage ? (
+          <>
+            <Row label="Opacity">
+              <input
+                type="range" min="0.15" max="1" step="0.05"
+                aria-label="Floor plan opacity"
+                value={d.planImage.opacity == null ? 0.85 : d.planImage.opacity}
+                onChange={e => doc.commit('Plan opacity', dd => { dd.planImage.opacity = parseFloat(e.target.value); }, { coalesce: true })}
+                className="w-full accent-accent-500"
+              />
+            </Row>
+            <Row label="Size">
+              <NumberInput
+                value={d.planImage.scale || 1}
+                step={0.05}
+                suffix="×"
+                onCommit={v => doc.commit('Plan size', dd => { dd.planImage.scale = Math.max(0.05, v); })}
+              />
+            </Row>
+            <div className="flex gap-1.5 px-3 pt-1.5">
+              <Button size="sm" className="flex-1" onClick={onImportPlan}>Replace…</Button>
+              <Button
+                size="sm" variant="danger" className="flex-1"
+                onClick={() => doc.commit('Remove plan', dd => { dd.planImage = null; })}
+              >
+                Remove
+              </Button>
+            </div>
+          </>
+        ) : (
+          <div className="px-3">
+            <Button size="sm" className="w-full" onClick={onImportPlan}>Import floor plan…</Button>
+            <div className="mt-1.5 text-2xs leading-relaxed text-ink-400">
+              PNG or JPG. Place devices over it, then calibrate to set real distances.
             </div>
           </div>
         )}
@@ -107,11 +150,16 @@ function DrawingProperties({ doc, controller, sections, toggleSection }) {
             />
           </div>
         </Row>
-        {!d.scale && (
-          <div className="px-3 pt-1 text-2xs leading-relaxed text-ink-400">
-            Set a scale to show real measurements instead of drawing units.
+        <div className="px-3 pt-1.5">
+          <Button size="sm" className="w-full" onClick={onCalibrate}>
+            {d.scale ? 'Re-calibrate…' : 'Calibrate from a known length…'}
+          </Button>
+          <div className="mt-1.5 text-2xs leading-relaxed text-ink-400">
+            {d.scale
+              ? 'Measurements are shown in real units.'
+              : 'Click two points a known distance apart to set the scale.'}
           </div>
-        )}
+        </div>
       </Section>
     </>
   );
@@ -329,14 +377,25 @@ function ToolContext({ controller }) {
       </div>
     );
   }
-  if (controller.tool === 'measure') {
+  if (controller.tool === 'measure' || controller.tool === 'calibrate') {
     const m = controller.measure;
+    const calibrating = controller.tool === 'calibrate';
     return (
       <div className="px-3 py-3">
-        <div className="text-sm font-semibold text-ink-800">Measure</div>
-        <div className="mt-1 text-2xs text-ink-400">
-          {!m ? 'Click the first point.' : !m.b ? 'Click the second point.' : 'Click to start a new measurement.'}
+        <div className="text-sm font-semibold text-ink-800">{calibrating ? 'Calibrate scale' : 'Measure'}</div>
+        <div className="mt-1 text-2xs leading-relaxed text-ink-400">
+          {!m
+            ? (calibrating ? 'Click one end of a length you know.' : 'Click the first point.')
+            : !m.b
+              ? (calibrating ? 'Click the other end.' : 'Click the second point.')
+              : (calibrating ? 'Enter the real length.' : 'Click to start a new measurement.')}
         </div>
+        {calibrating && (
+          <div className="mt-3 rounded-md bg-ink-50 px-2.5 py-2 text-2xs leading-relaxed text-ink-500">
+            Pick something you can verify — a door opening, a room wall, or a
+            dimension printed on the plan.
+          </div>
+        )}
       </div>
     );
   }
@@ -357,7 +416,7 @@ export function inspectorTitle(controller) {
   return 'Drawing';
 }
 
-export function Inspector({ doc, controller, sections, toggleSection }) {
+export function Inspector({ doc, controller, sections, toggleSection, onImportPlan, onCalibrate }) {
   const selected = controller.selectedObjects();
   const toolCtx = (controller.tool === 'place' && controller.activeSymbolId) || controller.tool === 'measure';
 
@@ -366,7 +425,10 @@ export function Inspector({ doc, controller, sections, toggleSection }) {
       <div className="min-h-0 flex-1 overflow-y-auto">
         {toolCtx && <ToolContext controller={controller} />}
         {!toolCtx && selected.length === 0 && (
-          <DrawingProperties doc={doc} controller={controller} sections={sections} toggleSection={toggleSection} />
+          <DrawingProperties
+            doc={doc} controller={controller} sections={sections} toggleSection={toggleSection}
+            onImportPlan={onImportPlan} onCalibrate={onCalibrate}
+          />
         )}
         {!toolCtx && selected.length === 1 && (
           <DeviceProperties obj={selected[0]} doc={doc} controller={controller} sections={sections} toggleSection={toggleSection} />

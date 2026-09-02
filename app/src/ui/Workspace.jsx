@@ -166,7 +166,9 @@ function StatusBar({ controller, doc, view }) {
       )}
       <div className="flex-1" />
       {sel > 0 && <span className="tnum">{sel} selected</span>}
-      <span className="tnum hidden sm:inline">{d.objects.length} devices</span>
+      <span className="tnum hidden sm:inline">
+        {d.objects.length} {d.objects.length === 1 ? 'device' : 'devices'}
+      </span>
     </div>
   );
 }
@@ -279,6 +281,7 @@ function ZoomCluster({ controller, onFit }) {
 function ModeHint({ controller }) {
   let text = null;
   if (controller.tool === 'place' && controller.activeSymbolId) text = 'Click to place · Shift-click for several · Esc to stop';
+  else if (controller.tool === 'calibrate') text = 'Click both ends of a length you know · Esc to exit';
   else if (controller.tool === 'measure') text = 'Click two points to measure · Esc to exit';
   else if (controller.tool === 'pan') text = 'Drag to pan · V to go back to Select';
   else if (controller.spaceHeld) text = 'Pan';
@@ -290,13 +293,29 @@ function ModeHint({ controller }) {
   );
 }
 
-function EmptyCanvasHint({ onOpenLibrary }) {
+/**
+ * Shown only while the drawing has no devices. Once a floor plan has been
+ * imported it moves out of the centre and shrinks to a hint strip — the
+ * plan is the thing the user just added and wants to look at, and a card
+ * sitting on top of it is in the way.
+ */
+function EmptyCanvasHint({ onOpenLibrary, hasPlan }) {
+  if (hasPlan) {
+    return (
+      <div className="pointer-events-auto absolute bottom-3 left-1/2 z-10 -translate-x-1/2 animate-fade-in">
+        <div className="flex items-center gap-2 rounded-full border border-white/10 bg-ink-900/85 py-1.5 pl-3.5 pr-1.5 backdrop-blur">
+          <span className="text-2xs text-white/70">No devices placed yet</span>
+          <Button size="sm" variant="primary" onClick={onOpenLibrary}>Add devices</Button>
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center">
       <div className="pointer-events-auto max-w-[300px] rounded-xl border border-white/10 bg-ink-900/70 px-5 py-4 text-center backdrop-blur">
         <div className="text-sm font-medium text-white/90">Empty drawing</div>
         <div className="mt-1 text-2xs leading-relaxed text-white/50">
-          Pick a device from the component library and click the plan to place it.
+          Import a floor plan to trace over, or place devices straight onto the grid.
         </div>
         <Button size="sm" variant="primary" className="mt-3" onClick={onOpenLibrary}>Open components</Button>
       </div>
@@ -321,6 +340,13 @@ export function Workspace({
       isActive: () => controller.tool === 'pan', onClick: () => controller.setTool('pan') },
     { key: 'measure', label: 'Measure', shortLabel: 'Measure', shortcut: 'M', icon: '↔', primary: true,
       isActive: () => controller.tool === 'measure', onClick: () => controller.setTool('measure') },
+    { key: 'div1', divider: true },
+    // Calibrate is deliberately NOT in the mobile primary bar: it's a
+    // once-per-drawing setup action, not something reached mid-draft.
+    { key: 'calibrate', label: 'Calibrate scale', shortcut: 'C', icon: '⚖',
+      isActive: () => controller.tool === 'calibrate', onClick: () => registry.run('tool.calibrate', ctx) },
+    { key: 'plan', label: 'Import floor plan', icon: '⇧',
+      isActive: () => false, onClick: () => registry.run('plan.import', ctx) },
   ];
 
   const cursorClass =
@@ -392,7 +418,12 @@ export function Workspace({
           />
           <ModeHint controller={controller} />
           <ZoomCluster controller={controller} onFit={onFit} />
-          {isEmpty && <EmptyCanvasHint onOpenLibrary={() => onTogglePanel('left', 'library')} />}
+          {isEmpty && (
+            <EmptyCanvasHint
+              onOpenLibrary={() => onTogglePanel('left', 'library')}
+              hasPlan={!!doc.state.planImage}
+            />
+          )}
         </main>
 
         {showRightDock && (

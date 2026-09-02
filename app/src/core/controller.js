@@ -29,7 +29,7 @@ import { snapPoint } from './snapping.js';
 
 const DRAG_THRESHOLD_PX = 4;
 
-export function createController({ doc, getView, setView, getViewport, onChange }) {
+export function createController({ doc, getView, setView, getViewport, onChange, onCalibrate }) {
   // Transient (non-document) state.
   let tool = 'select';
   let activeSymbolId = null;
@@ -109,7 +109,7 @@ export function createController({ doc, getView, setView, getViewport, onChange 
   function setTool(next) {
     tool = next;
     if (next !== 'place') { activeSymbolId = null; ghost = null; }
-    if (next !== 'measure') measure = null;
+    if (next !== 'measure' && next !== 'calibrate') measure = null;
     notify();
   }
 
@@ -281,10 +281,21 @@ export function createController({ doc, getView, setView, getViewport, onChange 
       return;
     }
 
-    if (tool === 'measure') {
+    // Measure and calibrate share the two-point gesture. They differ only
+    // in what happens on the second click: measure reports a distance,
+    // calibrate asks what that distance really is and derives the
+    // drawing's scale from it.
+    if (tool === 'measure' || tool === 'calibrate') {
       const s = computeSnap(world, null);
-      if (!measure || measure.b) measure = { a: s.point, b: null };
-      else measure = { a: measure.a, b: s.point };
+      if (!measure || measure.b) {
+        measure = { a: s.point, b: null };
+      } else {
+        measure = { a: measure.a, b: s.point };
+        if (tool === 'calibrate' && onCalibrate) {
+          const len = Math.hypot(measure.b.x - measure.a.x, measure.b.y - measure.a.y);
+          if (len > 0.5) onCalibrate(len);
+        }
+      }
       notify();
       return;
     }
@@ -348,7 +359,7 @@ export function createController({ doc, getView, setView, getViewport, onChange 
       if (tool === 'place' && activeSymbolId) {
         const s = computeSnap(world, null);
         ghost = s.point; snap = s;
-      } else if (tool === 'measure' && measure && !measure.b) {
+      } else if ((tool === 'measure' || tool === 'calibrate') && measure && !measure.b) {
         snap = computeSnap(world, null);
       } else {
         snap = null;

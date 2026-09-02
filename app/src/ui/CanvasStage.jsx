@@ -12,7 +12,7 @@
 //     all — only the canvas repaints.
 // ===================================================================
 
-import { renderScene } from '../core/renderer.js';
+import { renderScene, getPlanImage } from '../core/renderer.js';
 import { boundsOf, formatDistance } from '../core/geometry.js';
 
 const { useRef, useEffect, useCallback } = React;
@@ -36,7 +36,15 @@ export function CanvasStage({ controller, doc, view, symbolFor, showLabels, onVi
     const ctx = canvas.getContext('2d');
     const cssW = wrap.clientWidth, cssH = wrap.clientHeight;
 
+    // Resolve the plan image from cache; a cache miss kicks off decoding
+    // and repaints when it lands, so the first frame after import isn't
+    // blocked waiting on it.
+    const planImg = d.state.planImage
+      ? getPlanImage(d.state.planImage.src, () => requestPaintRef.current())
+      : null;
+
     renderScene(ctx, cssW, cssH, {
+      planImg,
       drawing: d.state,
       view: v,
       symbolFor: sf,
@@ -58,6 +66,12 @@ export function CanvasStage({ controller, doc, view, symbolFor, showLabels, onVi
     if (frameRef.current) return;
     frameRef.current = requestAnimationFrame(paint);
   }, [paint]);
+
+  // Stable indirection so paint() can request a follow-up repaint (image
+  // decode finishing) without paint and requestPaint depending on each
+  // other and re-creating every render.
+  const requestPaintRef = useRef(requestPaint);
+  requestPaintRef.current = requestPaint;
 
   // Size the backing store to device pixels so lines stay crisp on
   // retina/high-DPI screens instead of blurring.

@@ -37,6 +37,36 @@ export const PAINT = {
   labelDim: '#9fb0c4',
 };
 
+// Decoded plan images, keyed by data URL. Decoding is async and costs
+// real time, so it happens once per source and the result is reused on
+// every frame — re-decoding inside the paint loop would drop frames on
+// every pan.
+const imageCache = new Map();
+
+export function getPlanImage(src, onReady) {
+  if (!src) return null;
+  const hit = imageCache.get(src);
+  if (hit) return hit.complete ? hit : null;
+  const img = new Image();
+  img.onload = () => onReady && onReady();
+  img.src = src;
+  imageCache.set(src, img);
+  return null;
+}
+
+function drawPlanImage(ctx, view, plan, img) {
+  if (!img || !plan) return;
+  const s = plan.scale || 1;
+  const tl = worldToScreen(view, plan.x || 0, plan.y || 0);
+  ctx.save();
+  ctx.globalAlpha = plan.opacity == null ? 0.85 : plan.opacity;
+  // Smoothing off when magnified past 1:1 — a scanned plan's linework
+  // stays legible sharp, and turns to mush interpolated.
+  ctx.imageSmoothingEnabled = view.zoom * s < 1.5;
+  ctx.drawImage(img, tl.x, tl.y, img.width * s * view.zoom, img.height * s * view.zoom);
+  ctx.restore();
+}
+
 /** Grid step chosen so lines never get denser than ~8px on screen. */
 function gridStepsFor(spacing, zoom) {
   let step = spacing;
@@ -294,6 +324,11 @@ export function renderScene(ctx, cssW, cssH, scene) {
   ctx.fillStyle = PAINT.bg;
   ctx.fillRect(0, 0, cssW, cssH);
 
+  // Plan first, then grid over it — the grid is a drafting aid and needs
+  // to stay readable against a dense scanned floor plan.
+  if (drawing.planImage) {
+    drawPlanImage(ctx, view, drawing.planImage, scene.planImg);
+  }
   drawGrid(ctx, view, cssW, cssH, drawing);
   drawOrigin(ctx, view, cssW, cssH, drawing);
   drawWalls(ctx, view, drawing.walls);

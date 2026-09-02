@@ -133,5 +133,9 @@ export function emptyDrawing() {
     snapEnabled: true,
     hiddenLayers: [],
     lockedLayers: [],
+    // Background floor plan traced over while drafting. Stored as a data
+    // URL so a drawing stays a single self-contained record — the same
+    // approach the production app takes (planImageData).
+    planImage: null,         // { src, width, height, x, y, scale, opacity }
   };
 }

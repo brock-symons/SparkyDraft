@@ -71,9 +71,14 @@ export function viewForBounds(bounds, viewportW, viewportH, padPx = 80, maxZoom 
   }
   const w = Math.max(bounds.maxX - bounds.minX, 1);
   const h = Math.max(bounds.maxY - bounds.minY, 1);
+  // Padding must never consume the whole viewport. A fixed 80px inset
+  // against a short viewport made the available height NEGATIVE, which
+  // produced a negative zoom that then failed the `> 0` check and fell
+  // back to 1:1 — the drawing silently didn't fit, with no error.
+  const pad = Math.max(0, Math.min(padPx, viewportW * 0.15, viewportH * 0.15));
   const zoom = Math.min(
-    (viewportW - padPx * 2) / w,
-    (viewportH - padPx * 2) / h,
+    (viewportW - pad * 2) / w,
+    (viewportH - pad * 2) / h,
     maxZoom
   );
   const z = isFinite(zoom) && zoom > 0 ? zoom : 1;
