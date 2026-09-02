@@ -93,9 +93,12 @@ function ResizeHandle({ side, onResize }) {
  */
 function Dock({ side, width, title, onClose, onResize, children }) {
   return (
+    // Visibility is decided in JS (see showLeftDock/showRightDock), not by
+    // responsive utility classes — the two docks appear at different
+    // widths, so a single `lg:` prefix can't express it.
     <div
       className={cx(
-        'relative hidden shrink-0 bg-white lg:flex lg:flex-col',
+        'relative flex shrink-0 flex-col bg-white',
         side === 'left' ? 'border-r border-ink-200 animate-slide-l' : 'border-l border-ink-200 animate-slide-r'
       )}
       style={{ width }}
@@ -115,7 +118,7 @@ function Dock({ side, width, title, onClose, onResize, children }) {
 function Sheet({ open, title, onClose, children }) {
   if (!open) return null;
   return (
-    <div className="fixed inset-0 z-40 lg:hidden">
+    <div className="fixed inset-0 z-40">
       <div className="absolute inset-0 bg-ink-950/20 animate-fade-in" onClick={onClose} />
       <div className="absolute inset-x-0 bottom-0 flex max-h-[68%] flex-col rounded-t-xl bg-white shadow-pop animate-sheet-up">
         <div className="flex h-11 shrink-0 items-center justify-between border-b border-ink-100 px-3">
@@ -357,8 +360,16 @@ export function Workspace({
       : 'cursor-default';
 
   const isEmpty = doc.state.objects.length === 0;
-  const showLeftDock = breakpoint === 'desktop' && panels.left;
-  const showRightDock = breakpoint === 'desktop' && panels.right;
+  // Two different thresholds, because the two docks cost different
+  // amounts of canvas. The left (library/layers) dock only earns its
+  // ~232px once there is desktop width to spare. The right inspector is
+  // worth docking from tablet-portrait up: at 800px a docked 264px panel
+  // leaves ~490px of drawing, whereas the same panel as a bottom sheet
+  // covers two thirds of the screen.
+  const showLeftDock = breakpoint.name === 'desktop' && panels.left;
+  const showRightDock = breakpoint.width >= 768 && panels.right;
+  const overlayLeft = !showLeftDock && panels.left;
+  const overlayRight = !showRightDock && panels.right;
 
   return (
     <div className="flex h-full flex-col bg-ink-100">
@@ -443,18 +454,13 @@ export function Workspace({
       <StatusBar controller={controller} doc={doc} view={view} />
       <MobileBar tools={tools} panels={panels} onTogglePanel={onTogglePanel} />
 
-      {/* Below desktop, panels overlay rather than dock — there is not
-          enough width to show the drawing and two columns at once. */}
-      {breakpoint !== 'desktop' && (
-        <>
-          <Sheet open={!!panels.left} title={leftPanelTitle} onClose={() => onTogglePanel('left', null)}>
-            {leftPanelContent}
-          </Sheet>
-          <Sheet open={!!panels.right} title={rightPanelTitle} onClose={() => onTogglePanel('right', null)}>
-            {rightPanelContent}
-          </Sheet>
-        </>
-      )}
+      {/* Whatever didn't earn a dock at this width overlays as a sheet. */}
+      <Sheet open={!!overlayLeft} title={leftPanelTitle} onClose={() => onTogglePanel('left', null)}>
+        {leftPanelContent}
+      </Sheet>
+      <Sheet open={!!overlayRight} title={rightPanelTitle} onClose={() => onTogglePanel('right', null)}>
+        {rightPanelContent}
+      </Sheet>
     </div>
   );
 }

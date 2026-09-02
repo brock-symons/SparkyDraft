@@ -94,13 +94,14 @@ function WorkspaceRoot({ projectId, onExit, pushToast }) {
   // opposite of canvas-first. Panels are still remembered per device once
   // the user chooses; this only sets the first-run state.
   const [panels, setPanels] = useState(() => {
-    const desktop = window.innerWidth >= 1024;
-    // Docked panels are restored; overlay sheets are NOT. Below desktop a
-    // panel covers the drawing, so restoring one means reopening a job and
-    // finding the plan hidden behind a sheet you have to dismiss before
-    // you can see your own work. Docks cost no canvas, so remembering
-    // those is a convenience rather than an obstacle.
-    if (!desktop) return { left: null, right: null };
+    const w = window.innerWidth;
+    // Docked panels are restored; overlay sheets are NOT. A restored
+    // sheet means reopening a job and finding the drawing hidden behind
+    // a panel you must dismiss before you can see your own work. A dock
+    // costs no canvas, so remembering it is a convenience.
+    // 768 is where the inspector starts docking (see showRightDock).
+    if (w < 768) return { left: null, right: null };
+    if (w < 1024) return { left: null, right: 'inspector' };
     return savedUI.panels || { left: null, right: 'inspector' };
   });
   const [dockWidths, setDockWidths] = useState(savedUI.dockWidths || { left: 232, right: 264 });
@@ -123,6 +124,26 @@ function WorkspaceRoot({ projectId, onExit, pushToast }) {
   }, [panels, dockWidths, favourites, recent, sections, savedUI.panels]);
 
   const toggleSection = useCallback(k => setSections(s => ({ ...s, [k]: !s[k] })), []);
+
+  // When the window narrows past a dock's threshold, that panel would
+  // silently become an overlay sheet. Two of them can end up stacked over
+  // the drawing, which is not something the user asked for — they opened
+  // a docked column, not a modal. So a dock that loses its dock closes.
+  // Only the DOWNWARD crossing is acted on, so this never fights a sheet
+  // the user deliberately opened at the narrower size.
+  const prevWidthRef = useRef(breakpoint.width);
+  useEffect(() => {
+    const prev = prevWidthRef.current;
+    const now = breakpoint.width;
+    prevWidthRef.current = now;
+    if (now >= prev) return;
+    setPanels(p => {
+      const next = { ...p };
+      if (prev >= 1024 && now < 1024) next.left = null;
+      if (prev >= 768 && now < 768) next.right = null;
+      return next.left === p.left && next.right === p.right ? p : next;
+    });
+  }, [breakpoint.width]);
 
   // --- persistence ---------------------------------------------------
   const [projectName, setProjectName] = useState('Untitled project');
@@ -306,7 +327,9 @@ function WorkspaceRoot({ projectId, onExit, pushToast }) {
 
   const startCalibrate = useCallback(() => {
     controller.setTool('calibrate');
-    if (breakpoint !== 'desktop') setPanels(p => ({ ...p, right: null }));
+    // On a narrow screen the inspector overlays the drawing, and you
+    // cannot click two points on something you can't see.
+    if (breakpoint.width < 768) setPanels(p => ({ ...p, right: null }));
   }, [controller, breakpoint]);
 
   const applyCalibration = useCallback(realMm => {
@@ -488,7 +511,7 @@ function WorkspaceRoot({ projectId, onExit, pushToast }) {
           favourites={favourites}
           recent={recent}
           onToggleFavourite={toggleFavourite}
-          autoFocus={breakpoint === 'desktop'}
+          autoFocus={breakpoint.name === 'desktop'}
         />
       : null;
 

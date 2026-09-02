@@ -416,15 +416,20 @@ export function useElementSize(ref) {
   return size;
 }
 
-/** Tailwind-aligned breakpoint hook, so JS and CSS agree on "mobile". */
+/**
+ * Tailwind-aligned breakpoint, plus the raw width. Layout decisions here
+ * are not all made at the same threshold — the tool rail earns its 44px
+ * from 640 up, while a docked side panel needs ~768 before it leaves
+ * enough canvas to be worth it — so callers need the number too.
+ */
 export function useBreakpoint() {
-  const [bp, setBp] = useState(() =>
-    window.innerWidth >= 1024 ? 'desktop' : window.innerWidth >= 640 ? 'tablet' : 'mobile'
-  );
+  const read = () => {
+    const w = window.innerWidth;
+    return { width: w, name: w >= 1024 ? 'desktop' : w >= 640 ? 'tablet' : 'mobile' };
+  };
+  const [bp, setBp] = useState(read);
   useEffect(() => {
-    const onResize = () => {
-      setBp(window.innerWidth >= 1024 ? 'desktop' : window.innerWidth >= 640 ? 'tablet' : 'mobile');
-    };
+    const onResize = () => setBp(read());
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
   }, []);
