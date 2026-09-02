@@ -97,6 +97,34 @@ section below whenever you do.
   holding Shift while placing keeps placement mode active instead of
   reverting to Select. Don't repurpose `R`/Shift in placement-adjacent code.
 
+## `app/` — the React CAD workspace redesign (branch work, NOT live)
+
+`app/` holds an in-progress React + Tailwind redesign of the drafting
+workspace. **`index.html` at the repo root is still the live product** and
+remains the source of truth for every feature. `app/` currently covers the
+core drafting experience only (project browser, canvas, place/select/move,
+layers, contextual inspector, floor-plan underlay, calibration, command
+palette, context menu, local save/load). It does NOT yet include civil
+works, comms racks, circuits, panel schedule, quoting, PDF export or
+multi-org.
+
+- `app/src/core/` is framework-free and DOM-free — catalog, geometry,
+  snapping, document+history, command registry, renderer, interaction
+  controller. Nothing here imports React.
+- `app/src/ui/` is React and owns chrome only. React does not re-render
+  during a drag; the controller mutates and the canvas repaints on one rAF.
+- `app/src/core/catalog.js` is extracted **verbatim** from the root
+  `index.html`. It drives quoting and load estimates, so re-extract rather
+  than hand-editing if the root catalog changes.
+- One command registry (`core/commands.js`) feeds the palette, keyboard
+  shortcuts, tooltips and the context menu. Add an action there once and it
+  appears everywhere — this exists specifically because the live app's
+  hand-maintained palette array drifted out of sync with its toolbar.
+- There is **no build step** (no Node on the build machine). `app/index.html`
+  contains a small in-browser ES-module loader that Babel-transforms JSX and
+  caches modules by URL. It is deliberately isolated and deletable in one
+  commit once Vite is introduced.
+
 ## Workflow notes
 
 - Never merge to `main` without the project owner's explicit review/approval
