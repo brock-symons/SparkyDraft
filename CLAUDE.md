@@ -99,6 +99,14 @@ section below whenever you do.
 
 ## `app/` — the React CAD workspace redesign (branch work, NOT live)
 
+The full brief driving this work is filed verbatim at
+[REDESIGN_DIRECTIVE.md](REDESIGN_DIRECTIVE.md) — 35 numbered sections
+covering interaction philosophy, contextual UI, snapping/selection
+standards, responsive strategy, what may be changed independently (§31)
+vs. requires approval (§32), git safety (§33), and the final product-audit
+deliverable expected (§35). Consult it directly for anything not covered
+by the summary below, rather than relying on a chat transcript for intent.
+
 `app/` holds an in-progress React + Tailwind redesign of the drafting
 workspace. **`index.html` at the repo root is still the live product** and
 remains the source of truth for every feature. `app/` currently covers the
