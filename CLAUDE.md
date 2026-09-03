@@ -176,6 +176,40 @@ PR:
    product swap is the single highest-stakes merge this repo will see —
    treat the review bar accordingly, not as a formality.
 
+### Code style + AI-authorship policy
+
+The full version of this lives in `README.md` on `claude/repo-audit-redesign-hdfuir`
+(not yet merged to `main`) — restated here in full, not just linked, so it's
+actually visible on this branch rather than sitting unread on another one.
+Once that branch merges, treat README.md as the source of truth and this
+section as redundant.
+
+- The `core/` framework-free / `ui/`-owns-chrome split and the single
+  command registry, both already described above, are the house style now,
+  not just this redesign's internal convention — keep following them.
+- Business logic ported from `index.html` (quote totals, the load/demand
+  estimate, circuit routing, the cable-run estimate) gets extracted
+  **verbatim** and checked against the original's actual output, never
+  re-derived from memory. `MIGRATION_INVENTORY.md` §B already requires this
+  for the current port; it's the general rule for anything ported here on.
+- **Reformatting for readability goes through an actual formatter
+  (Prettier), never a freehand AI rewrite.** A formatter reprints from the
+  parsed syntax tree and is structurally incapable of changing behaviour;
+  an AI manually "cleaning up" dense single-line code for readability can
+  drift into small semantic changes without meaning to (a rename that
+  misses one call site, a ternary rewritten with different precedence). If
+  the dense single-line areas in the legacy `index.html` get reformatted,
+  do it as its own dedicated commit with zero functional changes mixed in,
+  so the diff is reviewable on its own.
+- An AI assistant may write and suggest code for a new feature on its own
+  initiative, but only once it's been run and traced through (not just
+  read) and shown not to regress, and only if it matches the surrounding
+  module's existing patterns rather than introducing a new one. Anything
+  that changes navigation, the document model, or security/permission
+  behaviour is not the assistant's call to make unilaterally — flag it for
+  the owner, the same way `MIGRATION_INVENTORY.md`'s "Items flagged for
+  owner review" already does for this port.
+
 ## Workflow notes
 
 - Never merge to `main` without the project owner's explicit review/approval
