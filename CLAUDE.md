@@ -133,6 +133,49 @@ multi-org.
   caches modules by URL. It is deliberately isolated and deletable in one
   commit once Vite is introduced.
 
+### Target end-state (confirmed by the project owner, 2026-09-03)
+
+`app/` is not a permanent side branch or a design experiment — it is meant
+to **replace `index.html` as the live product**. Once every feature in
+`MIGRATION_INVENTORY.md`'s parity matrix is ported, verified, and `main` is
+updated to run `app/`, the root `index.html` app is retired. Plan and
+communicate with that end-state in mind, not as an indefinitely-parallel
+"redesign branch."
+
+That doesn't change how you get there — the migration inventory's phased
+order (§F) and risk register (§G) already reflect the right amount of
+caution and don't need re-litigating. It does mean the cutover itself needs
+an explicit gate, not just "the last feature got ported." Before `app/` is
+proposed as the replacement for `main`, confirm and state plainly in the
+PR:
+
+1. **Full parity**, per `MIGRATION_INVENTORY.md`'s own parity matrix (§H) —
+   not just the features, the *business logic behind them* (R2, R3, R7, R8
+   in the risk register — quote/demand formulas, RLS/permission behaviour,
+   derived patch-panel counts, circuit branching) checked against the old
+   app's actual output, not re-derived from memory.
+2. **Security parity or better**, specifically: the new app is being built
+   fresh, which means it can just as easily reintroduce the unescaped-
+   `innerHTML` XSS pattern the audit found in the current app
+   (`audits/2026-09-03-full-repository-audit.md`, §8.1) — any place org/
+   project/user-supplied text reaches the DOM in the new UI needs to go
+   through an escaping helper from the start, not bolted on after. RLS
+   behaviour (R3/R6/R14) gets verified against the live Supabase project,
+   not assumed from reading the policy files.
+3. **§35's product audit (per the directive) actually happened** and its
+   findings are closed or explicitly accepted by the owner, not just
+   produced.
+4. **The physical cutover mechanics are a real decision, not an implicit
+   one** — does `app/` get promoted to replace the repo root, or does
+   `main` start deploying `app/`'s build output while `index.html` moves
+   elsewhere for reference? Flag this for the owner rather than picking
+   one; it affects every existing link/bookmark/deploy config.
+5. Still applies regardless of how close to done this looks: **no push to
+   `main` without the project owner's explicit review of that specific
+   cutover**, same as every other merge (see Workflow notes below). A full
+   product swap is the single highest-stakes merge this repo will see —
+   treat the review bar accordingly, not as a formality.
+
 ## Workflow notes
 
 - Never merge to `main` without the project owner's explicit review/approval
