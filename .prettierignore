@@ -14,5 +14,10 @@ index.html
 # from being byte-comparable with the source it was lifted from.
 app/src/core/catalog.js
 
+# Same rule, same reason: the civil/underground libraries (pits, conduits,
+# comms conduits, building-entry services, poles, overhead conductors)
+# lifted verbatim from index.html.
+app/src/core/civilCatalog.js
+
 # Generated/vendored
 node_modules/

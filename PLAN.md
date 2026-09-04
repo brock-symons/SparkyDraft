@@ -12,7 +12,7 @@ versioned markdown next to the code.
 | | |
 |---|---|
 | Branch | `feature/cad-workspace-redesign` |
-| Status | Phases 0-6 complete · Phase 7 (civil / underground) next |
+| Status | Phases 0-6 complete · **stopped at the phase boundary, awaiting approval for Phase 7** |
 | Merged to main | **No — and not without explicit owner review** |
 | Last updated | 2026-09-04 |
 
@@ -155,7 +155,14 @@ live on the project and persist with it.
 Also landed here: the error boundary from the follow-up list, after a
 missing import blanked the page twice in one session.
 
-### Phase 7 — Civil / underground
+### Phase 7 — Civil / underground ⏸ NOT STARTED — awaiting approval
+
+**Two inert files exist as groundwork only** (`app/src/core/civilCatalog.js`,
+`app/src/core/civil.js`). Nothing imports them; the running app is
+unchanged and sits at Phase 6. They were written immediately before the
+phase-gate rule was introduced and are kept rather than discarded, but
+Phase 7 has not begun.
+
 Civil plans as a parallel plan type, pits/conduits/building entries/poles/
 overhead runs, civil materials schedule, civil quote, mode toggle.
 Self-contained — safe here once the core is stable.
