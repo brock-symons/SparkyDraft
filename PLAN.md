@@ -12,7 +12,7 @@ versioned markdown next to the code.
 | | |
 |---|---|
 | Branch | `feature/cad-workspace-redesign` |
-| Status | Phases 0-5 complete · Phase 6 (quote + price list) next |
+| Status | Phases 0-6 complete · Phase 7 (civil / underground) next |
 | Merged to main | **No — and not without explicit owner review** |
 | Last updated | 2026-09-04 |
 
@@ -134,11 +134,26 @@ Also fixed: patch_panel was placeable here but is hidden from
 production's placement grid — placing one would have double-counted
 against the derived panel.
 
-### Phase 6 — Quote + price list
-Quote totals, itemised/summary toggle, price list editing, per-object price
-overrides, labour/margin/equipment/travel inputs, quote export.
-Formulas verbatim per inventory §B1/§B2 (including the deliberate
-"current product default" indirection in `effectivePrice()`).
+### Phase 6 — Quote + price list ✅ complete
+
+- [x] **Quote totals** (`3bf0e30`) — verbatim, incl. GST compounding on
+      margin and derived patch panels; parity-tested (2,924 comparisons).
+- [x] **Itemised / quantity-summary toggle** (`3bf0e30`) — grouping keyed
+      by device type + switch gang + floor, as production does.
+- [x] **Per-object price/labour overrides** (`3bf0e30`)
+- [x] **Labour / margin / equipment / travel** (`3bf0e30`) — persisted on
+      the project, production's defaults.
+- [x] **Price list editing** (`3bf0e30`) — per project, and persisted
+      (see the deviation note below).
+- [x] **Quote export** (`3bf0e30`) — production's text format.
+
+**Deviation, flagged for owner review:** the current app edits its global
+SYMBOL_LIBRARY and loses the edits on reload. That is not reproducible
+here (catalog.js must stay a byte-comparable extraction), so price edits
+live on the project and persist with it.
+
+Also landed here: the error boundary from the follow-up list, after a
+missing import blanked the page twice in one session.
 
 ### Phase 7 — Civil / underground
 Civil plans as a parallel plan type, pits/conduits/building entries/poles/
@@ -242,12 +257,9 @@ and calling `node_modules/.bin/prettier` directly works and is fast.
 
 ## Known follow-ups (not blocking a phase)
 
-- **No React error boundary.** A render crash anywhere blanks the entire
-  page rather than degrading. Found the hard way in Phase 4: one missing
-  import (`cx`) took the whole app down the moment a field was filled in.
-  Worth a top-level boundary before this replaces the live product —
-  the current app is a single script where one broken feature doesn't
-  take the drawing with it.
+- ~~No React error boundary~~ — done in Phase 6 (`3bf0e30`) after a
+  missing import blanked the page twice. A render crash now shows a
+  "your drawing is saved, reload" panel instead of a white screen.
 - **Cable/label layer gating.** Layer visibility now hides devices on the
   canvas (fixed in Phase 2), but production also gates cables and labels
   by layer. Small, and best done alongside whichever phase next touches

@@ -115,12 +115,12 @@ Status key: **✅ complete** · **◐ partial** · **✗ missing** · **⚙ need
 
 | Feature | Current | New | Status |
 |---|---|---|---|
-| Quote totals | `updateQuote()` L6726 | — | ✗ |
-| Quote itemised / quantity-summary toggle | `state.quoteItemized` | — | ✗ |
-| Price list / device library editing | `renderPriceList()` L4189 | — | ✗ |
-| Per-object price override | `effectivePrice()` L1658 | — | ✗ |
-| Labour rate / margin / equipment / travel inputs | quote sheet | — | ✗ |
-| Export quote summary (copyable text) | L4813 | — | ✗ |
+| Quote totals | `updateQuote()` L6726 | `core/quote.js` | ✅ |
+| Quote itemised / quantity-summary toggle | `state.quoteItemized` | Quote dialog | ✅ |
+| Price list / device library editing | `renderPriceList()` L4189 | Price list dialog | ✅ |
+| Per-object price override | `effectivePrice()` L1658 | `core/quote.js` | ✅ |
+| Labour rate / margin / equipment / travel inputs | quote sheet | Quote dialog, persisted | ✅ |
+| Export quote summary (copyable text) | L4813 | `quoteText()` | ✅ |
 
 ### A4. Comms / data
 
@@ -416,7 +416,7 @@ still in flux would mean migrating stored cloud records twice.
 | Switch links + banks | Complete | Complete | None | High | Done | ✅ |
 | Circuits | Complete | Complete | None | **Critical** | Done | ✅ |
 | Panel schedule + load estimate | Complete | Complete | None | **Critical** | Done | ✅ (parity-tested) |
-| Quote + price list | Complete | Missing | Significant | **Critical** | **Critical** | Pending |
+| Quote + price list | Complete | Complete | Price edits persist (deviation, §I) | **Critical** | Done | ✅ (parity-tested) |
 | Comms racks | Complete | Complete | None | High | Done | ✅ (parity-tested) |
 | Civil / underground | Complete | Missing | Significant | High | High | Pending |
 | Elevations | Complete | Missing | Significant | Medium | Medium | Pending |
@@ -453,7 +453,13 @@ Per §8/§20 — these change product behaviour and are **not** mine to decide:
    `gridSpacingMM` in real millimetres like production, converted through the
    plan's calibration by `gridWorldUnits()`. Left listed so the decision is
    visible rather than silently made.
-6. **Cable-run estimate for switched lighting.** The estimate covers
+6. **Price-list edits now persist.** The current app edits its global
+   SYMBOL_LIBRARY and loses every edit on reload. The redesign cannot
+   mutate its catalog (it is a byte-comparable extraction), so edits are
+   stored per project and saved with it. Strictly better, but it IS a
+   behaviour change to how a job is priced, so it is on this list rather
+   than buried in a commit.
+7. **Cable-run estimate for switched lighting.** The estimate covers
    hard-active runs only. Production's source carries the owner's own
    instruction (30 Aug 2026) that extending it needs a redesign around a
    switch's view of what it feeds, and that it must not be built
