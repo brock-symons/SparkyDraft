@@ -9,11 +9,13 @@ import {
   IconButton,
   EmptyState,
   FieldLabel,
+  Select,
   cx,
   focusRing,
 } from './primitives.jsx';
 import { SYMBOL_LIBRARY, CATEGORY_LABELS, CATEGORY_ORDER, LAYER_DEFS } from '../core/catalog.js';
 import { currentFloor } from '../core/document.js';
+import { allCommsRacks, patchPanelUnitsForRack } from '../core/comms.js';
 
 const { useState, useMemo, useRef, useEffect } = React;
 
@@ -98,7 +100,13 @@ export function LibraryPanel({
   // Custom fittings are searched and browsed alongside catalog devices —
   // a user who added "Oven outlet" expects to find it by typing "oven",
   // not to remember it lives in a separate list.
-  const allSymbols = useMemo(() => SYMBOL_LIBRARY.concat(customSymbols), [customSymbols]);
+  // patch_panel is deliberately not placeable: a rack needs one per 24
+  // ports, so it is derived from the rack's port count rather than being
+  // a device you position and then have to keep in sync. It stays in the
+  // catalog so its price is still editable and quotes still resolve it —
+  // production hides it from its placement grid for exactly this reason.
+  const placeable = useMemo(() => SYMBOL_LIBRARY.filter(s => s.id !== 'patch_panel'), []);
+  const allSymbols = useMemo(() => placeable.concat(customSymbols), [placeable, customSymbols]);
   const q = query.trim().toLowerCase();
   const matches = useMemo(() => {
     if (!q) return null;
@@ -194,7 +202,7 @@ export function LibraryPanel({
               </Section>
             )}
             {CATEGORY_ORDER.map(cat => {
-              const items = SYMBOL_LIBRARY.filter(s => s.category === cat);
+              const items = placeable.filter(s => s.category === cat);
               if (!items.length) return null;
               return (
                 <Section
@@ -412,4 +420,189 @@ export function CircuitsPanel({ doc, controller, onAddCircuit, onEditCircuit }) 
       </div>
     </div>
   );
+}
+
+// ===================================================================
+// COMMS RACKS  (migration Phase 5)
+//
+// Racks are listed across every floor, not just the open one: a building
+// has one comms cupboard, and you think about it as the building's rack
+// rather than "the rack on level 2".
+//
+// Ports are slots, not rows you create and delete — a patch panel has 24
+// of them whether or not they are used. So the panel shows every port
+// and lets you fill them in, rather than making you add a port before
+// you can wire a point to it.
+// ===================================================================
+
+export function CommsPanel({ doc, controller, onSelectDevice }) {
+  const project = doc.state;
+  const racks = useMemo(() => allCommsRacks(project), [project]);
+  const legacy = project.unassignedCommsPorts || [];
+  const [openRack, setOpenRack] = useState(null);
+  const [showUsedOnly, setShowUsedOnly] = useState(true);
+
+  if (!racks.length && !legacy.length) {
+    return (
+      <EmptyState
+        title="No comms racks"
+        hint="Place a comms rack on the plan — it arrives with a full 24-port patch panel."
+      />
+    );
+  }
+
+  return (
+    <div className="flex h-full flex-col">
+      <div className="min-h-0 flex-1 overflow-y-auto py-1">
+        {racks.map(({ rack, floorName }) => {
+          const ports = rack.commsPorts || [];
+          const used = ports.filter(p => p.deviceId).length;
+          const units = patchPanelUnitsForRack(rack);
+          const open = openRack === rack.id;
+          const shown = open ? (showUsedOnly ? ports.filter(p => p.deviceId) : ports) : [];
+          return (
+            <div key={rack.id} className="border-b border-ink-100 last:border-0">
+              <button
+                onClick={() => setOpenRack(open ? null : rack.id)}
+                className={cx(
+                  'flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-ink-50',
+                  focusRing
+                )}
+              >
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm font-medium text-ink-800">
+                    {(rack.props && rack.props.customName) || 'Rack ' + rack.id}
+                  </span>
+                  <span className="block truncate text-2xs text-ink-400">
+                    {floorName} · {used}/{ports.length} ports used · {units} patch panel
+                    {units === 1 ? '' : 's'}
+                  </span>
+                </span>
+                <span className="text-2xs text-ink-400">{open ? '▾' : '▸'}</span>
+              </button>
+
+              {open && (
+                <div className="px-3 pb-2">
+                  <div className="mb-1.5 flex items-center gap-2">
+                    <button
+                      onClick={() => setShowUsedOnly(v => !v)}
+                      className={cx('text-2xs text-accent-600 hover:underline', focusRing)}
+                    >
+                      {showUsedOnly ? `Show all ${ports.length} ports` : 'Show used ports only'}
+                    </button>
+                    <div className="flex-1" />
+                    <button
+                      onClick={() => controller.addCommsPort(rack.id)}
+                      className={cx('text-2xs text-accent-600 hover:underline', focusRing)}
+                    >
+                      + Add port
+                    </button>
+                  </div>
+                  {shown.length === 0 ? (
+                    <p className="py-1 text-2xs text-ink-400">
+                      No ports in use yet — assign one from a data outlet&rsquo;s properties.
+                    </p>
+                  ) : (
+                    shown.map(port => {
+                      const device = findDeviceAnywhere(project, port.deviceId);
+                      return (
+                        <div
+                          key={port.id}
+                          className="mb-1 rounded-md border border-ink-100 px-2 py-1.5"
+                        >
+                          <div className="flex items-center gap-2">
+                            <span className="w-7 shrink-0 tnum text-2xs text-ink-400">
+                              {port.number}
+                            </span>
+                            <TextInput
+                              value={port.label}
+                              aria-label={'Label for port ' + port.number}
+                              onChange={e =>
+                                controller.setCommsPortFields(port.id, { label: e.target.value })
+                              }
+                            />
+                          </div>
+                          <div className="mt-1 flex items-center gap-2 pl-9">
+                            <span className="truncate text-2xs text-ink-500">
+                              {device ? deviceLabel(project, device) : 'Not connected'}
+                            </span>
+                            {device && (
+                              <>
+                                <div className="flex-1" />
+                                <button
+                                  onClick={() => onSelectDevice(device.id)}
+                                  className={cx(
+                                    'text-2xs text-accent-600 hover:underline',
+                                    focusRing
+                                  )}
+                                >
+                                  Show
+                                </button>
+                                <button
+                                  onClick={() => controller.assignPort(device.id, null)}
+                                  className={cx('text-2xs text-ink-400 hover:underline', focusRing)}
+                                >
+                                  Unassign
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
+
+        {/* Ports recovered from an old-format save whose rack could not
+            be found. The migration keeps them rather than dropping a real
+            connection on the floor; they live here until someone says
+            which rack they belong to. */}
+        {legacy.length > 0 && (
+          <div className="border-t border-amber-200 bg-amber-50/50 px-3 py-2">
+            <FieldLabel className="mb-1">Recovered from an older save</FieldLabel>
+            <p className="mb-2 text-2xs leading-relaxed text-ink-500">
+              These data connections had no rack to attach to. Pick one to keep them.
+            </p>
+            {legacy.map(p => (
+              <div key={p.id} className="mb-1.5 flex items-center gap-2">
+                <span className="min-w-0 flex-1 truncate text-2xs text-ink-700">{p.label}</span>
+                <Select
+                  value=""
+                  aria-label={'Rack for ' + p.label}
+                  onChange={e => e.target.value && controller.placeLegacyPort(p.id, e.target.value)}
+                >
+                  <option value="">Move to…</option>
+                  {racks.map(({ rack }) => (
+                    <option key={rack.id} value={rack.id}>
+                      {(rack.props && rack.props.customName) || 'Rack ' + rack.id}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function findDeviceAnywhere(project, id) {
+  if (!id) return null;
+  for (const f of project.floors) {
+    const o = f.objects.find(x => x.id === id);
+    if (o) return o;
+  }
+  return null;
+}
+
+function deviceLabel(project, obj) {
+  if (obj.props && obj.props.customName) return obj.props.customName;
+  const custom = (project.customSymbols || []).find(s => s.id === obj.symbolId);
+  const sym = custom || SYMBOL_LIBRARY.find(s => s.id === obj.symbolId);
+  return (sym ? sym.label : obj.symbolId) + ' (' + obj.id + ')';
 }

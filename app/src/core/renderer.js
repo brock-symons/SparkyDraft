@@ -19,6 +19,7 @@
 import { worldToScreen, gridWorldUnits, DEVICE_R } from './geometry.js';
 import { computeLightingBanks, computeChainOrder, computeBankAttachPoints } from './switching.js';
 import { computeGpoChains } from './circuits.js';
+import { computeCommsRuns, portForDevice, isCommsRack } from './comms.js';
 
 export const PAINT = {
   bg: '#0b0f14',
@@ -370,14 +371,26 @@ function drawCircuitRuns(ctx, view, project, floor, opts) {
  * a reading aid on a printed plan, so it must stay legible zoomed out
  * without swamping the symbol zoomed in.
  */
-function drawCircuitLabels(ctx, view, floor, visibleObjects) {
+function drawCircuitLabels(ctx, view, floor, visibleObjects, symbolFor) {
   for (const { o, p } of visibleObjects) {
-    if (!o.circuit) continue;
+    // A comms outlet has no circuit — it shows its port's own label
+    // instead, which is usually just the point number the sparky wrote
+    // on the plan. Ported from production's label block.
+    let idLabel = null;
+    if (o.circuit) idLabel = String(o.circuit);
+    else {
+      const sym = symbolFor(o.symbolId);
+      if (sym && sym.category === 'data' && !isCommsRack(o.symbolId)) {
+        const port = portForDevice(floor, o.id);
+        if (port) idLabel = port.label || 'Port ' + port.number;
+      }
+    }
+    if (!idLabel) continue;
     const fontPx = Math.max(9, Math.min(12, 8 + view.zoom * 1.5));
     ctx.font = 'bold ' + fontPx + 'px ui-monospace, SFMono-Regular, Menlo, monospace';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'top';
-    const tw = ctx.measureText(o.circuit).width;
+    const tw = ctx.measureText(idLabel).width;
     const padX = 3,
       padY = 1;
     const boxW = tw + padX * 2;
@@ -388,7 +401,33 @@ function drawCircuitLabels(ctx, view, floor, visibleObjects) {
     ctx.fillStyle = 'rgba(9,13,18,0.92)';
     ctx.fillRect(bx, by, boxW, boxH);
     ctx.fillStyle = PAINT.label;
-    ctx.fillText(o.circuit, p.x, by + padY);
+    ctx.fillText(idLabel, p.x, by + padY);
+  }
+}
+
+// -------------------------------------------------------------------
+// Comms home runs.
+//
+// One straight line per occupied port, rack directly to its device — no
+// daisy chain, because real structured cabling is point-to-point. That
+// is the whole reason comms is modelled separately from circuits.
+// -------------------------------------------------------------------
+
+function drawCommsRuns(ctx, view, floor, opts) {
+  if (opts.dataHidden) return;
+  const { selectedIds, showAll } = opts;
+  for (const { rack, device } of computeCommsRuns(floor)) {
+    if (!showAll && !selectedIds.has(rack.id) && !selectedIds.has(device.id)) continue;
+    ctx.strokeStyle = 'rgba(74,222,128,0.8)';
+    ctx.lineWidth = 2.5;
+    ctx.setLineDash([2, 3]);
+    const p1 = worldToScreen(view, rack.x, rack.y);
+    const p2 = worldToScreen(view, device.x, device.y);
+    ctx.beginPath();
+    ctx.moveTo(p1.x, p1.y);
+    ctx.lineTo(p2.x, p2.y);
+    ctx.stroke();
+    ctx.setLineDash([]);
   }
 }
 
@@ -676,10 +715,12 @@ export function renderScene(ctx, cssW, cssH, scene) {
     isolatedCircuitId: scene.isolatedCircuitId,
     lightingHidden: scene.isLayerHidden('lighting'),
     powerHidden: scene.isLayerHidden('power'),
+    dataHidden: scene.isLayerHidden('data'),
     categoryOf: scene.categoryOf,
   };
   drawSwitchRuns(ctx, view, drawing, runOpts);
   drawCircuitRuns(ctx, view, scene.project, drawing, runOpts);
+  drawCommsRuns(ctx, view, drawing, runOpts);
 
   // Viewport culling — only pay for what's visible (§27).
   // A device on a hidden layer is skipped here rather than at hit-test
@@ -704,7 +745,7 @@ export function renderScene(ctx, cssW, cssH, scene) {
     });
   }
 
-  if (scene.showCircuitLabels) drawCircuitLabels(ctx, view, drawing, visible);
+  if (scene.showCircuitLabels) drawCircuitLabels(ctx, view, drawing, visible, scene.symbolFor);
 
   drawDimensions(
     ctx,

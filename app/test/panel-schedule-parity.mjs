@@ -19,79 +19,50 @@
 // port — do not adjust the expectation.
 // ===================================================================
 
-import { readFileSync } from 'fs';
-import { fileURLToPath } from 'url';
-import { dirname, join } from 'path';
-
+import {
+  extractFunction,
+  extractConst,
+  buildProductionModule,
+  makeComparer,
+  makeRandom,
+} from './extract-production.mjs';
 import * as ported from '../src/core/panelSchedule.js';
 import { computeChainEdges as portedChainEdges } from '../src/core/circuits.js';
 import { SYMBOL_LIBRARY } from '../src/core/catalog.js';
 
-const here = dirname(fileURLToPath(import.meta.url));
-const source = readFileSync(join(here, '..', '..', 'index.html'), 'utf8');
-
-/** Pulls one top-level `function name(...){...}` out of the source by
- *  brace matching, so line numbers in index.html can move freely. */
-function extractFunction(name) {
-  const start = source.indexOf('\nfunction ' + name + '(');
-  if (start < 0) throw new Error('could not find function ' + name + ' in index.html');
-  let i = source.indexOf('{', start);
-  let depth = 0;
-  for (; i < source.length; i++) {
-    if (source[i] === '{') depth++;
-    else if (source[i] === '}') {
-      depth--;
-      if (depth === 0) return source.slice(start, i + 1);
-    }
-  }
-  throw new Error('unbalanced braces reading ' + name);
-}
-
-/** Pulls one top-level `const NAME = ...;` line. */
-function extractConst(name) {
-  const m = source.match(new RegExp('\\nconst ' + name + ' = [^\\n]+', ''));
-  if (!m) throw new Error('could not find const ' + name);
-  return m[0];
-}
-
-const prodSource = [
-  'let SYMBOL_LIBRARY = [], state = { floors: [] };',
-  'const CIRCUIT_JUNCTION_MAX_CABLES = 3;',
-  'function allObjects(){ return state.floors.flatMap(f=>f.objects.map(o=>({...o,__floorName:f.name}))); }',
-  'function findObjectAnywhere(id){ for(const f of state.floors){ const o=f.objects.find(x=>x.id===id); if(o) return {obj:o,floor:f}; } return null; }',
-  extractConst('FIXED_LOAD_SYMBOL_IDS'),
-  extractConst('MAINS_VOLTAGE'),
-  extractFunction('effectiveWatts'),
-  extractFunction('computeChainEdges'),
-  extractFunction('classifyCircuitDiversity'),
-  extractFunction('diversifiedWatts'),
-  extractFunction('deviceHeightMm'),
-  extractFunction('estimateCircuitCableLength'),
-  'return { setup:(lib,st)=>{SYMBOL_LIBRARY=lib;state=st;}, effectiveWatts, computeChainEdges, classifyCircuitDiversity, diversifiedWatts, deviceHeightMm, estimateCircuitCableLength, MAINS_VOLTAGE };',
-].join('\n');
-
-const prod = new Function(prodSource)();
+const prod = buildProductionModule({
+  prelude: [
+    'let SYMBOL_LIBRARY = [], state = { floors: [] };',
+    'const CIRCUIT_JUNCTION_MAX_CABLES = 3;',
+    'function allObjects(){ return state.floors.flatMap(f=>f.objects.map(o=>({...o,__floorName:f.name}))); }',
+    'function findObjectAnywhere(id){ for(const f of state.floors){ const o=f.objects.find(x=>x.id===id); if(o) return {obj:o,floor:f}; } return null; }',
+  ],
+  parts: [
+    extractConst('FIXED_LOAD_SYMBOL_IDS'),
+    extractConst('MAINS_VOLTAGE'),
+    extractFunction('effectiveWatts'),
+    extractFunction('computeChainEdges'),
+    extractFunction('classifyCircuitDiversity'),
+    extractFunction('diversifiedWatts'),
+    extractFunction('deviceHeightMm'),
+    extractFunction('estimateCircuitCableLength'),
+  ],
+  exports: [
+    'setup:(lib,st)=>{SYMBOL_LIBRARY=lib;state=st;}',
+    'effectiveWatts',
+    'computeChainEdges',
+    'classifyCircuitDiversity',
+    'diversifiedWatts',
+    'deviceHeightMm',
+    'estimateCircuitCableLength',
+    'MAINS_VOLTAGE',
+  ],
+});
 
 const symbolFor = id => SYMBOL_LIBRARY.find(s => s.id === id);
 const ids = SYMBOL_LIBRARY.map(s => s.id);
-let checks = 0;
-let fails = 0;
-
-function eq(a, b, what) {
-  checks++;
-  const same =
-    typeof a === 'number' && typeof b === 'number'
-      ? Math.abs(a - b) < 1e-9
-      : JSON.stringify(a) === JSON.stringify(b);
-  if (!same) {
-    fails++;
-    if (fails <= 20) console.log('MISMATCH', what, '\n  production:', a, '\n  ported:    ', b);
-  }
-}
-
-// Deterministic PRNG so a failure is reproducible.
-let seed = 12345;
-const rnd = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648;
+const { eq, report } = makeComparer();
+const rnd = makeRandom(12345);
 
 prod.setup(SYMBOL_LIBRARY, { floors: [] });
 
@@ -224,9 +195,4 @@ for (let trial = 0; trial < 60; trial++) {
   if (a.ok) eq(a.meters, b.meters, 'cable metres trial ' + trial);
 }
 
-console.log(
-  fails === 0
-    ? `PARITY OK — ${checks} comparisons, every one matched production`
-    : `${fails} MISMATCHES out of ${checks} comparisons`
-);
-process.exit(fails === 0 ? 0 : 1);
+process.exit(report('panel schedule') ? 0 : 1);

@@ -14,6 +14,8 @@
 // hand-written inverse-operation for every command eventually does.
 // ===================================================================
 
+import { migrateLegacyCommsData } from './comms.js';
+
 const HISTORY_LIMIT = 100;
 
 function clone(value) {
@@ -212,7 +214,7 @@ export function makeFloor(name) {
     id: localId('FL'),
     name,
     planImage: null, // { src, width, height, x, y, scale, opacity }
-    scale: null, // mm per world unit; null = uncalibrated
+    scale: null, // world units per METRE (see geometry.js); null = uncalibrated
     objects: [],
     cables: [], // cable routes (Phase 1)
     dimensions: [], // persistent dimension annotations (Phase 1)
@@ -306,6 +308,26 @@ export function findDuplicateDevices(project) {
     }
   }
   return results;
+}
+
+/**
+ * The one entry point for loading saved data. Runs every migration in
+ * dependency order, so a caller can never accidentally apply one and
+ * skip another — which is the failure mode that corrupts saves.
+ *
+ * Order matters: the flat-drawing migration has to produce a project
+ * shape before the comms migration can walk `floors[]`.
+ */
+export function migrateLoadedProject(data) {
+  const project = migrateFlatDrawing(data);
+  // Old saves modelled comms as kind:'data' circuits. Converting them to
+  // rack ports has to happen before anything reads the project, or the
+  // circuits UI shows phantom "data circuits" and the devices attached
+  // to them keep a circuit id that is about to stop existing.
+  const { circuits, unassigned } = migrateLegacyCommsData(project);
+  project.circuits = circuits;
+  project.unassignedCommsPorts = unassigned;
+  return project;
 }
 
 /**

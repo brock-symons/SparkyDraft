@@ -228,6 +228,14 @@ function ToolRail({ tools, controller, registry, ctx, panels, onTogglePanel }) {
       )}
       <div className="flex-1" />
       <IconButton
+        label="Comms racks"
+        tooltipSide="right"
+        active={panels.left === 'comms'}
+        onClick={() => onTogglePanel('left', 'comms')}
+      >
+        ⌸
+      </IconButton>
+      <IconButton
         label="Circuits"
         shortcut="Shift+C"
         tooltipSide="right"

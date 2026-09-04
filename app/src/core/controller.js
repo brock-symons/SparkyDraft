@@ -39,6 +39,15 @@ import { currentFloor } from './document.js';
 import { CABLE_SIZES } from './catalog.js';
 import { makeCircuit } from './circuits.js';
 import {
+  isCommsRack,
+  defaultCommsPorts,
+  makeCommsPort,
+  nextCommsPortNumber,
+  allCommsRacks,
+  findCommsPort,
+  assignDeviceToPort,
+} from './comms.js';
+import {
   isSwitchSymbol,
   autoGroupForSwitchLink,
   nextGroupForSwitch,
@@ -541,6 +550,66 @@ export function createController({ doc, getView, setView, getViewport, onChange,
     return showCircuitLabels;
   }
 
+  // --- comms racks + ports (Phase 5) ----------------------------------
+
+  /** One home run per device: assigning clears wherever it was before. */
+  function assignPort(deviceId, portId) {
+    doc.commit('Assign data port', d => {
+      assignDeviceToPort(d, deviceId, portId);
+    });
+    notify();
+  }
+
+  /** Adds one numbered slot to a rack, the way a panel gets extended. */
+  function addCommsPort(rackId) {
+    doc.commit('Add data port', d => {
+      const entry = allCommsRacks(d).find(e => e.rack.id === rackId);
+      if (!entry) return false;
+      const rack = entry.rack;
+      if (!rack.commsPorts) rack.commsPorts = [];
+      rack.commsPorts.push(makeCommsPort(rack.id, nextCommsPortNumber(rack)));
+    });
+    notify();
+  }
+
+  /** Label / description / cable on one port. */
+  function setCommsPortFields(portId, patch) {
+    doc.commit(
+      'Edit data port',
+      d => {
+        const found = findCommsPort(d, portId);
+        if (!found) return false;
+        Object.assign(found.port, patch);
+      },
+      { coalesce: true }
+    );
+    notify();
+  }
+
+  /**
+   * Moves a port recovered from an old-format save onto a real rack.
+   * These exist because the legacy migration refuses to drop a comms
+   * connection whose rack it cannot find — see migrateLegacyCommsData.
+   */
+  function placeLegacyPort(legacyId, rackId) {
+    doc.commit('Place recovered port', d => {
+      const legacy = (d.unassignedCommsPorts || []).find(p => p.id === legacyId);
+      const entry = allCommsRacks(d).find(e => e.rack.id === rackId);
+      if (!legacy || !entry) return false;
+      const rack = entry.rack;
+      if (!rack.commsPorts) rack.commsPorts = [];
+      rack.commsPorts.push({
+        ...makeCommsPort(rack.id, nextCommsPortNumber(rack)),
+        label: legacy.label,
+        description: legacy.description || '',
+        cable: legacy.cable || 'Cat6',
+        deviceId: legacy.deviceId || null,
+      });
+      d.unassignedCommsPorts = d.unassignedCommsPorts.filter(p => p.id !== legacyId);
+    });
+    notify();
+  }
+
   function cancelDraft() {
     draft = null;
     if (linkPendingSwitch) {
@@ -633,13 +702,19 @@ export function createController({ doc, getView, setView, getViewport, onChange,
     doc.commit('Place device', d => {
       const f = currentFloor(d);
       newId = d.nextId++;
-      f.objects.push({
+      const obj = {
         id: newId,
         symbolId,
         x: world.x,
         y: world.y,
         props: {},
-      });
+      };
+      // A rack arrives with a full patch panel's worth of numbered ports,
+      // matching production. Ports are slots, not things you create one
+      // at a time — an empty rack you then have to populate by hand isn't
+      // how a patch panel works.
+      if (isCommsRack(symbolId)) obj.commsPorts = defaultCommsPorts(newId);
+      f.objects.push(obj);
     });
     return newId;
   }
@@ -1225,6 +1300,10 @@ export function createController({ doc, getView, setView, getViewport, onChange,
     toggleIsolatedCircuit,
     toggleCircuitLabels,
     setBoardMainSwitchAmps,
+    assignPort,
+    addCommsPort,
+    setCommsPortFields,
+    placeLegacyPort,
     deleteSelectedSegment,
     selectedSegmentObject,
     select,

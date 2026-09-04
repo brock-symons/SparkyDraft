@@ -15,7 +15,7 @@ import {
   createDocument,
   emptyProject,
   currentFloor,
-  migrateFlatDrawing,
+  migrateLoadedProject,
   findDuplicateDevices,
 } from './core/document.js';
 import { createController } from './core/controller.js';
@@ -52,7 +52,7 @@ import {
 } from './ui/primitives.jsx';
 import { Workspace } from './ui/Workspace.jsx';
 import { Inspector, inspectorTitle } from './ui/Inspector.jsx';
-import { LibraryPanel, LayersPanel, CircuitsPanel } from './ui/Panels.jsx';
+import { LibraryPanel, LayersPanel, CircuitsPanel, CommsPanel } from './ui/Panels.jsx';
 import { CommandPalette } from './ui/CommandPalette.jsx';
 import { CanvasContextMenu } from './ui/ContextMenu.jsx';
 import { ProjectPicker } from './ui/ProjectPicker.jsx';
@@ -258,7 +258,7 @@ function WorkspaceRoot({ projectId, onExit, pushToast }) {
       // Records saved before the Phase 0 model change are flat drawings;
       // migrate rather than orphan them (the redesign has been shared for
       // testing, so such records exist in the wild).
-      doc.load(migrateFlatDrawing(rec.drawing));
+      doc.load(migrateLoadedProject(rec.drawing));
       setProjectName(rec.name || rec.drawing.name || 'Untitled project');
       setLastSavedAt(rec.updatedAt);
     } else {
@@ -797,6 +797,14 @@ function WorkspaceRoot({ projectId, onExit, pushToast }) {
         run: c => c.togglePanel('left', 'circuits'),
       },
       {
+        id: 'panel.comms',
+        title: 'Toggle comms racks panel',
+        group: 'Panels',
+        icon: '⌸',
+        keywords: 'comms data rack port patch panel home run cat6',
+        run: c => c.togglePanel('left', 'comms'),
+      },
+      {
         id: 'circuit.add',
         title: 'New circuit',
         group: 'Circuits',
@@ -1080,6 +1088,15 @@ function WorkspaceRoot({ projectId, onExit, pushToast }) {
         customSymbols={doc.state.customSymbols || []}
         onAddFitting={() => setFittingDialogOpen(true)}
       />
+    ) : panels.left === 'comms' ? (
+      <CommsPanel
+        doc={doc}
+        controller={controller}
+        onSelectDevice={id => {
+          controller.select([id]);
+          zoomToSelection();
+        }}
+      />
     ) : panels.left === 'circuits' ? (
       <CircuitsPanel
         doc={doc}
@@ -1138,7 +1155,9 @@ function WorkspaceRoot({ projectId, onExit, pushToast }) {
             ? 'Layers'
             : panels.left === 'circuits'
               ? 'Circuits'
-              : 'Components'
+              : panels.left === 'comms'
+                ? 'Comms racks'
+                : 'Components'
         }
         rightPanelTitle={inspectorTitle(controller)}
         onFit={fit}

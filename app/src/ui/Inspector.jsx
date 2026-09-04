@@ -41,6 +41,7 @@ import {
   CATEGORY_LABELS,
 } from '../core/catalog.js';
 import { formatDistance } from '../core/geometry.js';
+import { isCommsRack, patchPanelUnitsForRack, commsPortOptions } from '../core/comms.js';
 import {
   isSwitchSymbol,
   isLightSymbol,
@@ -489,6 +490,12 @@ function DeviceProperties({ obj, doc, controller, sections, toggleSection, onSta
   const showProtection = defaults.protection && defaults.protection !== '-';
   const showWatts = typeof defaults.watts === 'number' && defaults.watts > 0;
   const showHeight = typeof defaults.height_mm === 'number';
+  // Rack ports available to this device, computed once per render — the
+  // list spans every rack in the project, not just this floor.
+  const portOptions = useMemo(
+    () => (sym && sym.category === 'data' ? commsPortOptions(doc.state, obj.id) : []),
+    [doc.state, obj.id, sym]
+  );
 
   function setProp(patch) {
     controller.setObjectProps(obj.id, patch);
@@ -614,8 +621,62 @@ function DeviceProperties({ obj, doc, controller, sections, toggleSection, onSta
               Hard active — the lights this switch controls are fed from this circuit too.
             </div>
           )}
-          <div className="px-3 pt-1.5 text-2xs leading-relaxed text-ink-400">
-            Comms ports live in the full app — not yet ported into this workspace.
+        </Section>
+      )}
+
+      {/* Data outlets are wired point-to-point to a numbered rack port,
+          not onto a shared circuit — so this is its own control rather
+          than another row in Electrical. Only shown for data devices,
+          and only once there is a rack to plug into. */}
+      {sym && sym.category === 'data' && !isCommsRack(obj.symbolId) && (
+        <Section
+          title="Data"
+          open={sections.electrical}
+          onToggle={() => toggleSection('electrical')}
+        >
+          {portOptions.length === 0 ? (
+            <div className="px-3 pb-1 text-2xs leading-relaxed text-ink-400">
+              No comms rack on the plan yet — place one to wire this back to a port.
+            </div>
+          ) : (
+            <Row label="Port">
+              <Select
+                value={(portOptions.find(p => p.selected) || {}).id || ''}
+                onChange={e => controller.assignPort(obj.id, e.target.value || null)}
+              >
+                <option value="">— not connected —</option>
+                {portOptions.map(p => (
+                  <option key={p.id} value={p.id}>
+                    {p.label}
+                  </option>
+                ))}
+              </Select>
+            </Row>
+          )}
+          <div className="px-3 pt-1 text-2xs leading-relaxed text-ink-400">
+            One home run per outlet — assigning it here clears whichever port it was on before.
+          </div>
+        </Section>
+      )}
+
+      {isCommsRack(obj.symbolId) && (
+        <Section
+          title="Rack"
+          open={sections.electrical}
+          onToggle={() => toggleSection('electrical')}
+        >
+          <Row label="Ports">
+            <div className="text-sm tnum text-ink-700">
+              {(obj.commsPorts || []).filter(p => p.deviceId).length} of{' '}
+              {(obj.commsPorts || []).length} used
+            </div>
+          </Row>
+          <Row label="Patch panels">
+            <div className="text-sm tnum text-ink-700">{patchPanelUnitsForRack(obj)}</div>
+          </Row>
+          <div className="px-3 pt-1 text-2xs leading-relaxed text-ink-400">
+            One 24-port patch panel per 24 ports, counted automatically — it is not a device you
+            place. Manage the ports themselves in the Comms racks panel.
           </div>
         </Section>
       )}
