@@ -12,7 +12,7 @@ versioned markdown next to the code.
 | | |
 |---|---|
 | Branch | `feature/cad-workspace-redesign` |
-| Status | Phases 0-1 complete · Phase 2 (switch links) next |
+| Status | Phases 0-2 complete · Phase 3 (circuits) next |
 | Merged to main | **No — and not without explicit owner review** |
 | Last updated | 2026-09-04 |
 
@@ -72,9 +72,19 @@ safer, and §7 permits that.
 **Why first:** circuits need cables; the panel schedule's cable-run
 estimate needs both cables and calibration.
 
-### Phase 2 — Switch linking + lighting banks
-`switchLinks[]`, `computeLightingBanks()`, `computeChainOrder()`,
-`computeBankAttachPoints()`, gang counts, bank naming.
+### Phase 2 — Switch linking + lighting banks ✅ complete
+
+- [x] **Switch links + banks** (`1e32fdd`) — logic stored, physical
+      wiring derived; two-way collapses to one bank with several tails.
+- [x] **Gang counts** (`1e32fdd`) — by switching function, Tastic rules
+      intact, only ever raised.
+- [x] **Auto-grouping + explicit new gang** (`1e32fdd`)
+- [x] **Bank naming** (`1e32fdd`) — `switchId::group`, derived fallback.
+
+Also fixed here: hidden layers were drawn anyway (only hit-testing
+respected them), and arming the link tool from an overlay inspector left
+the inspector covering the plan you had to tap.
+
 **Why before circuits:** circuit assignment propagates through switch links.
 
 ### Phase 3 — Circuits

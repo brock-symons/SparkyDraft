@@ -85,7 +85,7 @@ Status key: **✅ complete** · **◐ partial** · **✗ missing** · **⚙ need
 | Import floor plan (image/PDF) | L7138 `fileImport` | `plan.import` | ✅ | Both accept image + PDF |
 | **Cable routing (`line` tool)** | `activeTool==='line'`, `f.cables[]` | — | ✗ | Draw cable runs between devices; feeds quote + legend |
 | **Wall tool** | `activeTool==='wall'`, `f.walls[]` | — | ✗ | New app *reads* walls for snapping but cannot draw them |
-| **Switch linking (`link` tool)** | `switchLinks[]`, `computeLightingBanks()` L1764 | — | ✗ | Links switches→lights, drives banks/gangs + auto circuit propagation |
+| **Switch linking (`link` tool)** | `switchLinks[]`, `computeLightingBanks()` L1764 | `core/switching.js` | ✅ | Links switches→lights, drives banks/gangs + auto circuit propagation |
 | **Dimensions** | `f.dimensions[]`, `dimStart` | — | ✗ | Persistent dimension annotations (distinct from measure) |
 | **Rooms** | `renderRooms()` L5352, `f.rooms[]` | — | ✗ | |
 | **Multiple floors** | `state.floors[]`, `renderFloors()` L4609 | — | ✗ ⚙ | **Architectural** — see headline finding |
@@ -103,7 +103,7 @@ Status key: **✅ complete** · **◐ partial** · **✗ missing** · **⚙ need
 | Circuit assignment to devices | `openProps` circuit select | — | ✗ | |
 | Auto-assign circuit to linked lights | `propagateSwitchCircuitToLinkedLights()` | — | ✗ | Business logic |
 | Branching circuit runs | `computeGpoChains()` L1863, `computeChainEdges()` L1822 | — | ✗ | Power/hard-active runs branch rather than strict chain |
-| Lighting banks / gangs | `computeLightingBanks()` L1764, `bankNames{}` | — | ✗ | |
+| Lighting banks / gangs | `computeLightingBanks()` L1764, `bankNames{}` | `core/switching.js` | ✅ | Ported verbatim; gang only ever raised |
 | Panel schedule | `renderPanelSchedule()` L7051 | — | ✗ | |
 | Load / demand estimate | L6937–7050 | — | ✗ | **Formulas below must be preserved verbatim** |
 | Cable-run length estimate | `estimateCircuitCableLength()` L7000 | — | ✗ | Needs calibration + visible cable route |
@@ -410,10 +410,10 @@ still in flux would mean migrating stored cloud records twice.
 | Canvas core (pan/zoom/grid/snap/select) | Complete | Complete | Minor | Low | Done | ✅ |
 | Undo/redo | Complete | Complete (better) | None | Medium | Done | ✅ |
 | Plan import + calibration | Complete | Complete | None | Low | Done | ✅ |
-| Layers | Complete | Partial | Moderate | Low | Medium | Pending |
+| Layers | Complete | Partial | Cables/labels not layer-gated (device visibility fixed in Phase 2) | Low | Medium | Pending |
 | Inspector / properties | Complete | Partial | Significant | Medium | High | Pending |
 | Walls / cables / dimensions / rooms | Complete | Complete | None | Medium | Done | ✅ |
-| Switch links + banks | Complete | Missing | Significant | High | High | Pending |
+| Switch links + banks | Complete | Complete | None | High | Done | ✅ |
 | Circuits | Complete | Missing | Significant | **Critical** | **Critical** | Pending |
 | Panel schedule + load estimate | Complete | Missing | Significant | **Critical** | **Critical** | Pending |
 | Quote + price list | Complete | Missing | Significant | **Critical** | **Critical** | Pending |
