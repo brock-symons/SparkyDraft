@@ -12,7 +12,7 @@ versioned markdown next to the code.
 | | |
 |---|---|
 | Branch | `feature/cad-workspace-redesign` |
-| Status | Phases 0-3 complete · Phase 4 (panel schedule + load) next |
+| Status | Phases 0-4 complete · Phase 5 (comms racks) next |
 | Merged to main | **No — and not without explicit owner review** |
 | Last updated | 2026-09-04 |
 
@@ -102,11 +102,22 @@ numeric device ids, so every circuit silently fell back to "whichever
 board is on this floor". The link tool's shortcut moved L → K, which
 the Layers panel already owned.
 
-### Phase 4 — Panel schedule + load/demand
-Panel schedule, the demand estimate, cable-run estimate, board main-switch
-ratings. **Highest business-logic risk in the migration** — formulas are
-recorded verbatim in inventory §B3/§B4 and must be checked against the old
-app's actual output, not re-derived.
+### Phase 4 — Panel schedule + load/demand ✅ complete
+
+- [x] **Demand estimate + panel schedule** (`149a0e3`) — grouped by
+      board, capacity check, over-rated protection warnings.
+- [x] **Cable-run estimate** (`149a0e3`) — follows the same tree drawn on
+      the plan; other-floor devices reported, never silently dropped.
+- [x] **Board main-switch ratings** (`149a0e3`)
+- [x] **Text export** (`149a0e3`) — production's format, line for line.
+- [x] **Parity check against production** (`149a0e3`) —
+      `app/test/panel-schedule-parity.mjs`, 4,326 comparisons, all match.
+      Run it with `node app/test/panel-schedule-parity.mjs`.
+
+The cable estimate covers hard-active runs only. Extending it to the
+cable that actually switches a light/fan is an explicit owner decision
+(see the scope note in `core/panelSchedule.js`) — not to be built
+speculatively.
 
 ### Phase 5 — Comms racks
 Racks, ports, home-run assignment, derived patch panels, comms run
@@ -203,3 +214,18 @@ Two deliberate exclusions, in `.prettierignore` with reasons:
 the Git-Bash PATH — prepend `export PATH="/c/Program Files/nodejs:$PATH"`.
 `npx prettier` hung on this machine; installing prettier into a scratch dir
 and calling `node_modules/.bin/prettier` directly works and is fast.
+
+---
+
+## Known follow-ups (not blocking a phase)
+
+- **No React error boundary.** A render crash anywhere blanks the entire
+  page rather than degrading. Found the hard way in Phase 4: one missing
+  import (`cx`) took the whole app down the moment a field was filled in.
+  Worth a top-level boundary before this replaces the live product —
+  the current app is a single script where one broken feature doesn't
+  take the drawing with it.
+- **Cable/label layer gating.** Layer visibility now hides devices on the
+  canvas (fixed in Phase 2), but production also gates cables and labels
+  by layer. Small, and best done alongside whichever phase next touches
+  the renderer.
