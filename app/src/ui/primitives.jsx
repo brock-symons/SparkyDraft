@@ -20,9 +20,7 @@ export function cx(...parts) {
 
 export function Kbd({ children }) {
   if (!children) return null;
-  return (
-    <kbd className="ml-auto pl-3 text-2xs font-medium text-ink-400 tnum">{children}</kbd>
-  );
+  return <kbd className="ml-auto pl-3 text-2xs font-medium text-ink-400 tnum">{children}</kbd>;
 }
 
 // --- tooltip ----------------------------------------------------------
@@ -34,8 +32,13 @@ export function Tooltip({ label, shortcut, side = 'bottom', children }) {
   const [open, setOpen] = useState(false);
   const timer = useRef(null);
 
-  const show = () => { timer.current = setTimeout(() => setOpen(true), 350); };
-  const hide = () => { clearTimeout(timer.current); setOpen(false); };
+  const show = () => {
+    timer.current = setTimeout(() => setOpen(true), 350);
+  };
+  const hide = () => {
+    clearTimeout(timer.current);
+    setOpen(false);
+  };
   useEffect(() => () => clearTimeout(timer.current), []);
 
   const pos = {
@@ -46,7 +49,12 @@ export function Tooltip({ label, shortcut, side = 'bottom', children }) {
   }[side];
 
   return (
-    <span className="relative inline-flex" onPointerEnter={show} onPointerLeave={hide} onPointerDown={hide}>
+    <span
+      className="relative inline-flex"
+      onPointerEnter={show}
+      onPointerLeave={hide}
+      onPointerDown={hide}
+    >
       {children}
       {open && label && (
         <span
@@ -80,7 +88,10 @@ export function Button({ variant = 'secondary', size = 'md', className, children
       className={cx(
         'inline-flex items-center justify-center gap-1.5 rounded-md font-medium',
         'transition-colors duration-100 disabled:opacity-40 disabled:pointer-events-none',
-        sizes[size], BTN_VARIANTS[variant], focusRing, className
+        sizes[size],
+        BTN_VARIANTS[variant],
+        focusRing,
+        className
       )}
       {...rest}
     >
@@ -102,15 +113,29 @@ export function Button({ variant = 'secondary', size = 'md', className, children
  * zoom controls sitting at 2.78:1 on the dark canvas overlay. Swapping
  * the base classes outright is the only version that actually holds.
  */
-export function IconButton({ label, shortcut, active, size = 'md', onDark, className, children, tooltipSide, ...rest }) {
-  const sizes = { sm: 'h-7 w-7 text-[13px]', md: 'h-8 w-8 text-[15px]', lg: 'h-10 w-10 text-[17px]' };
+export function IconButton({
+  label,
+  shortcut,
+  active,
+  size = 'md',
+  onDark,
+  className,
+  children,
+  tooltipSide,
+  ...rest
+}) {
+  const sizes = {
+    sm: 'h-7 w-7 text-[13px]',
+    md: 'h-8 w-8 text-[15px]',
+    lg: 'h-10 w-10 text-[17px]',
+  };
   const tone = onDark
-    ? (active
-        ? 'bg-white/20 text-white'
-        : 'text-white/85 hover:bg-white/15 hover:text-white active:bg-white/25')
-    : (active
-        ? 'bg-accent-50 text-accent-700 ring-1 ring-inset ring-accent-200'
-        : 'text-ink-500 hover:bg-ink-100 hover:text-ink-800 active:bg-ink-200');
+    ? active
+      ? 'bg-white/20 text-white'
+      : 'text-white/85 hover:bg-white/15 hover:text-white active:bg-white/25'
+    : active
+      ? 'bg-accent-50 text-accent-700 ring-1 ring-inset ring-accent-200'
+      : 'text-ink-500 hover:bg-ink-100 hover:text-ink-800 active:bg-ink-200';
   const btn = (
     <button
       aria-label={label}
@@ -118,7 +143,8 @@ export function IconButton({ label, shortcut, active, size = 'md', onDark, class
       className={cx(
         'relative inline-flex items-center justify-center rounded-md transition-colors duration-100',
         'disabled:opacity-35 disabled:pointer-events-none',
-        sizes[size], tone,
+        sizes[size],
+        tone,
         onDark
           ? 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70'
           : focusRing,
@@ -129,7 +155,11 @@ export function IconButton({ label, shortcut, active, size = 'md', onDark, class
       {children}
     </button>
   );
-  return <Tooltip label={label} shortcut={shortcut} side={tooltipSide}>{btn}</Tooltip>;
+  return (
+    <Tooltip label={label} shortcut={shortcut} side={tooltipSide}>
+      {btn}
+    </Tooltip>
+  );
 }
 
 // --- inputs -----------------------------------------------------------
@@ -144,7 +174,8 @@ export const TextInput = React.forwardRef(function TextInput({ className, invali
         'h-7 w-full rounded-md border bg-white px-2 text-sm text-ink-800',
         'placeholder:text-ink-400 transition-colors',
         invalid ? 'border-red-300' : 'border-ink-200 hover:border-ink-300 focus:border-accent-400',
-        focusRing, className
+        focusRing,
+        className
       )}
       {...rest}
     />
@@ -181,23 +212,41 @@ export function NumberInput({ value, onCommit, step = 1, suffix, className, ...r
         inputMode="decimal"
         value={draft}
         onChange={e => setDraft(e.target.value)}
-        onFocus={e => { setFocused(true); e.target.select(); }}
-        onBlur={() => { setFocused(false); commit(); }}
+        onFocus={e => {
+          setFocused(true);
+          e.target.select();
+        }}
+        onBlur={() => {
+          setFocused(false);
+          commit();
+        }}
         onKeyDown={e => {
-          if (e.key === 'Enter') { e.currentTarget.blur(); }
-          else if (e.key === 'Escape') { setDraft(String(value ?? '')); e.currentTarget.blur(); }
-          else if (e.key === 'ArrowUp') { e.preventDefault(); onCommit((parseFloat(draft) || 0) + step); }
-          else if (e.key === 'ArrowDown') { e.preventDefault(); onCommit((parseFloat(draft) || 0) - step); }
+          if (e.key === 'Enter') {
+            e.currentTarget.blur();
+          } else if (e.key === 'Escape') {
+            setDraft(String(value ?? ''));
+            e.currentTarget.blur();
+          } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            onCommit((parseFloat(draft) || 0) + step);
+          } else if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            onCommit((parseFloat(draft) || 0) - step);
+          }
         }}
         className={cx(
           'tnum h-7 w-full rounded-md border border-ink-200 bg-white px-2 text-sm text-ink-800',
           'hover:border-ink-300 focus:border-accent-400 transition-colors',
-          suffix && 'pr-7', focusRing, className
+          suffix && 'pr-7',
+          focusRing,
+          className
         )}
         {...rest}
       />
       {suffix && (
-        <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-2xs text-ink-400">{suffix}</span>
+        <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-2xs text-ink-400">
+          {suffix}
+        </span>
       )}
     </div>
   );
@@ -208,7 +257,9 @@ export function Select({ className, children, ...rest }) {
     <select
       className={cx(
         'h-7 w-full rounded-md border border-ink-200 bg-white px-1.5 text-sm text-ink-800',
-        'hover:border-ink-300 focus:border-accent-400 transition-colors', focusRing, className
+        'hover:border-ink-300 focus:border-accent-400 transition-colors',
+        focusRing,
+        className
       )}
       {...rest}
     >
@@ -226,7 +277,8 @@ export function Toggle({ checked, onChange, label }) {
       onClick={() => onChange(!checked)}
       className={cx(
         'relative h-[18px] w-8 shrink-0 rounded-full transition-colors duration-150',
-        checked ? 'bg-accent-500' : 'bg-ink-300', focusRing
+        checked ? 'bg-accent-500' : 'bg-ink-300',
+        focusRing
       )}
     >
       <span
@@ -244,7 +296,9 @@ export function Toggle({ checked, onChange, label }) {
 /** Small uppercase label above a group of related controls. */
 export function FieldLabel({ children, className }) {
   return (
-    <div className={cx('text-2xs font-medium uppercase tracking-wide text-ink-400', className)}>{children}</div>
+    <div className={cx('text-2xs font-medium uppercase tracking-wide text-ink-400', className)}>
+      {children}
+    </div>
   );
 }
 
@@ -276,12 +330,26 @@ export function Section({ title, open, onToggle, right, children, dense }) {
           )}
         >
           <svg
-            viewBox="0 0 12 12" width="10" height="10"
-            className={cx('shrink-0 text-ink-400 transition-transform duration-150', !open && '-rotate-90')}
+            viewBox="0 0 12 12"
+            width="10"
+            height="10"
+            className={cx(
+              'shrink-0 text-ink-400 transition-transform duration-150',
+              !open && '-rotate-90'
+            )}
           >
-            <path d="M2 4l4 4 4-4" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+            <path
+              d="M2 4l4 4 4-4"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.6"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
           </svg>
-          <span className="text-2xs font-semibold uppercase tracking-wide text-ink-500">{title}</span>
+          <span className="text-2xs font-semibold uppercase tracking-wide text-ink-500">
+            {title}
+          </span>
         </button>
         {right && <div className="pr-2">{right}</div>}
       </div>
@@ -291,9 +359,11 @@ export function Section({ title, open, onToggle, right, children, dense }) {
 }
 
 export function Divider({ vertical, className }) {
-  return vertical
-    ? <div className={cx('h-5 w-px shrink-0 bg-ink-200', className)} />
-    : <div className={cx('h-px w-full bg-ink-100', className)} />;
+  return vertical ? (
+    <div className={cx('h-5 w-px shrink-0 bg-ink-200', className)} />
+  ) : (
+    <div className={cx('h-px w-full bg-ink-100', className)} />
+  );
 }
 
 // --- states (§26) -----------------------------------------------------
@@ -303,7 +373,9 @@ export function EmptyState({ icon, title, hint, action }) {
     <div className="flex flex-col items-center justify-center px-6 py-10 text-center">
       {icon && <div className="mb-2.5 text-2xl text-ink-300">{icon}</div>}
       <div className="text-sm font-medium text-ink-600">{title}</div>
-      {hint && <div className="mt-1 max-w-[240px] text-xs leading-relaxed text-ink-400">{hint}</div>}
+      {hint && (
+        <div className="mt-1 max-w-[240px] text-xs leading-relaxed text-ink-400">{hint}</div>
+      )}
       {action && <div className="mt-3">{action}</div>}
     </div>
   );
@@ -311,9 +383,29 @@ export function EmptyState({ icon, title, hint, action }) {
 
 export function Spinner({ className }) {
   return (
-    <svg className={cx('animate-spin', className)} viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
-      <circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" strokeOpacity="0.25" strokeWidth="2" />
-      <path d="M14.5 8A6.5 6.5 0 0 0 8 1.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    <svg
+      className={cx('animate-spin', className)}
+      viewBox="0 0 16 16"
+      width="14"
+      height="14"
+      aria-hidden="true"
+    >
+      <circle
+        cx="8"
+        cy="8"
+        r="6.5"
+        fill="none"
+        stroke="currentColor"
+        strokeOpacity="0.25"
+        strokeWidth="2"
+      />
+      <path
+        d="M14.5 8A6.5 6.5 0 0 0 8 1.5"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+      />
     </svg>
   );
 }
@@ -323,8 +415,14 @@ export function ErrorState({ title, detail, onRetry }) {
     <div className="flex flex-col items-center justify-center px-6 py-10 text-center">
       <div className="mb-2 text-xl text-red-400">⚠</div>
       <div className="text-sm font-medium text-ink-700">{title}</div>
-      {detail && <div className="mt-1 max-w-[260px] text-xs leading-relaxed text-ink-400">{detail}</div>}
-      {onRetry && <Button className="mt-3" onClick={onRetry}>Try again</Button>}
+      {detail && (
+        <div className="mt-1 max-w-[260px] text-xs leading-relaxed text-ink-400">{detail}</div>
+      )}
+      {onRetry && (
+        <Button className="mt-3" onClick={onRetry}>
+          Try again
+        </Button>
+      )}
     </div>
   );
 }
@@ -337,13 +435,21 @@ export function Dialog({ open, onClose, title, children, footer, width = 'max-w-
 
   useEffect(() => {
     if (!open) return;
-    const onKey = e => { if (e.key === 'Escape') { e.stopPropagation(); onClose(); } };
+    const onKey = e => {
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        onClose();
+      }
+    };
     document.addEventListener('keydown', onKey, true);
     const t = setTimeout(() => {
       const first = ref.current && ref.current.querySelector('input,button,select,textarea');
       first && first.focus();
     }, 20);
-    return () => { document.removeEventListener('keydown', onKey, true); clearTimeout(t); };
+    return () => {
+      document.removeEventListener('keydown', onKey, true);
+      clearTimeout(t);
+    };
   }, [open, onClose]);
 
   if (!open) return null;
@@ -359,10 +465,14 @@ export function Dialog({ open, onClose, title, children, footer, width = 'max-w-
       >
         <div className="flex h-11 items-center justify-between border-b border-ink-100 px-4">
           <h2 className="text-sm font-semibold text-ink-800">{title}</h2>
-          <IconButton label="Close" size="sm" onClick={onClose}>✕</IconButton>
+          <IconButton label="Close" size="sm" onClick={onClose}>
+            ✕
+          </IconButton>
         </div>
         <div className="p-4">{children}</div>
-        {footer && <div className="flex justify-end gap-2 border-t border-ink-100 px-4 py-3">{footer}</div>}
+        {footer && (
+          <div className="flex justify-end gap-2 border-t border-ink-100 px-4 py-3">{footer}</div>
+        )}
       </div>
     </div>
   );

@@ -30,7 +30,7 @@ export function createCommandRegistry() {
       title: cmd.title,
       group: cmd.group || 'General',
       keywords: cmd.keywords || '',
-      shortcut: cmd.shortcut || null,   // e.g. 'Mod+D', 'V', 'Shift+A'
+      shortcut: cmd.shortcut || null, // e.g. 'Mod+D', 'V', 'Shift+A'
       icon: cmd.icon || null,
       danger: !!cmd.danger,
       when: cmd.when || (() => true),
@@ -38,16 +38,26 @@ export function createCommandRegistry() {
     });
   }
 
-  function registerAll(list) { list.forEach(register); }
+  function registerAll(list) {
+    list.forEach(register);
+  }
 
-  function get(id) { return commands.get(id); }
+  function get(id) {
+    return commands.get(id);
+  }
 
-  function all() { return Array.from(commands.values()); }
+  function all() {
+    return Array.from(commands.values());
+  }
 
   /** Commands currently available, given the app context. */
   function available(ctx) {
     return all().filter(c => {
-      try { return c.when(ctx); } catch (e) { return false; }
+      try {
+        return c.when(ctx);
+      } catch (e) {
+        return false;
+      }
     });
   }
 
@@ -90,7 +100,8 @@ export function createCommandRegistry() {
 
 // --- shortcut helpers -------------------------------------------------
 
-const IS_MAC = typeof navigator !== 'undefined' && /Mac|iPod|iPhone|iPad/.test(navigator.platform || '');
+const IS_MAC =
+  typeof navigator !== 'undefined' && /Mac|iPod|iPhone|iPad/.test(navigator.platform || '');
 
 /** Render a shortcut for display: 'Mod+D' → '⌘D' on Mac, 'Ctrl+D' elsewhere. */
 export function formatShortcut(shortcut) {

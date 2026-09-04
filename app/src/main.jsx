@@ -11,17 +11,31 @@
 // action later means adding one entry, not touching four files.
 // ===================================================================
 
-import { createDocument, emptyProject, currentFloor, migrateFlatDrawing } from "./core/document.js";
+import { createDocument, emptyProject, currentFloor, migrateFlatDrawing } from './core/document.js';
 import { createController } from './core/controller.js';
 import { createCommandRegistry, matchesShortcut, isTypingTarget } from './core/commands.js';
 import { boundsOf, viewForBounds, gridWorldUnits } from './core/geometry.js';
 import { SYMBOL_LIBRARY } from './core/catalog.js';
 import {
-  listProjects, loadProject, saveProject, deleteProject, newProjectId,
-  loadWorkspaceUI, saveWorkspaceUI, SaveState,
+  listProjects,
+  loadProject,
+  saveProject,
+  deleteProject,
+  newProjectId,
+  loadWorkspaceUI,
+  saveWorkspaceUI,
+  SaveState,
 } from './core/persistence.js';
 
-import { ToastHost, useToasts, useBreakpoint, Dialog, Button, TextInput, Select } from './ui/primitives.jsx';
+import {
+  ToastHost,
+  useToasts,
+  useBreakpoint,
+  Dialog,
+  Button,
+  TextInput,
+  Select,
+} from './ui/primitives.jsx';
 import { Workspace } from './ui/Workspace.jsx';
 import { Inspector, inspectorTitle } from './ui/Inspector.jsx';
 import { LibraryPanel, LayersPanel } from './ui/Panels.jsx';
@@ -50,7 +64,10 @@ function WorkspaceRoot({ projectId, onExit, pushToast }) {
   const viewportRef = useRef({ width: 0, height: 0 });
   const [viewTick, setViewTick] = useState(0);
   const getView = useCallback(() => viewRef.current, []);
-  const setView = useCallback(v => { viewRef.current = v; setViewTick(t => t + 1); }, []);
+  const setView = useCallback(v => {
+    viewRef.current = v;
+    setViewTick(t => t + 1);
+  }, []);
   const getViewport = useCallback(() => viewportRef.current, []);
 
   // "The user has taken control of the view." Until this flips true, the
@@ -65,7 +82,13 @@ function WorkspaceRoot({ projectId, onExit, pushToast }) {
   // jump because a panel opened and changed the canvas width would move
   // the drawing out from under them mid-task.
   const viewTouchedRef = useRef(false);
-  const setViewFromUser = useCallback(v => { viewTouchedRef.current = true; setView(v); }, [setView]);
+  const setViewFromUser = useCallback(
+    v => {
+      viewTouchedRef.current = true;
+      setView(v);
+    },
+    [setView]
+  );
 
   // --- controller ----------------------------------------------------
   // Calibration is a two-step flow: the controller reports the drawn
@@ -77,7 +100,11 @@ function WorkspaceRoot({ projectId, onExit, pushToast }) {
   const controllerRef = useRef(null);
   if (!controllerRef.current) {
     controllerRef.current = createController({
-      doc, getView, setView: setViewFromUser, getViewport, onChange: rerender,
+      doc,
+      getView,
+      setView: setViewFromUser,
+      getViewport,
+      onChange: rerender,
       onCalibrate: len => calibrationRef.current && calibrationRef.current(len),
     });
     controllerRef.current.setSymbolResolver(symbolFor);
@@ -108,7 +135,16 @@ function WorkspaceRoot({ projectId, onExit, pushToast }) {
   const [favourites, setFavourites] = useState(savedUI.favourites || []);
   const [recent, setRecent] = useState(savedUI.recent || []);
   const [sections, setSections] = useState(
-    savedUI.sections || { drawing: true, plan: true, grid: true, general: true, electrical: true, cost: false, align: true, actions: true }
+    savedUI.sections || {
+      drawing: true,
+      plan: true,
+      grid: true,
+      general: true,
+      electrical: true,
+      cost: false,
+      align: true,
+      actions: true,
+    }
   );
 
   useEffect(() => {
@@ -211,19 +247,25 @@ function WorkspaceRoot({ projectId, onExit, pushToast }) {
 
   // Renaming is a document-level change too — it marks unsaved and
   // autosaves like any other edit, rather than silently not persisting.
-  const renameProject = useCallback(name => {
-    setProjectName(name);
-    setSaveState(SaveState.UNSAVED);
-    clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(doSave, AUTOSAVE_MS);
-  }, [doSave]);
+  const renameProject = useCallback(
+    name => {
+      setProjectName(name);
+      setSaveState(SaveState.UNSAVED);
+      clearTimeout(saveTimer.current);
+      saveTimer.current = setTimeout(doSave, AUTOSAVE_MS);
+    },
+    [doSave]
+  );
 
   useEffect(() => () => clearTimeout(saveTimer.current), []);
 
   // Warn before losing unsaved work on tab close (§17).
   useEffect(() => {
     const onBeforeUnload = e => {
-      if (doc.isDirty) { e.preventDefault(); e.returnValue = ''; }
+      if (doc.isDirty) {
+        e.preventDefault();
+        e.returnValue = '';
+      }
     };
     window.addEventListener('beforeunload', onBeforeUnload);
     return () => window.removeEventListener('beforeunload', onBeforeUnload);
@@ -243,11 +285,17 @@ function WorkspaceRoot({ projectId, onExit, pushToast }) {
     let b = boundsOf(fl.objects);
     if (fl.planImage) {
       const s = fl.planImage.scale || 1;
-      const px1 = fl.planImage.x, py1 = fl.planImage.y;
-      const px2 = px1 + fl.planImage.width * s, py2 = py1 + fl.planImage.height * s;
+      const px1 = fl.planImage.x,
+        py1 = fl.planImage.y;
+      const px2 = px1 + fl.planImage.width * s,
+        py2 = py1 + fl.planImage.height * s;
       b = b
-        ? { minX: Math.min(b.minX, px1), minY: Math.min(b.minY, py1),
-            maxX: Math.max(b.maxX, px2), maxY: Math.max(b.maxY, py2) }
+        ? {
+            minX: Math.min(b.minX, px1),
+            minY: Math.min(b.minY, py1),
+            maxX: Math.max(b.maxX, px2),
+            maxY: Math.max(b.maxY, py2),
+          }
         : { minX: px1, minY: py1, maxX: px2, maxY: py2 };
       b.cx = (b.minX + b.maxX) / 2;
       b.cy = (b.minY + b.maxY) / 2;
@@ -262,14 +310,17 @@ function WorkspaceRoot({ projectId, onExit, pushToast }) {
     setView(viewForBounds(boundsOf(sel), vp.width, vp.height, 120));
   }, [controller, setView]);
 
-  const onViewportChange = useCallback(size => {
-    viewportRef.current = size;
-    // Re-frame on every layout change until the user takes over the view.
-    // This is what makes the initial fit correct without guessing when
-    // layout settles: an early stub measurement simply gets superseded by
-    // the next, real one.
-    if (!viewTouchedRef.current) fit();
-  }, [fit]);
+  const onViewportChange = useCallback(
+    size => {
+      viewportRef.current = size;
+      // Re-frame on every layout change until the user takes over the view.
+      // This is what makes the initial fit correct without guessing when
+      // layout settles: an early stub measurement simply gets superseded by
+      // the next, real one.
+      if (!viewTouchedRef.current) fit();
+    },
+    [fit]
+  );
 
   // --- panels --------------------------------------------------------
   const togglePanel = useCallback((slot, value) => {
@@ -281,9 +332,10 @@ function WorkspaceRoot({ projectId, onExit, pushToast }) {
       // Left dock sits after a 44px rail; right dock is measured from the
       // window edge. Both clamped so a panel can't be dragged to nothing
       // (use the collapse toggle for that) or swallow the canvas.
-      const next = slot === 'left'
-        ? Math.max(180, Math.min(420, clientX - 44))
-        : Math.max(200, Math.min(460, window.innerWidth - clientX));
+      const next =
+        slot === 'left'
+          ? Math.max(180, Math.min(420, clientX - 44))
+          : Math.max(200, Math.min(460, window.innerWidth - clientX));
       return { ...w, [slot]: next };
     });
   }, []);
@@ -291,43 +343,55 @@ function WorkspaceRoot({ projectId, onExit, pushToast }) {
   // --- floor plan import ----------------------------------------------
   const fileInputRef = useRef(null);
 
-  const importPlan = useCallback(() => { fileInputRef.current && fileInputRef.current.click(); }, []);
+  const importPlan = useCallback(() => {
+    fileInputRef.current && fileInputRef.current.click();
+  }, []);
 
-  const onPlanFile = useCallback(e => {
-    const file = e.target.files && e.target.files[0];
-    e.target.value = '';                      // allow re-picking the same file
-    if (!file) return;
-    if (!/^image\//.test(file.type)) { pushToast('That file is not an image', 'error'); return; }
-    // 8MB guard: localStorage tops out around 5–10MB, and a plan larger
-    // than this will fail the save rather than the import, which is a far
-    // more confusing place to discover the problem.
-    if (file.size > 8 * 1024 * 1024) {
-      pushToast('Plan is too large — under 8 MB, please', 'error');
-      return;
-    }
-    const reader = new FileReader();
-    reader.onerror = () => pushToast('Could not read that file', 'error');
-    reader.onload = () => {
-      const src = String(reader.result);
-      const probe = new Image();
-      probe.onerror = () => pushToast('That image could not be opened', 'error');
-      probe.onload = () => {
-        doc.commit('Import floor plan', d => {
-          // Centre the plan on the origin so it lands somewhere sensible
-          // rather than off in a corner the user has to hunt for.
-          currentFloor(d).planImage = {
-            src, width: probe.width, height: probe.height,
-            x: -probe.width / 2, y: -probe.height / 2,
-            scale: 1, opacity: 0.85,
-          };
-        });
-        setTimeout(() => fit(), 40);
-        pushToast('Floor plan imported');
+  const onPlanFile = useCallback(
+    e => {
+      const file = e.target.files && e.target.files[0];
+      e.target.value = ''; // allow re-picking the same file
+      if (!file) return;
+      if (!/^image\//.test(file.type)) {
+        pushToast('That file is not an image', 'error');
+        return;
+      }
+      // 8MB guard: localStorage tops out around 5–10MB, and a plan larger
+      // than this will fail the save rather than the import, which is a far
+      // more confusing place to discover the problem.
+      if (file.size > 8 * 1024 * 1024) {
+        pushToast('Plan is too large — under 8 MB, please', 'error');
+        return;
+      }
+      const reader = new FileReader();
+      reader.onerror = () => pushToast('Could not read that file', 'error');
+      reader.onload = () => {
+        const src = String(reader.result);
+        const probe = new Image();
+        probe.onerror = () => pushToast('That image could not be opened', 'error');
+        probe.onload = () => {
+          doc.commit('Import floor plan', d => {
+            // Centre the plan on the origin so it lands somewhere sensible
+            // rather than off in a corner the user has to hunt for.
+            currentFloor(d).planImage = {
+              src,
+              width: probe.width,
+              height: probe.height,
+              x: -probe.width / 2,
+              y: -probe.height / 2,
+              scale: 1,
+              opacity: 0.85,
+            };
+          });
+          setTimeout(() => fit(), 40);
+          pushToast('Floor plan imported');
+        };
+        probe.src = src;
       };
-      probe.src = src;
-    };
-    reader.readAsDataURL(file);
-  }, [doc, fit, pushToast]);
+      reader.readAsDataURL(file);
+    },
+    [doc, fit, pushToast]
+  );
 
   const startCalibrate = useCallback(() => {
     controller.setTool('calibrate');
@@ -336,17 +400,20 @@ function WorkspaceRoot({ projectId, onExit, pushToast }) {
     if (breakpoint.width < 768) setPanels(p => ({ ...p, right: null }));
   }, [controller, breakpoint]);
 
-  const applyCalibration = useCallback(realMm => {
-    if (!calibrateLength || !(realMm > 0)) return;
-    doc.commit("Set scale", d => {
-      // Production semantics: world units per METRE (see geometry.js).
-      currentFloor(d).scale = calibrateLength / (realMm / 1000);
-    });
-    setCalibrateLength(null);
-    controller.clearMeasure();
-    controller.setTool('select');
-    pushToast('Scale set');
-  }, [calibrateLength, doc, controller, pushToast]);
+  const applyCalibration = useCallback(
+    realMm => {
+      if (!calibrateLength || !(realMm > 0)) return;
+      doc.commit('Set scale', d => {
+        // Production semantics: world units per METRE (see geometry.js).
+        currentFloor(d).scale = calibrateLength / (realMm / 1000);
+      });
+      setCalibrateLength(null);
+      controller.clearMeasure();
+      controller.setTool('select');
+      pushToast('Scale set');
+    },
+    [calibrateLength, doc, controller, pushToast]
+  );
 
   const noteRecent = useCallback(symbolId => {
     setRecent(r => [symbolId, ...r.filter(x => x !== symbolId)].slice(0, 6));
@@ -373,111 +440,366 @@ function WorkspaceRoot({ projectId, onExit, pushToast }) {
 
     r.registerAll([
       // Tools
-      { id: 'tool.select', title: 'Select tool', group: 'Tools', shortcut: 'V', icon: '⌖',
-        keywords: 'arrow pointer pick', run: c => c.controller.setTool('select') },
-      { id: 'tool.pan', title: 'Pan tool', group: 'Tools', shortcut: 'H', icon: '✋',
-        keywords: 'hand scroll move view', run: c => c.controller.setTool('pan') },
-      { id: 'tool.measure', title: 'Measure tool', group: 'Tools', shortcut: 'M', icon: '↔',
-        keywords: 'distance dimension ruler', run: c => c.controller.setTool('measure') },
-      { id: 'tool.calibrate', title: 'Calibrate scale', group: 'Tools', shortcut: 'C', icon: '⚖',
-        keywords: 'scale real units mm metres set', run: c => c.startCalibrate() },
+      {
+        id: 'tool.select',
+        title: 'Select tool',
+        group: 'Tools',
+        shortcut: 'V',
+        icon: '⌖',
+        keywords: 'arrow pointer pick',
+        run: c => c.controller.setTool('select'),
+      },
+      {
+        id: 'tool.pan',
+        title: 'Pan tool',
+        group: 'Tools',
+        shortcut: 'H',
+        icon: '✋',
+        keywords: 'hand scroll move view',
+        run: c => c.controller.setTool('pan'),
+      },
+      {
+        id: 'tool.measure',
+        title: 'Measure tool',
+        group: 'Tools',
+        shortcut: 'M',
+        icon: '↔',
+        keywords: 'distance dimension ruler',
+        run: c => c.controller.setTool('measure'),
+      },
+      {
+        id: 'tool.calibrate',
+        title: 'Calibrate scale',
+        group: 'Tools',
+        shortcut: 'C',
+        icon: '⚖',
+        keywords: 'scale real units mm metres set',
+        run: c => c.startCalibrate(),
+      },
 
       // Plan
-      { id: 'plan.import', title: 'Import floor plan', group: 'Plan', icon: '⇧',
-        keywords: 'background image trace pdf png jpg underlay', run: c => c.importPlan() },
-      { id: 'plan.remove', title: 'Remove floor plan', group: 'Plan', icon: '⌫', danger: true,
+      {
+        id: 'plan.import',
+        title: 'Import floor plan',
+        group: 'Plan',
+        icon: '⇧',
+        keywords: 'background image trace pdf png jpg underlay',
+        run: c => c.importPlan(),
+      },
+      {
+        id: 'plan.remove',
+        title: 'Remove floor plan',
+        group: 'Plan',
+        icon: '⌫',
+        danger: true,
         keywords: 'delete background underlay',
         when: c => !!currentFloor(c.doc.state).planImage,
-        run: c => c.doc.commit("Remove plan", d => { currentFloor(d).planImage = null; }) },
+        run: c =>
+          c.doc.commit('Remove plan', d => {
+            currentFloor(d).planImage = null;
+          }),
+      },
 
       // Edit
-      { id: 'edit.undo', title: 'Undo', group: 'Edit', shortcut: 'Mod+Z', icon: '↶',
-        keywords: 'revert back', when: c => c.doc.canUndo, run: c => { c.doc.undo(); c.controller.clearSelection(); } },
-      { id: 'edit.redo', title: 'Redo', group: 'Edit', shortcut: 'Mod+Shift+Z', icon: '↷',
-        keywords: 'forward again', when: c => c.doc.canRedo, run: c => c.doc.redo() },
-      { id: 'edit.duplicate', title: 'Duplicate', group: 'Edit', shortcut: 'Mod+D', icon: '⧉',
-        keywords: 'copy clone', when: hasSel, run: c => c.controller.duplicateSelected() },
-      { id: 'edit.delete', title: 'Delete', group: 'Edit', shortcut: 'Delete', icon: '⌫',
-        keywords: 'remove erase', danger: true, when: hasSel, run: c => c.controller.deleteSelected() },
-      { id: 'edit.selectAll', title: 'Select all', group: 'Edit', shortcut: 'Mod+A', icon: '⬚',
-        keywords: 'everything', run: c => c.controller.selectAll() },
-      { id: 'edit.deselect', title: 'Deselect', group: 'Edit', shortcut: 'Escape',
-        keywords: 'clear selection none', when: hasSel, run: c => c.controller.clearSelection() },
+      {
+        id: 'edit.undo',
+        title: 'Undo',
+        group: 'Edit',
+        shortcut: 'Mod+Z',
+        icon: '↶',
+        keywords: 'revert back',
+        when: c => c.doc.canUndo,
+        run: c => {
+          c.doc.undo();
+          c.controller.clearSelection();
+        },
+      },
+      {
+        id: 'edit.redo',
+        title: 'Redo',
+        group: 'Edit',
+        shortcut: 'Mod+Shift+Z',
+        icon: '↷',
+        keywords: 'forward again',
+        when: c => c.doc.canRedo,
+        run: c => c.doc.redo(),
+      },
+      {
+        id: 'edit.duplicate',
+        title: 'Duplicate',
+        group: 'Edit',
+        shortcut: 'Mod+D',
+        icon: '⧉',
+        keywords: 'copy clone',
+        when: hasSel,
+        run: c => c.controller.duplicateSelected(),
+      },
+      {
+        id: 'edit.delete',
+        title: 'Delete',
+        group: 'Edit',
+        shortcut: 'Delete',
+        icon: '⌫',
+        keywords: 'remove erase',
+        danger: true,
+        when: hasSel,
+        run: c => c.controller.deleteSelected(),
+      },
+      {
+        id: 'edit.selectAll',
+        title: 'Select all',
+        group: 'Edit',
+        shortcut: 'Mod+A',
+        icon: '⬚',
+        keywords: 'everything',
+        run: c => c.controller.selectAll(),
+      },
+      {
+        id: 'edit.deselect',
+        title: 'Deselect',
+        group: 'Edit',
+        shortcut: 'Escape',
+        keywords: 'clear selection none',
+        when: hasSel,
+        run: c => c.controller.clearSelection(),
+      },
 
       // Arrange
-      { id: 'arrange.alignLeft', title: 'Align left', group: 'Arrange', icon: '⇤', when: hasMulti, run: c => c.controller.alignSelected('left') },
-      { id: 'arrange.alignRight', title: 'Align right', group: 'Arrange', icon: '⇥', when: hasMulti, run: c => c.controller.alignSelected('right') },
-      { id: 'arrange.alignTop', title: 'Align top', group: 'Arrange', icon: '⤒', when: hasMulti, run: c => c.controller.alignSelected('top') },
-      { id: 'arrange.alignBottom', title: 'Align bottom', group: 'Arrange', icon: '⤓', when: hasMulti, run: c => c.controller.alignSelected('bottom') },
-      { id: 'arrange.distributeH', title: 'Distribute horizontally', group: 'Arrange', icon: '⇹',
-        when: c => c.controller.selectedIds.size > 2, run: c => c.controller.distributeSelected('h') },
-      { id: 'arrange.distributeV', title: 'Distribute vertically', group: 'Arrange', icon: '⇳',
-        when: c => c.controller.selectedIds.size > 2, run: c => c.controller.distributeSelected('v') },
+      {
+        id: 'arrange.alignLeft',
+        title: 'Align left',
+        group: 'Arrange',
+        icon: '⇤',
+        when: hasMulti,
+        run: c => c.controller.alignSelected('left'),
+      },
+      {
+        id: 'arrange.alignRight',
+        title: 'Align right',
+        group: 'Arrange',
+        icon: '⇥',
+        when: hasMulti,
+        run: c => c.controller.alignSelected('right'),
+      },
+      {
+        id: 'arrange.alignTop',
+        title: 'Align top',
+        group: 'Arrange',
+        icon: '⤒',
+        when: hasMulti,
+        run: c => c.controller.alignSelected('top'),
+      },
+      {
+        id: 'arrange.alignBottom',
+        title: 'Align bottom',
+        group: 'Arrange',
+        icon: '⤓',
+        when: hasMulti,
+        run: c => c.controller.alignSelected('bottom'),
+      },
+      {
+        id: 'arrange.distributeH',
+        title: 'Distribute horizontally',
+        group: 'Arrange',
+        icon: '⇹',
+        when: c => c.controller.selectedIds.size > 2,
+        run: c => c.controller.distributeSelected('h'),
+      },
+      {
+        id: 'arrange.distributeV',
+        title: 'Distribute vertically',
+        group: 'Arrange',
+        icon: '⇳',
+        when: c => c.controller.selectedIds.size > 2,
+        run: c => c.controller.distributeSelected('v'),
+      },
 
       // View
-      { id: 'view.fit', title: 'Fit drawing to screen', group: 'View', shortcut: 'Shift+F', icon: '⛶',
-        keywords: 'zoom extents all', run: c => c.fit() },
-      { id: 'view.zoomSelection', title: 'Zoom to selection', group: 'View', shortcut: 'Shift+2', icon: '⊙',
-        keywords: 'focus', when: hasSel, run: c => c.zoomToSelection() },
-      { id: 'view.zoomIn', title: 'Zoom in', group: 'View', icon: '+', run: c => c.controller.zoomBy(1.2) },
-      { id: 'view.zoomOut', title: 'Zoom out', group: 'View', icon: '−', run: c => c.controller.zoomBy(1 / 1.2) },
-      { id: 'view.toggleSnap', title: 'Toggle snapping', group: 'View', shortcut: 'Shift+S', icon: '⌗',
+      {
+        id: 'view.fit',
+        title: 'Fit drawing to screen',
+        group: 'View',
+        shortcut: 'Shift+F',
+        icon: '⛶',
+        keywords: 'zoom extents all',
+        run: c => c.fit(),
+      },
+      {
+        id: 'view.zoomSelection',
+        title: 'Zoom to selection',
+        group: 'View',
+        shortcut: 'Shift+2',
+        icon: '⊙',
+        keywords: 'focus',
+        when: hasSel,
+        run: c => c.zoomToSelection(),
+      },
+      {
+        id: 'view.zoomIn',
+        title: 'Zoom in',
+        group: 'View',
+        icon: '+',
+        run: c => c.controller.zoomBy(1.2),
+      },
+      {
+        id: 'view.zoomOut',
+        title: 'Zoom out',
+        group: 'View',
+        icon: '−',
+        run: c => c.controller.zoomBy(1 / 1.2),
+      },
+      {
+        id: 'view.toggleSnap',
+        title: 'Toggle snapping',
+        group: 'View',
+        shortcut: 'Shift+S',
+        icon: '⌗',
         keywords: 'grid align magnet',
-        run: c => c.doc.commit("Toggle snapping", d => { const f = currentFloor(d); f.snapEnabled = f.snapEnabled === false; }) },
+        run: c =>
+          c.doc.commit('Toggle snapping', d => {
+            const f = currentFloor(d);
+            f.snapEnabled = f.snapEnabled === false;
+          }),
+      },
 
       // Panels
-      { id: 'panel.layers', title: 'Toggle layers panel', group: 'Panels', shortcut: 'L', icon: '▤',
-        keywords: 'visibility lock', run: c => c.togglePanel('left', 'layers') },
-      { id: 'panel.library', title: 'Toggle component library', group: 'Panels', shortcut: 'P', icon: '⊞',
-        keywords: 'place device symbol add', run: c => c.togglePanel('left', 'library') },
-      { id: 'panel.inspector', title: 'Toggle properties panel', group: 'Panels', shortcut: 'I', icon: '☰',
-        keywords: 'inspector details', run: c => c.togglePanel('right', 'inspector') },
+      {
+        id: 'panel.layers',
+        title: 'Toggle layers panel',
+        group: 'Panels',
+        shortcut: 'L',
+        icon: '▤',
+        keywords: 'visibility lock',
+        run: c => c.togglePanel('left', 'layers'),
+      },
+      {
+        id: 'panel.library',
+        title: 'Toggle component library',
+        group: 'Panels',
+        shortcut: 'P',
+        icon: '⊞',
+        keywords: 'place device symbol add',
+        run: c => c.togglePanel('left', 'library'),
+      },
+      {
+        id: 'panel.inspector',
+        title: 'Toggle properties panel',
+        group: 'Panels',
+        shortcut: 'I',
+        icon: '☰',
+        keywords: 'inspector details',
+        run: c => c.togglePanel('right', 'inspector'),
+      },
 
       // Project
-      { id: 'project.save', title: 'Save', group: 'Project', shortcut: 'Mod+S', icon: '⤓',
-        keywords: 'store write', run: c => c.doSave() },
-      { id: 'project.close', title: 'Close drawing', group: 'Project', icon: '←',
-        keywords: 'back exit projects', run: c => c.onExit() },
+      {
+        id: 'project.save',
+        title: 'Save',
+        group: 'Project',
+        shortcut: 'Mod+S',
+        icon: '⤓',
+        keywords: 'store write',
+        run: c => c.doSave(),
+      },
+      {
+        id: 'project.close',
+        title: 'Close drawing',
+        group: 'Project',
+        icon: '←',
+        keywords: 'back exit projects',
+        run: c => c.onExit(),
+      },
 
       // App
-      { id: 'app.palette', title: 'Command palette', group: 'App', shortcut: 'Mod+K', icon: '⌘',
-        keywords: 'search commands actions', run: c => c.openPalette() },
+      {
+        id: 'app.palette',
+        title: 'Command palette',
+        group: 'App',
+        shortcut: 'Mod+K',
+        icon: '⌘',
+        keywords: 'search commands actions',
+        run: c => c.openPalette(),
+      },
     ]);
     return r;
   }, []);
 
   // Context object handed to every command's `when` and `run`.
-  const ctx = useMemo(() => ({
-    doc, controller, fit, zoomToSelection, togglePanel, doSave, onExit,
-    importPlan, startCalibrate,
-    openPalette: () => setPaletteOpen(true),
-    pushToast,
-  }), [doc, controller, fit, zoomToSelection, togglePanel, doSave, onExit, importPlan, startCalibrate, pushToast]);
+  const ctx = useMemo(
+    () => ({
+      doc,
+      controller,
+      fit,
+      zoomToSelection,
+      togglePanel,
+      doSave,
+      onExit,
+      importPlan,
+      startCalibrate,
+      openPalette: () => setPaletteOpen(true),
+      pushToast,
+    }),
+    [
+      doc,
+      controller,
+      fit,
+      zoomToSelection,
+      togglePanel,
+      doSave,
+      onExit,
+      importPlan,
+      startCalibrate,
+      pushToast,
+    ]
+  );
 
   // --- keyboard layer (§10) ------------------------------------------
   useEffect(() => {
     function onKeyDown(e) {
       // Palette first: Mod+K must work even while a field has focus, or
       // it stops being a universal entry point.
-      if (matchesShortcut(e, 'Mod+K')) { e.preventDefault(); setPaletteOpen(o => !o); return; }
-      if (paletteOpen) return;                 // palette owns its own keys
+      if (matchesShortcut(e, 'Mod+K')) {
+        e.preventDefault();
+        setPaletteOpen(o => !o);
+        return;
+      }
+      if (paletteOpen) return; // palette owns its own keys
       if (isTypingTarget(document.activeElement)) return;
 
-      if (e.code === 'Space' && !e.repeat) { e.preventDefault(); controller.setSpaceHeld(true); return; }
+      if (e.code === 'Space' && !e.repeat) {
+        e.preventDefault();
+        controller.setSpaceHeld(true);
+        return;
+      }
 
       // Escape backs out of the current mode before clearing selection —
       // one predictable "get me out of here" key (§10).
       if (e.key === 'Escape') {
-        if (controller.tool !== 'select') { controller.setTool('select'); return; }
-        if (controller.selectedIds.size) { controller.clearSelection(); return; }
+        if (controller.tool !== 'select') {
+          controller.setTool('select');
+          return;
+        }
+        if (controller.selectedIds.size) {
+          controller.clearSelection();
+          return;
+        }
         return;
       }
 
       // Arrow-key nudging: 1 grid step, or 1 unit with Alt for fine work.
       if (e.key.startsWith('Arrow') && controller.selectedIds.size) {
         const step = e.altKey ? 1 : gridWorldUnits(currentFloor(doc.state));
-        const d = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] }[e.key];
-        if (d) { e.preventDefault(); controller.nudgeSelected(d[0], d[1]); return; }
+        const d = {
+          ArrowLeft: [-step, 0],
+          ArrowRight: [step, 0],
+          ArrowUp: [0, -step],
+          ArrowDown: [0, step],
+        }[e.key];
+        if (d) {
+          e.preventDefault();
+          controller.nudgeSelected(d[0], d[1]);
+          return;
+        }
       }
 
       for (const cmd of registry.all()) {
@@ -510,22 +832,27 @@ function WorkspaceRoot({ projectId, onExit, pushToast }) {
     return counts;
   }, [doc.state]);
 
-  const leftPanel = panels.left === 'layers'
-    ? <LayersPanel doc={doc} counts={layerCounts} />
-    : panels.left === 'library'
-      ? <LibraryPanel
-          controller={controller}
-          favourites={favourites}
-          recent={recent}
-          onToggleFavourite={toggleFavourite}
-          autoFocus={breakpoint.name === 'desktop'}
-        />
-      : null;
+  const leftPanel =
+    panels.left === 'layers' ? (
+      <LayersPanel doc={doc} counts={layerCounts} />
+    ) : panels.left === 'library' ? (
+      <LibraryPanel
+        controller={controller}
+        favourites={favourites}
+        recent={recent}
+        onToggleFavourite={toggleFavourite}
+        autoFocus={breakpoint.name === 'desktop'}
+      />
+    ) : null;
 
   const rightPanel = (
     <Inspector
-      doc={doc} controller={controller} sections={sections} toggleSection={toggleSection}
-      onImportPlan={importPlan} onCalibrate={startCalibrate}
+      doc={doc}
+      controller={controller}
+      sections={sections}
+      toggleSection={toggleSection}
+      onImportPlan={importPlan}
+      onCalibrate={startCalibrate}
     />
   );
 
@@ -573,10 +900,18 @@ function WorkspaceRoot({ projectId, onExit, pushToast }) {
         registry={registry}
         ctx={ctx}
       />
-      <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} registry={registry} ctx={ctx} />
+      <CommandPalette
+        open={paletteOpen}
+        onClose={() => setPaletteOpen(false)}
+        registry={registry}
+        ctx={ctx}
+      />
       <CalibrateDialog
         length={calibrateLength}
-        onCancel={() => { setCalibrateLength(null); controller.clearMeasure(); }}
+        onCancel={() => {
+          setCalibrateLength(null);
+          controller.clearMeasure();
+        }}
         onApply={applyCalibration}
       />
     </>
@@ -593,7 +928,12 @@ function CalibrateDialog({ length, onCancel, onApply }) {
   const [value, setValue] = useState('');
   const [unit, setUnit] = useState('mm');
 
-  useEffect(() => { if (length != null) { setValue(''); setUnit('mm'); } }, [length]);
+  useEffect(() => {
+    if (length != null) {
+      setValue('');
+      setUnit('mm');
+    }
+  }, [length]);
   if (length == null) return null;
 
   const n = parseFloat(value);
@@ -613,7 +953,9 @@ function CalibrateDialog({ length, onCancel, onApply }) {
       footer={
         <>
           <Button onClick={onCancel}>Cancel</Button>
-          <Button variant="primary" disabled={!valid} onClick={submit}>Set scale</Button>
+          <Button variant="primary" disabled={!valid} onClick={submit}>
+            Set scale
+          </Button>
         </>
       }
     >
@@ -630,7 +972,12 @@ function CalibrateDialog({ length, onCancel, onApply }) {
             placeholder="e.g. 820"
             aria-label="Real length"
           />
-          <Select value={unit} onChange={e => setUnit(e.target.value)} className="w-20" aria-label="Unit">
+          <Select
+            value={unit}
+            onChange={e => setUnit(e.target.value)}
+            className="w-20"
+            aria-label="Unit"
+          >
             <option value="mm">mm</option>
             <option value="m">m</option>
           </Select>
@@ -655,8 +1002,11 @@ function App() {
 
   function create() {
     const id = newProjectId();
-    const res = saveProject(id, { ...emptyProject(), name: "Untitled drawing" });
-    if (!res.ok) { setStorageError(res.error); return; }
+    const res = saveProject(id, { ...emptyProject(), name: 'Untitled drawing' });
+    if (!res.ok) {
+      setStorageError(res.error);
+      return;
+    }
     refresh();
     setProjectId(id);
   }
@@ -673,15 +1023,17 @@ function App() {
 
   return (
     <>
-      {projectId
-        ? <WorkspaceRoot projectId={projectId} onExit={exit} pushToast={pushToast} />
-        : <ProjectPicker
-            projects={projects}
-            onOpen={setProjectId}
-            onCreate={create}
-            onDelete={remove}
-            storageError={storageError}
-          />}
+      {projectId ? (
+        <WorkspaceRoot projectId={projectId} onExit={exit} pushToast={pushToast} />
+      ) : (
+        <ProjectPicker
+          projects={projects}
+          onOpen={setProjectId}
+          onCreate={create}
+          onDelete={remove}
+          storageError={storageError}
+        />
+      )}
       <ToastHost toasts={toasts} />
     </>
   );

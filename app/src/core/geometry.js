@@ -32,15 +32,20 @@ export function hitTestObjects(objects, world, tolerance, isSelectable) {
   for (const o of objects) {
     if (isSelectable && !isSelectable(o)) continue;
     const d = dist(o.x, o.y, world.x, world.y);
-    if (d <= bestD) { best = o; bestD = d; }
+    if (d <= bestD) {
+      best = o;
+      bestD = d;
+    }
   }
   return best;
 }
 
 /** Objects whose centres fall inside a world-space rectangle (marquee select). */
 export function objectsInRect(objects, rect, isSelectable) {
-  const x1 = Math.min(rect.x1, rect.x2), x2 = Math.max(rect.x1, rect.x2);
-  const y1 = Math.min(rect.y1, rect.y2), y2 = Math.max(rect.y1, rect.y2);
+  const x1 = Math.min(rect.x1, rect.x2),
+    x2 = Math.max(rect.x1, rect.x2);
+  const y1 = Math.min(rect.y1, rect.y2),
+    y2 = Math.max(rect.y1, rect.y2);
   return objects.filter(o => {
     if (isSelectable && !isSelectable(o)) return false;
     return o.x >= x1 && o.x <= x2 && o.y >= y1 && o.y <= y2;
@@ -50,7 +55,10 @@ export function objectsInRect(objects, rect, isSelectable) {
 /** Axis-aligned bounds of a set of objects, or null when empty. */
 export function boundsOf(objects) {
   if (!objects.length) return null;
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  let minX = Infinity,
+    minY = Infinity,
+    maxX = -Infinity,
+    maxY = -Infinity;
   for (const o of objects) {
     if (o.x < minX) minX = o.x;
     if (o.x > maxX) maxX = o.x;
@@ -76,11 +84,7 @@ export function viewForBounds(bounds, viewportW, viewportH, padPx = 80, maxZoom 
   // produced a negative zoom that then failed the `> 0` check and fell
   // back to 1:1 — the drawing silently didn't fit, with no error.
   const pad = Math.max(0, Math.min(padPx, viewportW * 0.15, viewportH * 0.15));
-  const zoom = Math.min(
-    (viewportW - pad * 2) / w,
-    (viewportH - pad * 2) / h,
-    maxZoom
-  );
+  const zoom = Math.min((viewportW - pad * 2) / w, (viewportH - pad * 2) / h, maxZoom);
   const z = isFinite(zoom) && zoom > 0 ? zoom : 1;
   return {
     zoom: z,

@@ -18,7 +18,16 @@ import { currentFloor } from '../core/document.js';
 
 const { useRef, useEffect, useCallback } = React;
 
-export function CanvasStage({ controller, doc, view, symbolFor, showLabels, onViewportChange, onContextMenu, cursorClass }) {
+export function CanvasStage({
+  controller,
+  doc,
+  view,
+  symbolFor,
+  showLabels,
+  onViewportChange,
+  onContextMenu,
+  cursorClass,
+}) {
   const canvasRef = useRef(null);
   const wrapRef = useRef(null);
   const frameRef = useRef(0);
@@ -35,7 +44,8 @@ export function CanvasStage({ controller, doc, view, symbolFor, showLabels, onVi
     if (!canvas || !wrap) return;
     const { controller: c, doc: d, view: v, symbolFor: sf, showLabels: sl } = live.current;
     const ctx = canvas.getContext('2d');
-    const cssW = wrap.clientWidth, cssH = wrap.clientHeight;
+    const cssW = wrap.clientWidth,
+      cssH = wrap.clientHeight;
 
     // Resolve the plan image from cache; a cache miss kicks off decoding
     // and repaints when it lands, so the first frame after import isn't
@@ -79,10 +89,12 @@ export function CanvasStage({ controller, doc, view, symbolFor, showLabels, onVi
   // Size the backing store to device pixels so lines stay crisp on
   // retina/high-DPI screens instead of blurring.
   const resize = useCallback(() => {
-    const canvas = canvasRef.current, wrap = wrapRef.current;
+    const canvas = canvasRef.current,
+      wrap = wrapRef.current;
     if (!canvas || !wrap) return;
     const dpr = Math.min(window.devicePixelRatio || 1, 2.5);
-    const w = wrap.clientWidth, h = wrap.clientHeight;
+    const w = wrap.clientWidth,
+      h = wrap.clientHeight;
     canvas.width = Math.max(1, Math.round(w * dpr));
     canvas.height = Math.max(1, Math.round(h * dpr));
     canvas.style.width = w + 'px';
@@ -105,7 +117,9 @@ export function CanvasStage({ controller, doc, view, symbolFor, showLabels, onVi
     return un1;
   }, [doc, requestPaint]);
 
-  useEffect(() => { requestPaint(); });
+  useEffect(() => {
+    requestPaint();
+  });
 
   // Pointer events are bound natively (not via React props) so we can
   // capture the pointer and keep receiving moves when the cursor leaves
@@ -124,17 +138,30 @@ export function CanvasStage({ controller, doc, view, symbolFor, showLabels, onVi
       // before the controller ever sees the event. That silently broke
       // two-finger pinch, since the second finger's pointerdown never
       // registered. Failing to capture must degrade, not cancel.
-      try { canvas.setPointerCapture(e.pointerId); } catch (_) { /* non-fatal */ }
+      try {
+        canvas.setPointerCapture(e.pointerId);
+      } catch (_) {
+        /* non-fatal */
+      }
       controller.onPointerDown(e, rect());
       requestPaint();
     };
-    const move = e => { controller.onPointerMove(e, rect()); requestPaint(); };
+    const move = e => {
+      controller.onPointerMove(e, rect());
+      requestPaint();
+    };
     const up = e => {
-      try { canvas.releasePointerCapture(e.pointerId); } catch (_) {}
+      try {
+        canvas.releasePointerCapture(e.pointerId);
+      } catch (_) {}
       controller.onPointerUp(e);
       requestPaint();
     };
-    const wheel = e => { e.preventDefault(); controller.onWheel(e, rect()); requestPaint(); };
+    const wheel = e => {
+      e.preventDefault();
+      controller.onWheel(e, rect());
+      requestPaint();
+    };
     const context = e => {
       e.preventDefault();
       const info = controller.onContextMenu(e, rect());

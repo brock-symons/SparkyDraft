@@ -18,22 +18,49 @@
 // wattage it never had.
 // ===================================================================
 
-import { Section, Row, NumberInput, TextInput, Select, Toggle, Button, IconButton, EmptyState, FieldLabel, Divider, cx } from './primitives.jsx';
-import { currentFloor } from "../core/document.js";
-import { SYMBOL_LIBRARY, CABLE_SIZES, PROTECTION_LIBRARY, CATEGORY_LABELS } from '../core/catalog.js';
+import {
+  Section,
+  Row,
+  NumberInput,
+  TextInput,
+  Select,
+  Toggle,
+  Button,
+  IconButton,
+  EmptyState,
+  FieldLabel,
+  Divider,
+  cx,
+} from './primitives.jsx';
+import { currentFloor } from '../core/document.js';
+import {
+  SYMBOL_LIBRARY,
+  CABLE_SIZES,
+  PROTECTION_LIBRARY,
+  CATEGORY_LABELS,
+} from '../core/catalog.js';
 import { formatDistance } from '../core/geometry.js';
 
 const { useState, useMemo } = React;
 
-function symbolFor(id) { return SYMBOL_LIBRARY.find(s => s.id === id); }
+function symbolFor(id) {
+  return SYMBOL_LIBRARY.find(s => s.id === id);
+}
 
 function SymbolChip({ sym, size = 'md' }) {
   if (!sym) return null;
   const dims = size === 'lg' ? 'h-9 w-9 text-xs' : 'h-6 w-6 text-2xs';
   return (
     <span
-      className={cx('inline-flex shrink-0 items-center justify-center rounded-full font-bold', dims)}
-      style={{ background: sym.color + '22', color: sym.color, border: '1px solid ' + sym.color + '55' }}
+      className={cx(
+        'inline-flex shrink-0 items-center justify-center rounded-full font-bold',
+        dims
+      )}
+      style={{
+        background: sym.color + '22',
+        color: sym.color,
+        border: '1px solid ' + sym.color + '55',
+      }}
     >
       {sym.abbr}
     </span>
@@ -42,7 +69,14 @@ function SymbolChip({ sym, size = 'md' }) {
 
 // --- nothing selected -------------------------------------------------
 
-function DrawingProperties({ doc, controller, sections, toggleSection, onImportPlan, onCalibrate }) {
+function DrawingProperties({
+  doc,
+  controller,
+  sections,
+  toggleSection,
+  onImportPlan,
+  onCalibrate,
+}) {
   const d = currentFloor(doc.state);
   const counts = useMemo(() => {
     const by = {};
@@ -83,10 +117,21 @@ function DrawingProperties({ doc, controller, sections, toggleSection, onImportP
           <>
             <Row label="Opacity">
               <input
-                type="range" min="0.15" max="1" step="0.05"
+                type="range"
+                min="0.15"
+                max="1"
+                step="0.05"
                 aria-label="Floor plan opacity"
                 value={d.planImage.opacity == null ? 0.85 : d.planImage.opacity}
-                onChange={e => doc.commit('Plan opacity', dd => { currentFloor(dd).planImage.opacity = parseFloat(e.target.value); }, { coalesce: true })}
+                onChange={e =>
+                  doc.commit(
+                    'Plan opacity',
+                    dd => {
+                      currentFloor(dd).planImage.opacity = parseFloat(e.target.value);
+                    },
+                    { coalesce: true }
+                  )
+                }
                 className="w-full accent-accent-500"
               />
             </Row>
@@ -95,14 +140,26 @@ function DrawingProperties({ doc, controller, sections, toggleSection, onImportP
                 value={d.planImage.scale || 1}
                 step={0.05}
                 suffix="×"
-                onCommit={v => doc.commit('Plan size', dd => { currentFloor(dd).planImage.scale = Math.max(0.05, v); })}
+                onCommit={v =>
+                  doc.commit('Plan size', dd => {
+                    currentFloor(dd).planImage.scale = Math.max(0.05, v);
+                  })
+                }
               />
             </Row>
             <div className="flex gap-1.5 px-3 pt-1.5">
-              <Button size="sm" className="flex-1" onClick={onImportPlan}>Replace…</Button>
+              <Button size="sm" className="flex-1" onClick={onImportPlan}>
+                Replace…
+              </Button>
               <Button
-                size="sm" variant="danger" className="flex-1"
-                onClick={() => doc.commit('Remove plan', dd => { currentFloor(dd).planImage = null; })}
+                size="sm"
+                variant="danger"
+                className="flex-1"
+                onClick={() =>
+                  doc.commit('Remove plan', dd => {
+                    currentFloor(dd).planImage = null;
+                  })
+                }
               >
                 Remove
               </Button>
@@ -110,7 +167,9 @@ function DrawingProperties({ doc, controller, sections, toggleSection, onImportP
           </>
         ) : (
           <div className="px-3">
-            <Button size="sm" className="w-full" onClick={onImportPlan}>Import floor plan…</Button>
+            <Button size="sm" className="w-full" onClick={onImportPlan}>
+              Import floor plan…
+            </Button>
             <div className="mt-1.5 text-2xs leading-relaxed text-ink-400">
               PNG or JPG. Place devices over it, then calibrate to set real distances.
             </div>
@@ -124,7 +183,11 @@ function DrawingProperties({ doc, controller, sections, toggleSection, onImportP
             <Toggle
               label="Enable snapping"
               checked={d.snapEnabled !== false}
-              onChange={v => doc.commit('Toggle snapping', dd => { currentFloor(dd).snapEnabled = v; })}
+              onChange={v =>
+                doc.commit('Toggle snapping', dd => {
+                  currentFloor(dd).snapEnabled = v;
+                })
+              }
             />
             <span className="text-xs text-ink-400">{d.snapEnabled !== false ? 'On' : 'Off'}</span>
           </div>
@@ -137,7 +200,11 @@ function DrawingProperties({ doc, controller, sections, toggleSection, onImportP
             value={d.gridSpacingMM}
             step={50}
             suffix="mm"
-            onCommit={v => doc.commit('Set grid size', dd => { currentFloor(dd).gridSpacingMM = Math.max(1, v); })}
+            onCommit={v =>
+              doc.commit('Set grid size', dd => {
+                currentFloor(dd).gridSpacingMM = Math.max(1, v);
+              })
+            }
           />
         </Row>
         <Row label="Scale">
@@ -151,7 +218,11 @@ function DrawingProperties({ doc, controller, sections, toggleSection, onImportP
               step={1}
               suffix="px/m"
               placeholder="not set"
-              onCommit={v => doc.commit('Set scale', dd => { currentFloor(dd).scale = v > 0 ? v : null; })}
+              onCommit={v =>
+                doc.commit('Set scale', dd => {
+                  currentFloor(dd).scale = v > 0 ? v : null;
+                })
+              }
             />
           </div>
         </Row>
@@ -185,7 +256,9 @@ function DeviceProperties({ obj, doc, controller, sections, toggleSection }) {
   const showWatts = typeof defaults.watts === 'number' && defaults.watts > 0;
   const showHeight = typeof defaults.height_mm === 'number';
 
-  function setProp(patch) { controller.setObjectProps(obj.id, patch); }
+  function setProp(patch) {
+    controller.setObjectProps(obj.id, patch);
+  }
 
   return (
     <>
@@ -212,8 +285,14 @@ function DeviceProperties({ obj, doc, controller, sections, toggleSection }) {
         </Row>
         <Row label="Position">
           <div className="flex gap-1.5">
-            <NumberInput value={obj.x} onCommit={v => controller.setObjectPosition(obj.id, v, undefined)} />
-            <NumberInput value={obj.y} onCommit={v => controller.setObjectPosition(obj.id, undefined, v)} />
+            <NumberInput
+              value={obj.x}
+              onCommit={v => controller.setObjectPosition(obj.id, v, undefined)}
+            />
+            <NumberInput
+              value={obj.y}
+              onCommit={v => controller.setObjectPosition(obj.id, undefined, v)}
+            />
           </div>
         </Row>
         {scale && (
@@ -224,7 +303,11 @@ function DeviceProperties({ obj, doc, controller, sections, toggleSection }) {
       </Section>
 
       {(showCable || showProtection || showWatts || showHeight) && (
-        <Section title="Electrical" open={sections.electrical} onToggle={() => toggleSection('electrical')}>
+        <Section
+          title="Electrical"
+          open={sections.electrical}
+          onToggle={() => toggleSection('electrical')}
+        >
           {showHeight && (
             <Row label="Height">
               <NumberInput
@@ -237,20 +320,30 @@ function DeviceProperties({ obj, doc, controller, sections, toggleSection }) {
           )}
           {showCable && (
             <Row label="Cable">
-              <Select value={props.cable ?? defaults.cable} onChange={e => setProp({ cable: e.target.value })}>
+              <Select
+                value={props.cable ?? defaults.cable}
+                onChange={e => setProp({ cable: e.target.value })}
+              >
                 <option value={defaults.cable}>{defaults.cable}</option>
                 {CABLE_SIZES.map(c => (
-                  <option key={c.size} value={c.size + ' TPS'}>{c.size} TPS</option>
+                  <option key={c.size} value={c.size + ' TPS'}>
+                    {c.size} TPS
+                  </option>
                 ))}
               </Select>
             </Row>
           )}
           {showProtection && (
             <Row label="Protection">
-              <Select value={props.protection ?? defaults.protection} onChange={e => setProp({ protection: e.target.value })}>
+              <Select
+                value={props.protection ?? defaults.protection}
+                onChange={e => setProp({ protection: e.target.value })}
+              >
                 <option value={defaults.protection}>{defaults.protection}</option>
                 {PROTECTION_LIBRARY.map(p => (
-                  <option key={p.id} value={p.label}>{p.label}</option>
+                  <option key={p.id} value={p.label}>
+                    {p.label}
+                  </option>
                 ))}
               </Select>
             </Row>
@@ -266,8 +359,8 @@ function DeviceProperties({ obj, doc, controller, sections, toggleSection }) {
             </Row>
           )}
           <div className="px-3 pt-1.5 text-2xs leading-relaxed text-ink-400">
-            Circuit assignment, comms ports and switch linking live in the full
-            app — not yet ported into this workspace.
+            Circuit assignment, comms ports and switch linking live in the full app — not yet ported
+            into this workspace.
           </div>
         </Section>
       )}
@@ -298,7 +391,9 @@ function DeviceProperties({ obj, doc, controller, sections, toggleSection }) {
 
 function AlignButton({ label, onClick, children }) {
   return (
-    <IconButton label={label} size="sm" onClick={onClick} tooltipSide="top">{children}</IconButton>
+    <IconButton label={label} size="sm" onClick={onClick} tooltipSide="top">
+      {children}
+    </IconButton>
   );
 }
 
@@ -331,19 +426,41 @@ function MultiProperties({ objects, controller, sections, toggleSection }) {
         <div className="px-3">
           <FieldLabel className="mb-1.5">Horizontal</FieldLabel>
           <div className="mb-2.5 flex gap-1">
-            <AlignButton label="Align left" onClick={() => controller.alignSelected('left')}>⇤</AlignButton>
-            <AlignButton label="Align centre" onClick={() => controller.alignSelected('hcentre')}>⇔</AlignButton>
-            <AlignButton label="Align right" onClick={() => controller.alignSelected('right')}>⇥</AlignButton>
+            <AlignButton label="Align left" onClick={() => controller.alignSelected('left')}>
+              ⇤
+            </AlignButton>
+            <AlignButton label="Align centre" onClick={() => controller.alignSelected('hcentre')}>
+              ⇔
+            </AlignButton>
+            <AlignButton label="Align right" onClick={() => controller.alignSelected('right')}>
+              ⇥
+            </AlignButton>
             <Divider vertical className="mx-1 self-center" />
-            <AlignButton label="Distribute horizontally" onClick={() => controller.distributeSelected('h')}>⇹</AlignButton>
+            <AlignButton
+              label="Distribute horizontally"
+              onClick={() => controller.distributeSelected('h')}
+            >
+              ⇹
+            </AlignButton>
           </div>
           <FieldLabel className="mb-1.5">Vertical</FieldLabel>
           <div className="flex gap-1">
-            <AlignButton label="Align top" onClick={() => controller.alignSelected('top')}>⤒</AlignButton>
-            <AlignButton label="Align middle" onClick={() => controller.alignSelected('vcentre')}>⇕</AlignButton>
-            <AlignButton label="Align bottom" onClick={() => controller.alignSelected('bottom')}>⤓</AlignButton>
+            <AlignButton label="Align top" onClick={() => controller.alignSelected('top')}>
+              ⤒
+            </AlignButton>
+            <AlignButton label="Align middle" onClick={() => controller.alignSelected('vcentre')}>
+              ⇕
+            </AlignButton>
+            <AlignButton label="Align bottom" onClick={() => controller.alignSelected('bottom')}>
+              ⤓
+            </AlignButton>
             <Divider vertical className="mx-1 self-center" />
-            <AlignButton label="Distribute vertically" onClick={() => controller.distributeSelected('v')}>⇳</AlignButton>
+            <AlignButton
+              label="Distribute vertically"
+              onClick={() => controller.distributeSelected('v')}
+            >
+              ⇳
+            </AlignButton>
           </div>
           {objects.length < 3 && (
             <div className="mt-2 text-2xs text-ink-400">Distribute needs 3 or more devices.</div>
@@ -353,8 +470,17 @@ function MultiProperties({ objects, controller, sections, toggleSection }) {
 
       <Section title="Actions" open={sections.actions} onToggle={() => toggleSection('actions')}>
         <div className="flex gap-1.5 px-3">
-          <Button size="sm" className="flex-1" onClick={() => controller.duplicateSelected()}>Duplicate</Button>
-          <Button size="sm" variant="danger" className="flex-1" onClick={() => controller.deleteSelected()}>Delete</Button>
+          <Button size="sm" className="flex-1" onClick={() => controller.duplicateSelected()}>
+            Duplicate
+          </Button>
+          <Button
+            size="sm"
+            variant="danger"
+            className="flex-1"
+            onClick={() => controller.deleteSelected()}
+          >
+            Delete
+          </Button>
         </div>
       </Section>
     </>
@@ -376,8 +502,8 @@ function ToolContext({ controller }) {
           </div>
         </div>
         <div className="mt-3 rounded-md bg-ink-50 px-2.5 py-2 text-2xs leading-relaxed text-ink-500">
-          Hold <span className="font-semibold text-ink-700">Shift</span> while clicking to place several in a row.
-          Press <span className="font-semibold text-ink-700">Esc</span> to stop.
+          Hold <span className="font-semibold text-ink-700">Shift</span> while clicking to place
+          several in a row. Press <span className="font-semibold text-ink-700">Esc</span> to stop.
         </div>
       </div>
     );
@@ -387,18 +513,26 @@ function ToolContext({ controller }) {
     const calibrating = controller.tool === 'calibrate';
     return (
       <div className="px-3 py-3">
-        <div className="text-sm font-semibold text-ink-800">{calibrating ? 'Calibrate scale' : 'Measure'}</div>
+        <div className="text-sm font-semibold text-ink-800">
+          {calibrating ? 'Calibrate scale' : 'Measure'}
+        </div>
         <div className="mt-1 text-2xs leading-relaxed text-ink-400">
           {!m
-            ? (calibrating ? 'Click one end of a length you know.' : 'Click the first point.')
+            ? calibrating
+              ? 'Click one end of a length you know.'
+              : 'Click the first point.'
             : !m.b
-              ? (calibrating ? 'Click the other end.' : 'Click the second point.')
-              : (calibrating ? 'Enter the real length.' : 'Click to start a new measurement.')}
+              ? calibrating
+                ? 'Click the other end.'
+                : 'Click the second point.'
+              : calibrating
+                ? 'Enter the real length.'
+                : 'Click to start a new measurement.'}
         </div>
         {calibrating && (
           <div className="mt-3 rounded-md bg-ink-50 px-2.5 py-2 text-2xs leading-relaxed text-ink-500">
-            Pick something you can verify — a door opening, a room wall, or a
-            dimension printed on the plan.
+            Pick something you can verify — a door opening, a room wall, or a dimension printed on
+            the plan.
           </div>
         )}
       </div>
@@ -415,7 +549,8 @@ function ToolContext({ controller }) {
  */
 export function inspectorTitle(controller) {
   const n = controller.selectedIds.size;
-  if ((controller.tool === 'place' && controller.activeSymbolId) || controller.tool === 'measure') return 'Tool';
+  if ((controller.tool === 'place' && controller.activeSymbolId) || controller.tool === 'measure')
+    return 'Tool';
   if (n > 1) return 'Selection';
   if (n === 1) return 'Device';
   return 'Drawing';
@@ -423,7 +558,8 @@ export function inspectorTitle(controller) {
 
 export function Inspector({ doc, controller, sections, toggleSection, onImportPlan, onCalibrate }) {
   const selected = controller.selectedObjects();
-  const toolCtx = (controller.tool === 'place' && controller.activeSymbolId) || controller.tool === 'measure';
+  const toolCtx =
+    (controller.tool === 'place' && controller.activeSymbolId) || controller.tool === 'measure';
 
   return (
     <div className="flex h-full flex-col">
@@ -431,15 +567,30 @@ export function Inspector({ doc, controller, sections, toggleSection, onImportPl
         {toolCtx && <ToolContext controller={controller} />}
         {!toolCtx && selected.length === 0 && (
           <DrawingProperties
-            doc={doc} controller={controller} sections={sections} toggleSection={toggleSection}
-            onImportPlan={onImportPlan} onCalibrate={onCalibrate}
+            doc={doc}
+            controller={controller}
+            sections={sections}
+            toggleSection={toggleSection}
+            onImportPlan={onImportPlan}
+            onCalibrate={onCalibrate}
           />
         )}
         {!toolCtx && selected.length === 1 && (
-          <DeviceProperties obj={selected[0]} doc={doc} controller={controller} sections={sections} toggleSection={toggleSection} />
+          <DeviceProperties
+            obj={selected[0]}
+            doc={doc}
+            controller={controller}
+            sections={sections}
+            toggleSection={toggleSection}
+          />
         )}
         {!toolCtx && selected.length > 1 && (
-          <MultiProperties objects={selected} controller={controller} sections={sections} toggleSection={toggleSection} />
+          <MultiProperties
+            objects={selected}
+            controller={controller}
+            sections={sections}
+            toggleSection={toggleSection}
+          />
         )}
       </div>
     </div>

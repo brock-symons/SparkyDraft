@@ -28,7 +28,11 @@ export const SaveState = {
 };
 
 function safeParse(raw, fallback) {
-  try { return raw ? JSON.parse(raw) : fallback; } catch (e) { return fallback; }
+  try {
+    return raw ? JSON.parse(raw) : fallback;
+  } catch (e) {
+    return fallback;
+  }
 }
 
 export function newProjectId() {
@@ -46,7 +50,7 @@ export function listProjects() {
       id: key.slice(PREFIX.length),
       name: data.name || 'Untitled project',
       updatedAt: data.updatedAt || 0,
-      deviceCount: (data.drawing && data.drawing.objects ? data.drawing.objects.length : 0),
+      deviceCount: data.drawing && data.drawing.objects ? data.drawing.objects.length : 0,
     });
   }
   out.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
@@ -73,15 +77,23 @@ export function saveProject(id, drawing) {
     localStorage.setItem(PREFIX + id, JSON.stringify(record));
     return { ok: true, record };
   } catch (e) {
-    return { ok: false, error: e && e.name === 'QuotaExceededError'
-      ? 'Storage is full — free up space or delete an old project.'
-      : 'Could not save to this browser’s storage.' };
+    return {
+      ok: false,
+      error:
+        e && e.name === 'QuotaExceededError'
+          ? 'Storage is full — free up space or delete an old project.'
+          : 'Could not save to this browser’s storage.',
+    };
   }
 }
 
 export function deleteProject(id) {
-  try { localStorage.removeItem(PREFIX + id); return { ok: true }; }
-  catch (e) { return { ok: false, error: 'Could not delete.' }; }
+  try {
+    localStorage.removeItem(PREFIX + id);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: 'Could not delete.' };
+  }
 }
 
 /**
@@ -98,5 +110,9 @@ export function loadWorkspaceUI() {
 }
 
 export function saveWorkspaceUI(ui) {
-  try { localStorage.setItem(UI_KEY, JSON.stringify(ui)); } catch (e) { /* non-critical */ }
+  try {
+    localStorage.setItem(UI_KEY, JSON.stringify(ui));
+  } catch (e) {
+    /* non-critical */
+  }
 }

@@ -24,10 +24,20 @@ export function CommandPalette({ open, onClose, registry, ctx }) {
     [open, query, registry, ctx]
   );
 
-  useEffect(() => { if (open) { setQuery(''); setIndex(0); } }, [open]);
-  useEffect(() => { setIndex(0); }, [query]);
   useEffect(() => {
-    if (open) { const t = setTimeout(() => inputRef.current && inputRef.current.focus(), 10); return () => clearTimeout(t); }
+    if (open) {
+      setQuery('');
+      setIndex(0);
+    }
+  }, [open]);
+  useEffect(() => {
+    setIndex(0);
+  }, [query]);
+  useEffect(() => {
+    if (open) {
+      const t = setTimeout(() => inputRef.current && inputRef.current.focus(), 10);
+      return () => clearTimeout(t);
+    }
   }, [open]);
 
   // Escape at the document level, not just on the input. Focus can drift
@@ -36,7 +46,11 @@ export function CommandPalette({ open, onClose, registry, ctx }) {
   useEffect(() => {
     if (!open) return;
     const onKey = e => {
-      if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); onClose(); }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        onClose();
+      }
     };
     document.addEventListener('keydown', onKey, true);
     return () => document.removeEventListener('keydown', onKey, true);
@@ -62,17 +76,29 @@ export function CommandPalette({ open, onClose, registry, ctx }) {
   }
 
   function onKeyDown(e) {
-    if (e.key === 'ArrowDown') { e.preventDefault(); setIndex(i => Math.min(i + 1, results.length - 1)); }
-    else if (e.key === 'ArrowUp') { e.preventDefault(); setIndex(i => Math.max(i - 1, 0)); }
-    else if (e.key === 'Enter') { e.preventDefault(); runAt(index); }
-    else if (e.key === 'Escape') { e.preventDefault(); onClose(); }
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setIndex(i => Math.min(i + 1, results.length - 1));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setIndex(i => Math.max(i - 1, 0));
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      runAt(index);
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      onClose();
+    }
   }
 
   // Group headings, preserving the ranked order search returned.
   const grouped = [];
   let lastGroup = null;
   results.forEach((cmd, i) => {
-    if (cmd.group !== lastGroup) { grouped.push({ type: 'group', label: cmd.group }); lastGroup = cmd.group; }
+    if (cmd.group !== lastGroup) {
+      grouped.push({ type: 'group', label: cmd.group });
+      lastGroup = cmd.group;
+    }
     grouped.push({ type: 'cmd', cmd, i });
   });
 
@@ -96,7 +122,9 @@ export function CommandPalette({ open, onClose, registry, ctx }) {
             aria-label="Search commands"
             className="h-11 flex-1 bg-transparent text-base text-ink-800 outline-none placeholder:text-ink-400"
           />
-          <kbd className="rounded border border-ink-200 px-1.5 py-0.5 text-2xs text-ink-400">Esc</kbd>
+          <kbd className="rounded border border-ink-200 px-1.5 py-0.5 text-2xs text-ink-400">
+            Esc
+          </kbd>
         </div>
 
         <div ref={listRef} className="max-h-[52vh] overflow-y-auto py-1.5">
@@ -105,7 +133,10 @@ export function CommandPalette({ open, onClose, registry, ctx }) {
           )}
           {grouped.map((row, k) =>
             row.type === 'group' ? (
-              <div key={'g' + k} className="px-3 pb-1 pt-2 text-2xs font-semibold uppercase tracking-wide text-ink-400">
+              <div
+                key={'g' + k}
+                className="px-3 pb-1 pt-2 text-2xs font-semibold uppercase tracking-wide text-ink-400"
+              >
                 {row.label}
               </div>
             ) : (
@@ -120,7 +151,12 @@ export function CommandPalette({ open, onClose, registry, ctx }) {
                 )}
               >
                 <span className="w-4 shrink-0 text-center text-ink-400">{row.cmd.icon || '·'}</span>
-                <span className={cx('flex-1 truncate text-sm', row.cmd.danger ? 'text-red-600' : 'text-ink-700')}>
+                <span
+                  className={cx(
+                    'flex-1 truncate text-sm',
+                    row.cmd.danger ? 'text-red-600' : 'text-ink-700'
+                  )}
+                >
                   {row.cmd.title}
                 </span>
                 {row.cmd.shortcut && <Kbd>{formatShortcut(row.cmd.shortcut)}</Kbd>}

@@ -68,7 +68,9 @@ export function createDocument(initial) {
   }
 
   /** Ends a coalescing run, so the next same-labelled edit starts a new undo step. */
-  function endCoalesce() { lastLabel = null; }
+  function endCoalesce() {
+    lastLabel = null;
+  }
 
   function undo() {
     if (!past.length) return false;
@@ -105,17 +107,31 @@ export function createDocument(initial) {
   }
 
   return {
-    get state() { return state; },
-    get canUndo() { return past.length > 0; },
-    get canRedo() { return future.length > 0; },
-    get isDirty() { return dirty; },
-    markSaved() { dirty = false; emit({ type: 'saved' }); },
+    get state() {
+      return state;
+    },
+    get canUndo() {
+      return past.length > 0;
+    },
+    get canRedo() {
+      return future.length > 0;
+    },
+    get isDirty() {
+      return dirty;
+    },
+    markSaved() {
+      dirty = false;
+      emit({ type: 'saved' });
+    },
     commit,
     endCoalesce,
     undo,
     redo,
     load,
-    subscribe(fn) { listeners.add(fn); return () => listeners.delete(fn); },
+    subscribe(fn) {
+      listeners.add(fn);
+      return () => listeners.delete(fn);
+    },
   };
 }
 
@@ -158,15 +174,15 @@ export function makeFloor(name) {
   return {
     id: localId('FL'),
     name,
-    planImage: null,      // { src, width, height, x, y, scale, opacity }
-    scale: null,          // mm per world unit; null = uncalibrated
+    planImage: null, // { src, width, height, x, y, scale, opacity }
+    scale: null, // mm per world unit; null = uncalibrated
     objects: [],
-    cables: [],           // cable routes (Phase 1)
-    dimensions: [],       // persistent dimension annotations (Phase 1)
-    switchLinks: [],      // switch → lights (Phase 2)
+    cables: [], // cable routes (Phase 1)
+    dimensions: [], // persistent dimension annotations (Phase 1)
+    switchLinks: [], // switch → lights (Phase 2)
     walls: [],
-    rooms: [],            // (Phase 1)
-    bankNames: {},        // 'switchId::group' → display name (Phase 2)
+    rooms: [], // (Phase 1)
+    bankNames: {}, // 'switchId::group' → display name (Phase 2)
     view: { zoom: 1, offsetX: 0, offsetY: 0 },
     gridSpacingMM: 100,
     snapEnabled: true,
@@ -189,19 +205,19 @@ export function emptyProject() {
     // again. Empty until their phase lands.
     civilPlans: [],
     activeCivilPlanIndex: 0,
-    activePlanType: 'floor',   // 'floor' | 'civil'
-    circuits: [],              // Phase 3 — project-level, spans floors
-    elevations: [],            // Phase 8
-    customSymbols: [],         // Phase 1
-    boardMainSwitchAmps: {},   // Phase 4
-    unassignedCommsPorts: [],  // Phase 5
+    activePlanType: 'floor', // 'floor' | 'civil'
+    circuits: [], // Phase 3 — project-level, spans floors
+    elevations: [], // Phase 8
+    customSymbols: [], // Phase 1
+    boardMainSwitchAmps: {}, // Phase 4
+    unassignedCommsPorts: [], // Phase 5
 
     // Project-level layer state (production keeps this outside floors so
     // hiding Power hides it on every floor at once).
     hiddenLayers: [],
     lockedLayers: [],
 
-    nextId: 1,                 // shared object-id counter across floors
+    nextId: 1, // shared object-id counter across floors
   };
 }
 
@@ -227,7 +243,7 @@ export function allObjects(project) {
  * shared for testing and those local saves should not be orphaned.
  */
 export function migrateFlatDrawing(data) {
-  if (!data || Array.isArray(data.floors)) return data;   // already a project
+  if (!data || Array.isArray(data.floors)) return data; // already a project
   const project = emptyProject();
   const floor = project.floors[0];
   project.name = data.name || 'Untitled project';

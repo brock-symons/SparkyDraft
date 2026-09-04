@@ -23,13 +23,31 @@ function itemsFor(ctx, onDevice) {
   const many = ctx.controller.selectedIds.size > 1;
   if (onDevice) {
     return many
-      ? ['edit.duplicate', 'view.zoomSelection', SEP,
-         'arrange.alignLeft', 'arrange.alignRight', 'arrange.alignTop', 'arrange.alignBottom', SEP,
-         'arrange.distributeH', 'arrange.distributeV', SEP,
-         'edit.delete']
+      ? [
+          'edit.duplicate',
+          'view.zoomSelection',
+          SEP,
+          'arrange.alignLeft',
+          'arrange.alignRight',
+          'arrange.alignTop',
+          'arrange.alignBottom',
+          SEP,
+          'arrange.distributeH',
+          'arrange.distributeV',
+          SEP,
+          'edit.delete',
+        ]
       : ['edit.duplicate', 'view.zoomSelection', SEP, 'edit.delete'];
   }
-  return ['edit.selectAll', 'view.fit', SEP, 'view.toggleSnap', SEP, 'plan.import', 'tool.calibrate'];
+  return [
+    'edit.selectAll',
+    'view.fit',
+    SEP,
+    'view.toggleSnap',
+    SEP,
+    'plan.import',
+    'tool.calibrate',
+  ];
 }
 
 export function CanvasContextMenu({ menu, onClose, registry, ctx }) {
@@ -51,8 +69,15 @@ export function CanvasContextMenu({ menu, onClose, registry, ctx }) {
 
   useEffect(() => {
     if (!menu) return;
-    const close = e => { if (!ref.current || !ref.current.contains(e.target)) onClose(); };
-    const onKey = e => { if (e.key === 'Escape') { e.stopPropagation(); onClose(); } };
+    const close = e => {
+      if (!ref.current || !ref.current.contains(e.target)) onClose();
+    };
+    const onKey = e => {
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        onClose();
+      }
+    };
     document.addEventListener('pointerdown', close, true);
     document.addEventListener('keydown', onKey, true);
     window.addEventListener('blur', onClose);
@@ -67,11 +92,17 @@ export function CanvasContextMenu({ menu, onClose, registry, ctx }) {
 
   const ids = itemsFor(ctx, menu.onDevice);
   const rows = [];
-  let lastWasSep = true;                       // suppress a leading separator
+  let lastWasSep = true; // suppress a leading separator
   for (const id of ids) {
-    if (id === SEP) { if (!lastWasSep) { rows.push({ sep: true, key: 's' + rows.length }); lastWasSep = true; } continue; }
+    if (id === SEP) {
+      if (!lastWasSep) {
+        rows.push({ sep: true, key: 's' + rows.length });
+        lastWasSep = true;
+      }
+      continue;
+    }
     const cmd = registry.get(id);
-    if (!cmd || !cmd.when(ctx)) continue;      // unavailable commands are omitted, not greyed
+    if (!cmd || !cmd.when(ctx)) continue; // unavailable commands are omitted, not greyed
     rows.push({ cmd, key: id });
     lastWasSep = false;
   }
@@ -92,7 +123,10 @@ export function CanvasContextMenu({ menu, onClose, registry, ctx }) {
           <button
             key={row.key}
             role="menuitem"
-            onClick={() => { onClose(); requestAnimationFrame(() => registry.run(row.cmd.id, ctx)); }}
+            onClick={() => {
+              onClose();
+              requestAnimationFrame(() => registry.run(row.cmd.id, ctx));
+            }}
             className={cx(
               'flex w-full items-center gap-2.5 px-3 py-1.5 text-left text-sm transition-colors',
               row.cmd.danger ? 'text-red-600 hover:bg-red-50' : 'text-ink-700 hover:bg-ink-50'

@@ -24,7 +24,15 @@
 // finger selects rather than nudging a device 2 mm across the plan.
 // ===================================================================
 
-import { screenToWorld, hitTestObjects, objectsInRect, boundsOf, zoomAt, gridWorldUnits, DEVICE_R } from './geometry.js';
+import {
+  screenToWorld,
+  hitTestObjects,
+  objectsInRect,
+  boundsOf,
+  zoomAt,
+  gridWorldUnits,
+  DEVICE_R,
+} from './geometry.js';
 import { snapPoint } from './snapping.js';
 import { currentFloor } from './document.js';
 
@@ -43,17 +51,23 @@ export function createController({ doc, getView, setView, getViewport, onChange,
   let spaceHeld = false;
   let cursorWorld = null;
 
-  let gesture = null;   // active pointer gesture
-  const pointers = new Map();  // pointerId -> {x,y} for multi-touch
+  let gesture = null; // active pointer gesture
+  const pointers = new Map(); // pointerId -> {x,y} for multi-touch
 
-  function notify() { onChange && onChange(); }
+  function notify() {
+    onChange && onChange();
+  }
 
   // The document is a PROJECT; drafting happens on its active floor.
   // Layer visibility/lock is project-level (hiding Power hides it on
   // every floor), so the two accessors are kept distinct rather than
   // collapsed into one "drawing".
-  function project() { return doc.state; }
-  function floor() { return currentFloor(doc.state); }
+  function project() {
+    return doc.state;
+  }
+  function floor() {
+    return currentFloor(doc.state);
+  }
 
   function isLayerHidden(layerId) {
     return (project().hiddenLayers || []).includes(layerId);
@@ -70,7 +84,9 @@ export function createController({ doc, getView, setView, getViewport, onChange,
   // layers can be seen but not grabbed. Both the renderer and hit-testing
   // read the same predicate so what you see is what you can click (§8).
   let symbolFor = () => null;
-  function setSymbolResolver(fn) { symbolFor = fn; }
+  function setSymbolResolver(fn) {
+    symbolFor = fn;
+  }
 
   function visible(obj) {
     const cat = symbolCategoryOf(obj, symbolFor);
@@ -117,7 +133,10 @@ export function createController({ doc, getView, setView, getViewport, onChange,
 
   function setTool(next) {
     tool = next;
-    if (next !== 'place') { activeSymbolId = null; ghost = null; }
+    if (next !== 'place') {
+      activeSymbolId = null;
+      ghost = null;
+    }
     if (next !== 'measure' && next !== 'calibrate') measure = null;
     notify();
   }
@@ -130,10 +149,20 @@ export function createController({ doc, getView, setView, getViewport, onChange,
 
   // --- selection ------------------------------------------------------
 
-  function select(ids) { selectedIds = new Set(ids); notify(); }
-  function clearSelection() { selectedIds = new Set(); notify(); }
+  function select(ids) {
+    selectedIds = new Set(ids);
+    notify();
+  }
+  function clearSelection() {
+    selectedIds = new Set();
+    notify();
+  }
   function selectAll() {
-    selectedIds = new Set(floor().objects.filter(selectable).map(o => o.id));
+    selectedIds = new Set(
+      floor()
+        .objects.filter(selectable)
+        .map(o => o.id)
+    );
     notify();
   }
 
@@ -149,7 +178,10 @@ export function createController({ doc, getView, setView, getViewport, onChange,
       const f = currentFloor(d);
       newId = d.nextId++;
       f.objects.push({
-        id: newId, symbolId, x: world.x, y: world.y,
+        id: newId,
+        symbolId,
+        x: world.x,
+        y: world.y,
         props: {},
       });
     });
@@ -176,8 +208,17 @@ export function createController({ doc, getView, setView, getViewport, onChange,
       const step = gridWorldUnits(f);
       const copies = f.objects
         .filter(o => selectedIds.has(o.id))
-        .map(o => ({ ...o, props: { ...(o.props || {}) }, id: d.nextId++, x: o.x + step, y: o.y + step }));
-      copies.forEach(c => { f.objects.push(c); created.push(c.id); });
+        .map(o => ({
+          ...o,
+          props: { ...(o.props || {}) },
+          id: d.nextId++,
+          x: o.x + step,
+          y: o.y + step,
+        }));
+      copies.forEach(c => {
+        f.objects.push(c);
+        created.push(c.id);
+      });
     });
     selectedIds = new Set(created);
     notify();
@@ -186,9 +227,17 @@ export function createController({ doc, getView, setView, getViewport, onChange,
 
   function nudgeSelected(dx, dy) {
     if (!selectedIds.size) return false;
-    doc.commit('Move device', d => {
-      for (const o of currentFloor(d).objects) if (selectedIds.has(o.id)) { o.x += dx; o.y += dy; }
-    }, { coalesce: true });
+    doc.commit(
+      'Move device',
+      d => {
+        for (const o of currentFloor(d).objects)
+          if (selectedIds.has(o.id)) {
+            o.x += dx;
+            o.y += dy;
+          }
+      },
+      { coalesce: true }
+    );
     notify();
     return true;
   }
@@ -239,9 +288,12 @@ export function createController({ doc, getView, setView, getViewport, onChange,
       const sel = currentFloor(d).objects.filter(o => selectedIds.has(o.id));
       const key = axis === 'h' ? 'x' : 'y';
       sel.sort((a, b) => a[key] - b[key]);
-      const first = sel[0][key], last = sel[sel.length - 1][key];
+      const first = sel[0][key],
+        last = sel[sel.length - 1][key];
       const step = (last - first) / (sel.length - 1);
-      sel.forEach((o, i) => { o[key] = first + step * i; });
+      sel.forEach((o, i) => {
+        o[key] = first + step * i;
+      });
     });
     notify();
     return true;
@@ -288,7 +340,11 @@ export function createController({ doc, getView, setView, getViewport, onChange,
       // Shift keeps placing (matches the production app's Shift-to-repeat
       // behaviour), otherwise drop back to Select so the thing just placed
       // can be adjusted immediately — the common next action.
-      if (!e.shiftKey) { tool = 'select'; activeSymbolId = null; ghost = null; }
+      if (!e.shiftKey) {
+        tool = 'select';
+        activeSymbolId = null;
+        ghost = null;
+      }
       notify();
       return;
     }
@@ -324,7 +380,8 @@ export function createController({ doc, getView, setView, getViewport, onChange,
       const moving = floor().objects.filter(o => selectedIds.has(o.id));
       gesture = {
         type: 'maybe-move',
-        startX: e.clientX, startY: e.clientY,
+        startX: e.clientX,
+        startY: e.clientY,
         anchorId: hit.id,
         offsets: moving.map(o => ({ id: o.id, dx: o.x - world.x, dy: o.y - world.y })),
       };
@@ -337,7 +394,13 @@ export function createController({ doc, getView, setView, getViewport, onChange,
       gesture = { type: 'pan', startX: e.clientX, startY: e.clientY, startView: { ...getView() } };
     } else {
       if (!e.shiftKey) selectedIds = new Set();
-      gesture = { type: 'maybe-marquee', startX: e.clientX, startY: e.clientY, startWorld: world, additive: e.shiftKey };
+      gesture = {
+        type: 'maybe-marquee',
+        startX: e.clientX,
+        startY: e.clientY,
+        startWorld: world,
+        additive: e.shiftKey,
+      };
     }
     notify();
   }
@@ -370,13 +433,17 @@ export function createController({ doc, getView, setView, getViewport, onChange,
       const nextHover = hit ? hit.id : null;
       if (tool === 'place' && activeSymbolId) {
         const s = computeSnap(world, null);
-        ghost = s.point; snap = s;
+        ghost = s.point;
+        snap = s;
       } else if ((tool === 'measure' || tool === 'calibrate') && measure && !measure.b) {
         snap = computeSnap(world, null);
       } else {
         snap = null;
       }
-      if (nextHover !== hoverId || ghost || snap) { hoverId = nextHover; notify(); }
+      if (nextHover !== hoverId || ghost || snap) {
+        hoverId = nextHover;
+        notify();
+      }
       return;
     }
 
@@ -409,22 +476,30 @@ export function createController({ doc, getView, setView, getViewport, onChange,
       snap = s;
       const shiftX = s.point.x - anchorTarget.x;
       const shiftY = s.point.y - anchorTarget.y;
-      doc.commit('Move device', d => {
-        for (const off of gesture.offsets) {
-          const o = currentFloor(d).objects.find(ob => ob.id === off.id);
-          if (!o) continue;
-          let nx = world.x + off.dx + shiftX;
-          let ny = world.y + off.dy + shiftY;
-          // Shift constrains to one axis — standard CAD modifier (§6).
-          if (e.shiftKey) {
-            const start = gesture.offsets.find(x => x.id === off.id);
-            const originX = world.x + start.dx, originY = world.y + start.dy;
-            if (Math.abs(dx) > Math.abs(dy)) ny = o.y; else nx = o.x;
-            void originX; void originY;
+      doc.commit(
+        'Move device',
+        d => {
+          for (const off of gesture.offsets) {
+            const o = currentFloor(d).objects.find(ob => ob.id === off.id);
+            if (!o) continue;
+            let nx = world.x + off.dx + shiftX;
+            let ny = world.y + off.dy + shiftY;
+            // Shift constrains to one axis — standard CAD modifier (§6).
+            if (e.shiftKey) {
+              const start = gesture.offsets.find(x => x.id === off.id);
+              const originX = world.x + start.dx,
+                originY = world.y + start.dy;
+              if (Math.abs(dx) > Math.abs(dy)) ny = o.y;
+              else nx = o.x;
+              void originX;
+              void originY;
+            }
+            o.x = nx;
+            o.y = ny;
           }
-          o.x = nx; o.y = ny;
-        }
-      }, { coalesce: true });
+        },
+        { coalesce: true }
+      );
       notify();
       return;
     }
@@ -482,7 +557,10 @@ export function createController({ doc, getView, setView, getViewport, onChange,
     notify();
   }
 
-  function setSpaceHeld(v) { spaceHeld = v; notify(); }
+  function setSpaceHeld(v) {
+    spaceHeld = v;
+    notify();
+  }
 
   function zoomBy(factor) {
     const vp = getViewport();
@@ -492,28 +570,71 @@ export function createController({ doc, getView, setView, getViewport, onChange,
 
   return {
     // state readers
-    get tool() { return tool; },
-    get activeSymbolId() { return activeSymbolId; },
-    get selectedIds() { return selectedIds; },
-    get hoverId() { return hoverId; },
-    get snap() { return snap; },
-    get marquee() { return marquee; },
-    get ghost() { return ghost; },
-    get measure() { return measure; },
-    get spaceHeld() { return spaceHeld; },
-    get cursorWorld() { return cursorWorld; },
-    get isPanning() { return !!gesture && gesture.type === 'pan'; },
-    selectedObjects, lockedIds, visible, selectable,
+    get tool() {
+      return tool;
+    },
+    get activeSymbolId() {
+      return activeSymbolId;
+    },
+    get selectedIds() {
+      return selectedIds;
+    },
+    get hoverId() {
+      return hoverId;
+    },
+    get snap() {
+      return snap;
+    },
+    get marquee() {
+      return marquee;
+    },
+    get ghost() {
+      return ghost;
+    },
+    get measure() {
+      return measure;
+    },
+    get spaceHeld() {
+      return spaceHeld;
+    },
+    get cursorWorld() {
+      return cursorWorld;
+    },
+    get isPanning() {
+      return !!gesture && gesture.type === 'pan';
+    },
+    selectedObjects,
+    lockedIds,
+    visible,
+    selectable,
 
     // actions
-    setSymbolResolver, setTool, setActiveSymbol,
-    select, clearSelection, selectAll,
-    placeAt, deleteSelected, duplicateSelected, nudgeSelected,
-    setObjectPosition, setObjectProps,
-    alignSelected, distributeSelected,
-    clearMeasure() { measure = null; notify(); },
+    setSymbolResolver,
+    setTool,
+    setActiveSymbol,
+    select,
+    clearSelection,
+    selectAll,
+    placeAt,
+    deleteSelected,
+    duplicateSelected,
+    nudgeSelected,
+    setObjectPosition,
+    setObjectProps,
+    alignSelected,
+    distributeSelected,
+    clearMeasure() {
+      measure = null;
+      notify();
+    },
 
     // input
-    onPointerDown, onPointerMove, onPointerUp, onWheel, onContextMenu, setSpaceHeld, zoomBy,
+    onPointerDown,
+    onPointerMove,
+    onPointerUp,
+    onWheel,
+    onContextMenu,
+    setSpaceHeld,
+    zoomBy,
   };
 }

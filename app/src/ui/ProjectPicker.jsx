@@ -25,7 +25,11 @@ function relativeTime(ts) {
   if (hr < 24) return hr + ' hr ago';
   const days = Math.round(hr / 24);
   if (days < 7) return days + (days === 1 ? ' day ago' : ' days ago');
-  return new Date(ts).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+  return new Date(ts).toLocaleDateString(undefined, {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  });
 }
 
 export function ProjectPicker({ projects, onOpen, onCreate, onDelete, storageError }) {
@@ -46,7 +50,9 @@ export function ProjectPicker({ projects, onOpen, onCreate, onDelete, storageErr
           SparkyDraft
         </span>
         <div className="flex-1" />
-        <Button variant="primary" size="sm" onClick={onCreate}>New drawing</Button>
+        <Button variant="primary" size="sm" onClick={onCreate}>
+          New drawing
+        </Button>
       </header>
 
       <div className="mx-auto w-full max-w-3xl flex-1 overflow-y-auto px-4 py-6">
@@ -75,7 +81,11 @@ export function ProjectPicker({ projects, onOpen, onCreate, onDelete, storageErr
             icon="▦"
             title="No drawings yet"
             hint="Create a drawing to start placing devices on a plan."
-            action={<Button variant="primary" size="sm" onClick={onCreate}>New drawing</Button>}
+            action={
+              <Button variant="primary" size="sm" onClick={onCreate}>
+                New drawing
+              </Button>
+            }
           />
         ) : filtered.length === 0 ? (
           <EmptyState title="Nothing matches" hint={`No drawing named like “${query}”.`} />
@@ -93,11 +103,16 @@ export function ProjectPicker({ projects, onOpen, onCreate, onDelete, storageErr
                   onClick={() => onOpen(p.id)}
                   className={cx('flex min-w-0 flex-1 items-center gap-3 text-left', focusRing)}
                 >
-                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-ink-100 text-ink-400">▦</span>
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-ink-100 text-ink-400">
+                    ▦
+                  </span>
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm font-medium text-ink-800">{p.name || 'Untitled'}</span>
+                    <span className="block truncate text-sm font-medium text-ink-800">
+                      {p.name || 'Untitled'}
+                    </span>
                     <span className="block text-2xs text-ink-400">
-                      {p.deviceCount} device{p.deviceCount === 1 ? '' : 's'} · {relativeTime(p.updatedAt)}
+                      {p.deviceCount} device{p.deviceCount === 1 ? '' : 's'} ·{' '}
+                      {relativeTime(p.updatedAt)}
                     </span>
                   </span>
                 </button>
@@ -124,7 +139,10 @@ export function ProjectPicker({ projects, onOpen, onCreate, onDelete, storageErr
             <Button onClick={() => setConfirmDelete(null)}>Cancel</Button>
             <Button
               variant="danger"
-              onClick={() => { onDelete(confirmDelete.id); setConfirmDelete(null); }}
+              onClick={() => {
+                onDelete(confirmDelete.id);
+                setConfirmDelete(null);
+              }}
             >
               Delete
             </Button>
@@ -132,8 +150,9 @@ export function ProjectPicker({ projects, onOpen, onCreate, onDelete, storageErr
         }
       >
         <p className="text-sm leading-relaxed text-ink-600">
-          Delete <span className="font-medium text-ink-800">{confirmDelete && confirmDelete.name}</span> and
-          everything on it? This can’t be undone.
+          Delete{' '}
+          <span className="font-medium text-ink-800">{confirmDelete && confirmDelete.name}</span>{' '}
+          and everything on it? This can’t be undone.
         </p>
       </Dialog>
     </div>

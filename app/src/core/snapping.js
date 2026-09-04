@@ -18,7 +18,8 @@
 const TOL_PX = 14;
 
 function projectOntoSegment(p, a, b) {
-  const vx = b.x - a.x, vy = b.y - a.y;
+  const vx = b.x - a.x,
+    vy = b.y - a.y;
   const len2 = vx * vx + vy * vy;
   if (len2 === 0) return { x: a.x, y: a.y };
   let t = ((p.x - a.x) * vx + (p.y - a.y) * vy) / len2;
@@ -47,17 +48,21 @@ export function snapPoint(world, ctx) {
   const oy = ctx.gridOriginY || 0;
   const guides = [];
 
-  const usable = objects.filter(o =>
-    o.id !== ctx.excludeId && (!ctx.isSelectable || ctx.isSelectable(o))
+  const usable = objects.filter(
+    o => o.id !== ctx.excludeId && (!ctx.isSelectable || ctx.isSelectable(o))
   );
 
   // 1) Device centre — strongest. Snapping onto an existing device is
   //    almost always deliberate (stacking a switch under a GPO, etc.), so
   //    it wins outright and gets a slightly wider catch radius.
-  let bestCentre = null, bestCentreDist = tol * 1.25;
+  let bestCentre = null,
+    bestCentreDist = tol * 1.25;
   for (const o of usable) {
     const d = Math.hypot(o.x - world.x, o.y - world.y);
-    if (d < bestCentreDist) { bestCentreDist = d; bestCentre = o; }
+    if (d < bestCentreDist) {
+      bestCentreDist = d;
+      bestCentre = o;
+    }
   }
   if (bestCentre) {
     return {
@@ -73,11 +78,17 @@ export function snapPoint(world, ctx) {
 
   // 2) Wall projection — put the device on the wall line it is near.
   if (walls.length) {
-    let wallPoint = null, wallDist = tol * 1.6, nearWall = null;
+    let wallPoint = null,
+      wallDist = tol * 1.6,
+      nearWall = null;
     for (const w of walls) {
       const proj = projectOntoSegment(world, { x: w.x1, y: w.y1 }, { x: w.x2, y: w.y2 });
       const d = Math.hypot(proj.x - world.x, proj.y - world.y);
-      if (d < wallDist) { wallDist = d; wallPoint = proj; nearWall = w; }
+      if (d < wallDist) {
+        wallDist = d;
+        wallPoint = proj;
+        nearWall = w;
+      }
     }
     if (wallPoint) {
       const dx = Math.abs(nearWall.x2 - nearWall.x1);
@@ -93,7 +104,8 @@ export function snapPoint(world, ctx) {
   // 3) Axis-align to another device's centre, falling back to the grid
   //    per axis independently — so you can be grid-aligned horizontally
   //    while lining up vertically with an existing device.
-  let bestX = null, bestY = null;
+  let bestX = null,
+    bestY = null;
   for (const o of usable) {
     const dx = Math.abs(o.x - world.x);
     const dy = Math.abs(o.y - world.y);
@@ -102,7 +114,9 @@ export function snapPoint(world, ctx) {
   }
 
   const point = { x: world.x, y: world.y };
-  let alignedX = false, alignedY = false, grid = false;
+  let alignedX = false,
+    alignedY = false,
+    grid = false;
 
   if (bestX) {
     point.x = bestX.value;
