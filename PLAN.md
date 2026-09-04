@@ -12,9 +12,9 @@ versioned markdown next to the code.
 | | |
 |---|---|
 | Branch | `feature/cad-workspace-redesign` |
-| Status | Phases 0-7 complete · **stopped at the phase boundary, awaiting approval for Phase 8** |
+| Status | Phases 0-8 complete · **stopped at the phase boundary, awaiting approval for Phase 9** |
 | Merged to main | **No — and not without explicit owner review** |
-| Last updated | 2026-09-04 |
+| Last updated | 2026-09-05 |
 
 ---
 
@@ -26,9 +26,14 @@ undo/redo, layers, plan import + calibration, command registry driving
 palette/shortcuts/tooltips/context-menu, three responsive models, and as of
 Phase 0 a project-of-floors document model.
 
-**Not done:** the commercial, output and cloud halves of the product.
-Panel schedule, load/demand, quoting, comms, civil, elevations, print/PDF
-and all cloud/auth features remain.
+**Also done (Phases 2–8):** switch linking + lighting banks, circuits,
+panel schedule + load/demand, comms racks, quote + price list, civil/
+underground works, elevations + legend — each checked by a parity test
+against the live `index.html` (panel schedule, comms migration, quote,
+civil, and legend; 13,455 comparisons total, all matching).
+
+**Not done:** print/PDF export and the entire cloud half of the product
+(auth, Supabase sync, organisations, sharing).
 
 ---
 
@@ -181,8 +186,60 @@ missing import blanked the page twice in one session.
 - [x] **Parity check** — `app/test/civil-parity.mjs`, 4,955 comparisons
       against the live `index.html`, all matching.
 
-### Phase 8 — Elevations + legend
-**Blocked on an owner decision** — see open decisions below.
+### Phase 8 — Elevations + legend ✅ complete
+
+**The blocking owner decision resolved itself on inspection, not by
+judgment call.** Production's `#elevCanvas` has no pointer handlers at
+all — every item is added through a number-entry form (device, distance
+from the left edge in mm, installation height in mm), and the canvas
+only ever redraws a live preview of that data. No pan, no zoom, no
+snapping, nothing resembling the floor/civil drafting model. So it is
+not a third plan type; built as what it actually is: a report-style
+dialog (same shape as Quote/Panel Schedule/Civil Materials) with a live
+schematic preview. No navigation change, nothing §32 reserves for the
+owner. See MIGRATION_INVENTORY.md §I item 1.
+
+- [x] **Elevations** (`core/elevations.js`) — project-level named
+      elevations, each a labelled wall (width/height in mm) holding a
+      flat item list ({symbolId, x_mm, height_mm}). Add/select/rename/
+      delete elevation, add/delete item, all through `doc.commit` so
+      undo/redo and persistence come for free.
+- [x] **Live schematic preview** — `elevationLayout()`/
+      `elevationItemPoint()` port `drawElevation()`'s scale-to-fit math
+      verbatim; a small canvas component redraws on data change. Dark
+      background + filled-circle markers match the civil renderer's
+      visual language (same CAD convention, not app chrome), consistent
+      with production's own filled-circle + dark-abbreviation style.
+- [x] **Legend** (`core/legend.js`) — per-floor tally grouped by device
+      type and switch gang, patch panels derived from each floor's rack
+      ports, sorted exactly as production does (including the
+      category-vs-CATEGORY_ORDER quirk — preserved, not "fixed", since
+      changing it would reorder every legend a job has already printed).
+      Symbol lookup goes through the project-aware resolver rather than
+      SYMBOL_LIBRARY directly, matching the fix already applied to the
+      quote and panel schedule — production's own lookup silently drops
+      a custom fitting from the legend.
+- [x] **Show circuit/port IDs on plan** and **show switch/cable runs on
+      plan** toggles moved from palette-only commands to visible switches
+      in the Layers panel, directly above the legend — matching where
+      production keeps them, on the same sheet they annotate.
+- [x] **Parity check** — `app/test/legend-parity.mjs`, 350 comparisons
+      against the live `index.html` (every catalog symbol individually,
+      300 randomised floors, patch-panel derivation, unknown-symbol
+      handling), all matching. Run with
+      `node app/test/legend-parity.mjs`.
+
+Verified in the browser: elevation created and selected automatically,
+device item added and positioned correctly on the live preview (checked
+against the layout math by hand), a corrupted manual input degraded
+safely (item positioned off-canvas, no crash) rather than being
+silently clamped, delete/undo/redo round-tripping an entire elevation
+with its items, persistence through a full page reload, the two Layers
+toggles driving the existing `toggleCircuitLabels`/`toggleSwitchRuns`
+controller functions with visible effect on the canvas, and a full
+regression pass across Phases 1–7 (circuits, quote, panel schedule,
+comms racks, civil materials, civil plan switching) with zero new
+console errors.
 
 ### Phase 9 — Print / PDF / export
 Print view, jsPDF export, save-as-PDF dialog, civil pages toggle, JSON
@@ -225,8 +282,10 @@ Carried forward from the inventory. None block Phases 1–7.
    necessary and are behaviour-preserving against *production*, but
    CLAUDE.md's AI-authorship policy says document-model changes aren't an
    assistant's call to make unilaterally — flagging for confirmation.
-2. **Elevations' architecture** — separate view, or a third plan type
-   alongside floors/civil? Blocks Phase 8.
+2. **Elevations' architecture** — RESOLVED in Phase 8 by reading
+   production's own code rather than guessing: its elevation canvas has
+   no pointer interaction at all, so it isn't a plan type. Built as a
+   report-style dialog instead. See MIGRATION_INVENTORY.md §I item 1.
 3. **Panel schedule / quote as workspace "modes" vs sheets** — §13 raises
    modes; adopting them changes navigation, which §32 puts off-limits
    without approval.
@@ -258,17 +317,19 @@ Two deliberate exclusions, in `.prettierignore` with reasons:
 
 ## Running the parity tests
 
-Both compare the ported core against the LIVE `index.html`, extracting
-its functions by name at run time so they survive edits to that file:
+All five compare the ported core against the LIVE `index.html`,
+extracting its functions by name at run time so they survive edits to
+that file:
 
 ```bash
 node app/test/panel-schedule-parity.mjs
 node app/test/comms-migration-parity.mjs
 node app/test/quote-parity.mjs
 node app/test/civil-parity.mjs
+node app/test/legend-parity.mjs
 ```
 
-If either fails, the port has drifted from the product — fix the port,
+If any fails, the port has drifted from the product — fix the port,
 not the expectation.
 
 **To run Prettier again:** Node lives at `C:\Program Files\nodejs` but is not on

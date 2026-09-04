@@ -39,6 +39,8 @@ import {
   DIVERSITY_TYPE_LABELS,
   MAINS_VOLTAGE,
 } from './core/panelSchedule.js';
+import { activeElevation, elevationLayout, elevationItemPoint } from './core/elevations.js';
+import { PAINT } from './core/renderer.js';
 import {
   listProjects,
   loadProject,
@@ -155,6 +157,7 @@ function WorkspaceRoot({ projectId, onExit, pushToast }) {
   const [quoteOpen, setQuoteOpen] = useState(false);
   const [priceListOpen, setPriceListOpen] = useState(false);
   const [civilMaterialsOpen, setCivilMaterialsOpen] = useState(false);
+  const [elevationsOpen, setElevationsOpen] = useState(false);
   // { title, text } while a text export is on screen.
   const [exportText, setExportText] = useState(null);
 
@@ -930,6 +933,14 @@ function WorkspaceRoot({ projectId, onExit, pushToast }) {
         run: c => c.openPanelSchedule(),
       },
       {
+        id: 'report.elevations',
+        title: 'Elevations',
+        group: 'Reports',
+        icon: '▯',
+        keywords: 'elevation wall view height mounting schematic',
+        run: c => c.openElevations(),
+      },
+      {
         id: 'circuit.assign',
         title: 'Assign selection to a circuit',
         group: 'Circuits',
@@ -1079,6 +1090,7 @@ function WorkspaceRoot({ projectId, onExit, pushToast }) {
       openQuote: () => setQuoteOpen(true),
       openPriceList: () => setPriceListOpen(true),
       openCivilMaterials: () => setCivilMaterialsOpen(true),
+      openElevations: () => setElevationsOpen(true),
       pushToast,
     }),
     [
@@ -1202,7 +1214,7 @@ function WorkspaceRoot({ projectId, onExit, pushToast }) {
 
   const leftPanel =
     panels.left === 'layers' ? (
-      <LayersPanel doc={doc} counts={layerCounts} />
+      <LayersPanel doc={doc} controller={controller} counts={layerCounts} />
     ) : panels.left === 'library' ? (
       <LibraryPanel
         project={doc.state}
@@ -1374,6 +1386,15 @@ function WorkspaceRoot({ projectId, onExit, pushToast }) {
               text: panelScheduleText(doc.state, boards, doc.state.boardMainSwitchAmps),
             })
           }
+        />
+      )}
+      {elevationsOpen && (
+        <ElevationsDialog
+          doc={doc}
+          controller={controller}
+          symbolFor={symbolFor}
+          onClose={() => setElevationsOpen(false)}
+          pushToast={pushToast}
         />
       )}
       {exportText && (
@@ -1979,6 +2000,311 @@ function civilMaterialsText(project, plan, schedule, legend) {
   lines.push('Labour: ' + formatMoney(schedule.labourCost));
   lines.push('TOTAL: ' + formatMoney(schedule.total));
   return lines.join('\n');
+}
+
+/**
+ * Live schematic preview of one elevation — a labelled wall with its
+ * items drawn to scale. Ported from production's drawElevation():
+ * uniformly scaled to fit (never distorted), centred, sitting on the
+ * canvas floor with a fixed margin.
+ *
+ * Dark background and filled-circle device markers match the visual
+ * language the civil renderer already uses for the same reason
+ * production does — this is a schematic drafting view, the same CAD
+ * convention as the plan canvas, not app chrome. Not interactive: no
+ * pointer handlers, no zoom, no pan, mirroring production's #elevCanvas
+ * exactly — items are only ever added through the form below.
+ */
+function ElevationCanvas({ elev }) {
+  const canvasRef = useRef(null);
+  const wrapRef = useRef(null);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const wrap = wrapRef.current;
+    if (!canvas || !wrap) return;
+    const cssW = wrap.clientWidth || 300;
+    const cssH = 180;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width = Math.max(1, Math.round(cssW * dpr));
+    canvas.height = Math.max(1, Math.round(cssH * dpr));
+    canvas.style.width = cssW + 'px';
+    canvas.style.height = cssH + 'px';
+    const ctx = canvas.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.fillStyle = PAINT.bg;
+    ctx.fillRect(0, 0, cssW, cssH);
+    if (!elev) return;
+
+    const layout = elevationLayout(elev, cssW, cssH, 20);
+    ctx.strokeStyle = '#7d8fa3';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(layout.originX, layout.originY, layout.wallW, layout.wallH);
+
+    elev.items.forEach(item => {
+      const sym = SYMBOL_LIBRARY.find(s => s.id === item.symbolId);
+      if (!sym) return;
+      const p = elevationItemPoint(item, layout);
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, 10, 0, Math.PI * 2);
+      ctx.fillStyle = sym.color;
+      ctx.fill();
+      ctx.fillStyle = PAINT.bg;
+      ctx.font = 'bold 9px ui-monospace, SFMono-Regular, Menlo, monospace';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(sym.abbr, p.x, p.y);
+    });
+
+    ctx.fillStyle = '#7d8fa3';
+    ctx.font = '10px ui-monospace, SFMono-Regular, Menlo, monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText(elev.width_mm + 'mm wide, ' + elev.height_mm + 'mm high', cssW / 2, 14);
+  }, [elev]);
+
+  return (
+    <div ref={wrapRef} className="w-full overflow-hidden rounded-md border border-ink-200">
+      <canvas ref={canvasRef} />
+    </div>
+  );
+}
+
+/**
+ * Elevations — see core/elevations.js for why this is a report-style
+ * dialog rather than a drafting plan: production's own elevation canvas
+ * has no pointer interaction at all, only a number-entry form and a live
+ * preview. One dialog covers the whole feature, matching that shape:
+ * pick or manage the elevation on the left, its item list and add-item
+ * form on the right, live preview above the list.
+ */
+function ElevationsDialog({ doc, controller, symbolFor, onClose, pushToast }) {
+  const project = doc.state;
+  const elevations = project.elevations || [];
+  const elev = activeElevation(project);
+  const syms = useMemo(() => allSymbols(project), [project]);
+
+  const [newOpen, setNewOpen] = useState(false);
+  const [newName, setNewName] = useState('');
+  const [newWidth, setNewWidth] = useState(4200);
+  const [newHeight, setNewHeight] = useState(2400);
+
+  const [itemSymbolId, setItemSymbolId] = useState(syms[0] ? syms[0].id : '');
+  const [itemX, setItemX] = useState('');
+  const [itemHeight, setItemHeight] = useState(1200);
+
+  function createElevation(e) {
+    e && e.preventDefault();
+    const width = parseFloat(newWidth);
+    const height = parseFloat(newHeight);
+    if (!newName.trim() || !(width > 0) || !(height > 0)) {
+      pushToast('Fill in a name, width and height', 'error');
+      return;
+    }
+    controller.addElevation(newName.trim(), width, height);
+    setNewName('');
+    setNewOpen(false);
+  }
+
+  function addItem(e) {
+    e && e.preventDefault();
+    if (!elev) return;
+    const x = parseFloat(itemX);
+    const h = parseFloat(itemHeight);
+    if (!itemSymbolId || isNaN(x) || isNaN(h)) {
+      pushToast('Enter valid numbers', 'error');
+      return;
+    }
+    controller.addElevationItem(elev.id, itemSymbolId, x, h);
+    setItemX('');
+  }
+
+  return (
+    <Dialog
+      open
+      onClose={onClose}
+      title="Elevations"
+      width="max-w-2xl"
+      footer={
+        <>
+          <div className="flex-1" />
+          <Button variant="primary" onClick={onClose}>
+            Done
+          </Button>
+        </>
+      }
+    >
+      <div className="max-h-[70vh] overflow-y-auto pr-1">
+        <div className="mb-3 flex items-center gap-2">
+          <Select
+            value={elev ? elev.id : ''}
+            onChange={e => controller.selectElevation(e.target.value)}
+            aria-label="Elevation"
+            className="flex-1"
+          >
+            {elevations.length === 0 && <option value="">— none yet —</option>}
+            {elevations.map(el => (
+              <option key={el.id} value={el.id}>
+                {el.name} ({el.width_mm}×{el.height_mm}mm)
+              </option>
+            ))}
+          </Select>
+          <Button size="sm" onClick={() => setNewOpen(o => !o)}>
+            + New
+          </Button>
+          {elev && (
+            <Button
+              size="sm"
+              variant="danger"
+              onClick={() => {
+                controller.deleteElevation(elev.id);
+                pushToast('Deleted "' + elev.name + '"');
+              }}
+            >
+              Delete
+            </Button>
+          )}
+        </div>
+
+        {newOpen && (
+          <form
+            onSubmit={createElevation}
+            className="mb-4 flex flex-wrap items-end gap-2 rounded-md border border-ink-200 p-2"
+          >
+            <label className="flex w-48 flex-col gap-1">
+              <span className="text-2xs font-medium uppercase tracking-wide text-ink-400">
+                Name
+              </span>
+              <TextInput
+                autoFocus
+                value={newName}
+                onChange={e => setNewName(e.target.value)}
+                placeholder="e.g. Kitchen north wall"
+                aria-label="Elevation name"
+              />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-2xs font-medium uppercase tracking-wide text-ink-400">
+                Width (mm)
+              </span>
+              <input
+                type="number"
+                value={newWidth}
+                onChange={e => setNewWidth(e.target.value)}
+                aria-label="Wall width in millimetres"
+                className="w-24 rounded-md border border-ink-200 px-2 py-1 text-sm tnum"
+              />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-2xs font-medium uppercase tracking-wide text-ink-400">
+                Height (mm)
+              </span>
+              <input
+                type="number"
+                value={newHeight}
+                onChange={e => setNewHeight(e.target.value)}
+                aria-label="Wall height in millimetres"
+                className="w-24 rounded-md border border-ink-200 px-2 py-1 text-sm tnum"
+              />
+            </label>
+            <Button size="sm" variant="primary" type="submit">
+              Create
+            </Button>
+          </form>
+        )}
+
+        {!elev ? (
+          <p className="py-2 text-sm text-ink-500">
+            No elevations yet — create one to sketch device heights on a wall.
+          </p>
+        ) : (
+          <>
+            <ElevationCanvas elev={elev} />
+
+            <FieldLabel className="mb-1 mt-3">
+              Devices on this wall
+              {elev.items.length > 0 ? ` (${elev.items.length})` : ''}
+            </FieldLabel>
+            {elev.items.length === 0 ? (
+              <p className="pb-2 text-2xs text-ink-400">Nothing added yet.</p>
+            ) : (
+              <div className="mb-2">
+                {elev.items.map((item, i) => {
+                  const sym = symbolFor(item.symbolId);
+                  return (
+                    <div key={i} className="flex items-center gap-2 border-t border-ink-100 py-1.5">
+                      <span className="min-w-0 flex-1 truncate text-sm text-ink-700">
+                        {sym ? sym.label : item.symbolId}
+                      </span>
+                      <span className="tnum text-2xs text-ink-500">
+                        {item.x_mm}mm from left, {item.height_mm}mm high
+                      </span>
+                      <Button
+                        size="sm"
+                        variant="danger"
+                        onClick={() => controller.deleteElevationItem(elev.id, i)}
+                      >
+                        Delete
+                      </Button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            <form
+              onSubmit={addItem}
+              className="flex flex-wrap items-end gap-2 rounded-md border border-ink-200 p-2"
+            >
+              <label className="flex w-40 flex-col gap-1">
+                <span className="text-2xs font-medium uppercase tracking-wide text-ink-400">
+                  Device
+                </span>
+                <Select
+                  value={itemSymbolId}
+                  onChange={e => setItemSymbolId(e.target.value)}
+                  aria-label="Device"
+                >
+                  {syms.map(s => (
+                    <option key={s.id} value={s.id}>
+                      {s.label}
+                    </option>
+                  ))}
+                </Select>
+              </label>
+              <label className="flex flex-col gap-1">
+                <span className="text-2xs font-medium uppercase tracking-wide text-ink-400">
+                  From left (mm)
+                </span>
+                <input
+                  type="number"
+                  value={itemX}
+                  onChange={e => setItemX(e.target.value)}
+                  placeholder={String(Math.round(elev.width_mm / 2))}
+                  aria-label="Position from left in millimetres"
+                  className="w-24 rounded-md border border-ink-200 px-2 py-1 text-sm tnum"
+                />
+              </label>
+              <label className="flex flex-col gap-1">
+                <span className="text-2xs font-medium uppercase tracking-wide text-ink-400">
+                  Height (mm)
+                </span>
+                <input
+                  type="number"
+                  value={itemHeight}
+                  onChange={e => setItemHeight(e.target.value)}
+                  aria-label="Installation height in millimetres"
+                  className="w-24 rounded-md border border-ink-200 px-2 py-1 text-sm tnum"
+                />
+              </label>
+              <Button size="sm" variant="primary" type="submit">
+                Add
+              </Button>
+            </form>
+          </>
+        )}
+      </div>
+    </Dialog>
+  );
 }
 
 function QuoteDialog({ doc, controller, symbolFor, onClose, onExport, onOpenPriceList }) {

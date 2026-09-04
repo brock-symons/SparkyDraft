@@ -79,6 +79,7 @@ import {
   propagateSwitchCircuitToLinkedLights,
   removeLinksForObjects,
 } from './switching.js';
+import { makeElevation, makeElevationItem } from './elevations.js';
 
 const DRAG_THRESHOLD_PX = 4;
 
@@ -572,6 +573,67 @@ export function createController({ doc, getView, setView, getViewport, onChange,
     showCircuitLabels = !showCircuitLabels;
     notify();
     return showCircuitLabels;
+  }
+
+  // --- elevations (Phase 8) --------------------------------------------
+
+  /**
+   * Adds an elevation and makes it the active one — same UX as production,
+   * which selects the newly created elevation immediately rather than
+   * leaving whatever was open before.
+   */
+  function addElevation(name, width_mm, height_mm) {
+    let id = null;
+    doc.commit('Add elevation', d => {
+      d.elevations = d.elevations || [];
+      const elev = makeElevation(d.nextId++, name, width_mm, height_mm);
+      d.elevations.push(elev);
+      d.activeElevationId = elev.id;
+      id = elev.id;
+    });
+    notify();
+    return id;
+  }
+
+  function selectElevation(id) {
+    doc.commit(
+      'Switch elevation',
+      d => {
+        d.activeElevationId = id;
+      },
+      { coalesce: true }
+    );
+    notify();
+  }
+
+  /** Deletes an elevation and falls back to whatever is left, if anything. */
+  function deleteElevation(id) {
+    doc.commit('Delete elevation', d => {
+      d.elevations = (d.elevations || []).filter(e => e.id !== id);
+      if (d.activeElevationId === id) {
+        d.activeElevationId = d.elevations.length ? d.elevations[0].id : null;
+      }
+    });
+    notify();
+  }
+
+  /** Adds a device marker to an elevation's schematic wall. */
+  function addElevationItem(elevationId, symbolId, x_mm, height_mm) {
+    doc.commit('Add elevation item', d => {
+      const elev = (d.elevations || []).find(e => e.id === elevationId);
+      if (!elev) return false;
+      elev.items.push(makeElevationItem(symbolId, x_mm, height_mm));
+    });
+    notify();
+  }
+
+  function deleteElevationItem(elevationId, index) {
+    doc.commit('Delete elevation item', d => {
+      const elev = (d.elevations || []).find(e => e.id === elevationId);
+      if (!elev || !elev.items[index]) return false;
+      elev.items.splice(index, 1);
+    });
+    notify();
   }
 
   // --- comms racks + ports (Phase 5) ----------------------------------
@@ -2156,6 +2218,11 @@ export function createController({ doc, getView, setView, getViewport, onChange,
     toggleIsolatedCircuit,
     toggleCircuitLabels,
     setBoardMainSwitchAmps,
+    addElevation,
+    selectElevation,
+    deleteElevation,
+    addElevationItem,
+    deleteElevationItem,
     assignPort,
     addCommsPort,
     setCommsPortFields,

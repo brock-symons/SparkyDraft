@@ -247,6 +247,7 @@ export function emptyProject() {
     activePlanType: 'floor', // 'floor' | 'civil'
     circuits: [], // Phase 3 — project-level, spans floors
     elevations: [], // Phase 8
+    activeElevationId: null, // Phase 8
     boardMainSwitchAmps: {}, // Phase 4
     unassignedCommsPorts: [], // Phase 5
 

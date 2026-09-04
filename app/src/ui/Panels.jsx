@@ -18,6 +18,7 @@ import { CATEGORY_LABELS, CATEGORY_ORDER, LAYER_DEFS } from '../core/catalog.js'
 import { allSymbols, resolveSymbol } from '../core/symbols.js';
 import { currentFloor } from '../core/document.js';
 import { allCommsRacks, patchPanelUnitsForRack } from '../core/comms.js';
+import { computeLegendEntries } from '../core/legend.js';
 import {
   PIT_LIBRARY,
   CONDUIT_SIZES,
@@ -290,13 +291,15 @@ export function LibraryPanel({
 // architectural background you are tracing over just to stop selecting it.
 // ===================================================================
 
-export function LayersPanel({ doc, counts }) {
+export function LayersPanel({ doc, controller, counts }) {
   // Layer visibility/lock is PROJECT-level, not per-floor: hiding Power
   // hides it on every floor at once, matching production. Only the device
   // count is floor-scoped.
   const project = doc.state;
   const hidden = project.hiddenLayers || [];
   const locked = project.lockedLayers || [];
+  const floor = currentFloor(project);
+  const symbolFor = id => resolveSymbol(project, id);
 
   function toggle(list, id, label) {
     doc.commit(label, dd => {
@@ -306,6 +309,13 @@ export function LayersPanel({ doc, counts }) {
       else arr.push(id);
     });
   }
+
+  // Two toggles production keeps on this sheet, directly above the legend
+  // they annotate, rather than as palette-only commands with no visible
+  // state — see the section comment above computeLegendEntries for why
+  // the legend itself belongs here.
+  const legend = useMemo(() => computeLegendEntries(floor, symbolFor), [floor, project]);
+  const total = legend.reduce((s, e) => s + e.count, 0);
 
   // No title bar here — the dock/sheet that hosts this panel renders it
   // (see Dock/Sheet in Workspace.jsx), so it appears exactly once.
@@ -355,6 +365,70 @@ export function LayersPanel({ doc, counts }) {
             </div>
           );
         })}
+
+        {controller && (
+          <>
+            <div className="mt-1 border-t border-ink-100 px-3 py-2">
+              <div className="flex items-center justify-between py-1">
+                <span className="text-sm text-ink-700">Show circuit/port IDs on plan</span>
+                <Toggle
+                  label="Show circuit/port IDs on plan"
+                  checked={controller.showCircuitLabels}
+                  onChange={() => controller.toggleCircuitLabels()}
+                />
+              </div>
+              <div className="flex items-center justify-between py-1">
+                <span className="text-sm text-ink-700">Show switch/cable runs on plan</span>
+                <Toggle
+                  label="Show switch/cable runs on plan"
+                  checked={controller.showSwitchRuns}
+                  onChange={() => controller.toggleSwitchRuns()}
+                />
+              </div>
+            </div>
+
+            {/* Legend — a per-floor tally of everything placed, grouped by
+                type (and by switch gang, since a 1-gang and a 4-gang plate
+                are different hardware). Shares computeLegendEntries with
+                the print/PDF export so both stay in sync. */}
+            <div className="border-t border-ink-100 px-3 pt-2">
+              <FieldLabel>
+                Legend
+                {total > 0 ? ` — ${total} device${total === 1 ? '' : 's'} on this floor` : ''}
+              </FieldLabel>
+            </div>
+            {legend.length === 0 ? (
+              <p className="px-3 pb-2 pt-1 text-2xs text-ink-400">
+                Nothing placed on this floor yet.
+              </p>
+            ) : (
+              <div className="pb-1">
+                {legend.map(e => (
+                  <div
+                    key={e.sym.id + '::' + (e.gang || '')}
+                    className="flex items-center gap-2 px-3 py-1.5"
+                  >
+                    <span
+                      className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-bold"
+                      style={{
+                        background: e.sym.color + '22',
+                        color: e.sym.color,
+                        border: '1px solid ' + e.sym.color + '55',
+                      }}
+                    >
+                      {e.gang ? e.gang + 'G' : e.sym.abbr}
+                    </span>
+                    <span className="min-w-0 flex-1 truncate text-sm text-ink-700">
+                      {e.sym.label}
+                      {e.gang ? ' — ' + e.gang + ' gang' : ''}
+                    </span>
+                    <span className="tnum text-2xs text-ink-400">× {e.count}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
+        )}
       </div>
     </div>
   );

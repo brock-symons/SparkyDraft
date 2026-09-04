@@ -147,8 +147,8 @@ Status key: **✅ complete** · **◐ partial** · **✗ missing** · **⚙ need
 
 | Feature | Current | New | Status |
 |---|---|---|---|
-| Elevations | `renderElevationSelect()` L5391, `state.elevations[]` | — | ✗ |
-| Legend | `computeLegendEntries()` L5529 | — | ✗ |
+| Elevations | `renderElevationSelect()` L5391, `state.elevations[]` | `core/elevations.js` + Elevations dialog | ✅ |
+| Legend | `computeLegendEntries()` L5529 | `core/legend.js` + Layers panel | ✅ |
 
 ### A7. Output
 
@@ -319,7 +319,7 @@ are not interoperable**; a conversion path is required (see risk R4).
 | Quote | Sheet, itemised toggle, rates | Mode; §20 wants it visibly connected to drafting |
 | Comms racks | Sheet per rack, port rows | Inspector for rack + dedicated view |
 | Civil works | Mode toggle, own palette + plans | Plan-type switch in new shell |
-| Elevations | Sheet + own canvas | Needs decision: separate view vs plan type **?** |
+| Elevations | Sheet + own canvas | Report-style dialog + live preview canvas — resolved, see §I item 1 |
 | Print / PDF | Print view → paged output | Dedicated output mode |
 | Share to org | Save options → share | Project-level action in picker/chrome |
 | Manage members/invites | Org sheet tabs | Settings surface |
@@ -370,7 +370,7 @@ Everything → Print/PDF (renders whatever exists)
 | 5 | Comms racks + ports + derived patch panels | Feeds quote |
 | 6 | Quote + price list + overrides | Depends on circuits, comms, catalog |
 | 7 | Civil plans subsystem + civil materials + civil quote | Self-contained; safe to do after core is stable |
-| 8 | Elevations + legend | |
+| 8 | Elevations + legend | Report-style dialog, not a plan type — no drafting deps at all |
 | 9 | Print / PDF / export | Renders everything above |
 | 10 | Auth → Supabase → orgs → members/invites → sharing → access/read-only → cloud sync | Largest security surface; done once data model is final |
 | 11 | Full integration pass + security review + regression | §23 |
@@ -395,7 +395,7 @@ still in flux would mean migrating stored cloud records twice.
 | R9 | No build step; in-browser Babel loader ships to users | Performance/tech debt | **High** | Introduce Vite before any production cutover (needs Node) |
 | R10 | Canvas performance with many objects + multiple floors | Performance | Medium | Culling already in place; re-test at scale each phase |
 | R11 | Touch regressions as tools multiply | Responsive | Medium | Re-run touch tests per phase (§17) |
-| R12 | Elevations' correct home in new architecture unclear | Architecture | Medium | **Flag for review** — separate view vs plan type |
+| R12 | Elevations' correct home in new architecture — RESOLVED Phase 8 | Architecture | Medium | Confirmed by reading production: #elevCanvas has no pointer handlers at all, items are added only through a number-entry form. Not a plan type; built as a report-style dialog. |
 | R13 | Print/PDF depends on every subsystem's render | Output | Medium | Do last |
 | R14 | Anon key + URL in client source | Security | Medium | Normal *if* RLS is sound — **verify RLS policies during Phase 10** |
 | R15 | Dual apps coexisting invites drift on `main` | Process | Medium | Keep `index.html` untouched; re-sync inventory if `main` moves |
@@ -419,7 +419,7 @@ still in flux would mean migrating stored cloud records twice.
 | Quote + price list | Complete | Complete | Price edits persist (deviation, §I) | **Critical** | Done | ✅ (parity-tested) |
 | Comms racks | Complete | Complete | None | High | Done | ✅ (parity-tested) |
 | Civil / underground | Complete | Complete | Print/PDF pages land with Phase 10 | High | Done | ✅ (parity-tested) |
-| Elevations | Complete | Missing | Significant | Medium | Medium | Pending |
+| Elevations | Complete | Complete | None | Medium | Done | ✅ (parity-tested) |
 | Print / PDF / export | Complete | Missing | Significant | Medium | Medium | Pending |
 | Version history | Complete | Complete | None | Low | Done | ✅ |
 | Local persistence | Complete | Partial (own schema) | Significant | **Critical** | High | Pending |
@@ -440,8 +440,17 @@ output and cloud halves of the product are entirely unported.
 
 Per §8/§20 — these change product behaviour and are **not** mine to decide:
 
-1. **R12 — Elevations' architecture.** Separate view, or a third plan type
-   alongside floors/civil? Affects the Phase 0 model. **[no historical context]**
+1. **R12 — Elevations' architecture.** RESOLVED in Phase 8 — reading
+   production's own code settles this rather than requiring a judgment
+   call: `#elevCanvas` has no pointer handlers at all. Every item is
+   added through a number-entry form (device, distance from the left
+   edge in mm, installation height in mm); the canvas only ever redraws
+   a live preview of that data. There is no pan, no zoom, no snapping,
+   nothing resembling the floor/civil drafting model. So it is not a
+   third plan type — it is a report-style dialog (the same shape as the
+   Quote, Panel Schedule and Civil Materials dialogs), with a live
+   schematic preview. No navigation change, nothing §32 reserves for the
+   owner. Left listed so the decision is visible rather than silently made.
 2. **Panel schedule / quote as "modes" vs sheets.** §13 of the directive
    raises workspace modes; adopting them changes navigation (§32 forbids
    fundamental navigation changes without approval).
