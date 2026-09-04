@@ -21,19 +21,28 @@ function clone(value) {
 }
 
 export function createDocument(initial) {
-  let state = clone(initial);
-
-  // past[] holds snapshots BEFORE each committed change; future[] holds
-  // snapshots undone but not yet discarded by a new edit.
-  const past = [];
-  const future = [];
-  let lastLabel = null;
+  // A LINEAR TIMELINE of committed states, plus a cursor pointing at the
+  // one currently in effect. Undo/redo move the cursor; a new edit
+  // truncates anything ahead of it.
+  //
+  // This replaced a past[]/future[] stack pair. Two stacks handle undo and
+  // redo fine but cannot answer "show me every point I could go back to",
+  // which is what version history needs — and reconstructing that list
+  // from two stacks means merging them in opposite orders and hoping they
+  // stay consistent. A timeline is the same information in the shape the
+  // feature actually wants, and it matches how production models history.
+  const timeline = [{ state: clone(initial), ts: Date.now(), label: 'Opened' }];
+  let cursor = 0;
 
   const listeners = new Set();
   let dirty = false;
 
+  function current() {
+    return timeline[cursor].state;
+  }
+
   function emit(detail) {
-    for (const fn of listeners) fn(state, detail);
+    for (const fn of listeners) fn(current(), detail);
   }
 
   /**
@@ -47,49 +56,76 @@ export function createDocument(initial) {
    *                is one undo, not sixty.
    */
   function commit(label, mutator, opts = {}) {
-    const before = state;
-    const draft = clone(state);
+    const draft = clone(current());
     const result = mutator(draft);
     // A mutator may bail out by returning false — e.g. "nothing was
     // actually selected" — and that must not leave a no-op undo entry.
     if (result === false) return false;
 
-    const coalescing = opts.coalesce && lastLabel === label && past.length > 0;
-    if (!coalescing) {
-      past.push(before);
-      if (past.length > HISTORY_LIMIT) past.shift();
+    const coalescing = opts.coalesce && cursor > 0 && timeline[cursor].label === label;
+    if (coalescing) {
+      // Fold into the existing entry: same step, newer contents.
+      timeline[cursor] = { state: draft, ts: Date.now(), label };
+    } else {
+      timeline.length = cursor + 1; // discard any redo branch
+      timeline.push({ state: draft, ts: Date.now(), label });
+      cursor = timeline.length - 1;
+      if (timeline.length > HISTORY_LIMIT) {
+        timeline.shift();
+        cursor--;
+      }
     }
-    future.length = 0;
-    lastLabel = label;
-    state = draft;
     dirty = true;
     emit({ type: 'commit', label });
     return true;
   }
 
-  /** Ends a coalescing run, so the next same-labelled edit starts a new undo step. */
+  /** Ends a coalescing run, so the next same-labelled edit starts a new step. */
   function endCoalesce() {
-    lastLabel = null;
+    // Renaming the head entry breaks the label match that coalescing
+    // relies on, without touching the state it holds.
+    if (cursor > 0) timeline[cursor] = { ...timeline[cursor], label: timeline[cursor].label + ' ' };
   }
 
   function undo() {
-    if (!past.length) return false;
-    future.push(state);
-    state = past.pop();
-    lastLabel = null;
+    if (cursor === 0) return false;
+    cursor--;
     dirty = true;
     emit({ type: 'undo' });
     return true;
   }
 
   function redo() {
-    if (!future.length) return false;
-    past.push(state);
-    state = future.pop();
-    lastLabel = null;
+    if (cursor >= timeline.length - 1) return false;
+    cursor++;
     dirty = true;
     emit({ type: 'redo' });
     return true;
+  }
+
+  /**
+   * Jump straight to any point in the timeline (version history), rather
+   * than stepping through one undo at a time. Deliberately does NOT
+   * truncate the future — jumping back to look at something and then
+   * forward again must not destroy work. The next actual edit truncates,
+   * same as undo-then-edit always has.
+   */
+  function jumpTo(index) {
+    if (index < 0 || index >= timeline.length || index === cursor) return false;
+    cursor = index;
+    dirty = true;
+    emit({ type: 'jump' });
+    return true;
+  }
+
+  /** Timeline entries, newest last, for the version-history UI. */
+  function history() {
+    return timeline.map((e, i) => ({
+      index: i,
+      label: e.label.trim(),
+      ts: e.ts,
+      current: i === cursor,
+    }));
   }
 
   /**
@@ -98,23 +134,22 @@ export function createDocument(initial) {
    * back into a previous project's contents would be nonsense.
    */
   function load(next) {
-    state = clone(next);
-    past.length = 0;
-    future.length = 0;
-    lastLabel = null;
+    timeline.length = 0;
+    timeline.push({ state: clone(next), ts: Date.now(), label: 'Opened' });
+    cursor = 0;
     dirty = false;
     emit({ type: 'load' });
   }
 
   return {
     get state() {
-      return state;
+      return current();
     },
     get canUndo() {
-      return past.length > 0;
+      return cursor > 0;
     },
     get canRedo() {
-      return future.length > 0;
+      return cursor < timeline.length - 1;
     },
     get isDirty() {
       return dirty;
@@ -127,6 +162,8 @@ export function createDocument(initial) {
     endCoalesce,
     undo,
     redo,
+    jumpTo,
+    history,
     load,
     subscribe(fn) {
       listeners.add(fn);
@@ -208,9 +245,17 @@ export function emptyProject() {
     activePlanType: 'floor', // 'floor' | 'civil'
     circuits: [], // Phase 3 — project-level, spans floors
     elevations: [], // Phase 8
-    customSymbols: [], // Phase 1
     boardMainSwitchAmps: {}, // Phase 4
     unassignedCommsPorts: [], // Phase 5
+
+    // User-defined fittings, added on top of the shipped SYMBOL_LIBRARY.
+    // Stored on the project (not globally) so a custom fitting travels
+    // with the job that uses it, matching production.
+    customSymbols: [],
+
+    // Drawn radius of a device symbol, in screen px at zoom 1.
+    // Production's values are 12 / 16 / 22 (Small / Medium / Large).
+    symbolSize: 16,
 
     // Project-level layer state (production keeps this outside floors so
     // hiding Power hides it on every floor at once).
@@ -235,6 +280,32 @@ export function allObjects(project) {
   return project.floors.flatMap(f =>
     f.objects.map(o => ({ ...o, __floorId: f.id, __floorName: f.name }))
   );
+}
+
+/**
+ * Devices sitting at exactly the same spot on the same floor — almost
+ * always a double-click or a bad import rather than intent, and they
+ * silently inflate the quote because each one still prices.
+ *
+ * Ported verbatim from production's findDuplicateDevices(), including
+ * the rounding: positions are compared at whole-unit precision, so two
+ * devices a hundredth of a unit apart still count as stacked. Grouping
+ * by `symbolId@x,y` means two *different* device types at one point are
+ * not flagged — a switch above a GPO is a normal thing to draw.
+ */
+export function findDuplicateDevices(project) {
+  const results = [];
+  for (const floor of project.floors) {
+    const groups = {};
+    for (const o of floor.objects) {
+      const key = o.symbolId + '@' + Math.round(o.x) + ',' + Math.round(o.y);
+      (groups[key] = groups[key] || []).push(o);
+    }
+    for (const objs of Object.values(groups)) {
+      if (objs.length > 1) results.push({ floorId: floor.id, floorName: floor.name, objs });
+    }
+  }
+  return results;
 }
 
 /**

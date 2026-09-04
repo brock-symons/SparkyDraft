@@ -70,6 +70,7 @@ export function CanvasStage({
       draft: c.draft,
       cursorWorld: c.cursorWorld,
       selectedSegment: c.selectedSegment,
+      symbolSize: d.state.symbolSize,
       activeCableColor: c.activeCableSize && c.activeCableSize.color,
       ghost: c.tool === 'place' ? c.ghost : null,
       ghostSymbol: c.activeSymbolId ? sf(c.activeSymbolId) : null,

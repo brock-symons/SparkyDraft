@@ -43,8 +43,16 @@ import { formatDistance } from '../core/geometry.js';
 
 const { useState, useMemo } = React;
 
-function symbolFor(id) {
-  return SYMBOL_LIBRARY.find(s => s.id === id);
+/**
+ * Resolves against the project's custom fittings first, then the shipped
+ * catalog. Module-level (rather than a prop threaded through every
+ * sub-component) but project-aware via the argument, so a device placed
+ * from a custom fitting shows its real label/colour/costs instead of
+ * rendering as an unknown.
+ */
+function resolveSymbol(project, id) {
+  const custom = ((project && project.customSymbols) || []).find(s => s.id === id);
+  return custom || SYMBOL_LIBRARY.find(s => s.id === id);
 }
 
 function SymbolChip({ sym, size = 'md' }) {
@@ -76,12 +84,13 @@ function DrawingProperties({
   toggleSection,
   onImportPlan,
   onCalibrate,
+  onAddRoom,
 }) {
   const d = currentFloor(doc.state);
   const counts = useMemo(() => {
     const by = {};
     for (const o of d.objects) {
-      const s = symbolFor(o.symbolId);
+      const s = resolveSymbol(doc.state, o.symbolId);
       const cat = s ? s.category : 'other';
       by[cat] = (by[cat] || 0) + 1;
     }
@@ -177,6 +186,49 @@ function DrawingProperties({
         )}
       </Section>
 
+      {/* Rooms are a takeoff/grouping aid, not geometry — production
+          models them as just a name plus a device list, and the same
+          restraint applies here. Devices join a room from their own
+          inspector, or in bulk from a multi-selection. */}
+      <Section title="Rooms" open={sections.rooms} onToggle={() => toggleSection('rooms')}>
+        {d.rooms && d.rooms.length > 0 ? (
+          <div className="flex flex-col">
+            {d.rooms.map(r => {
+              const count = d.objects.filter(o => o.room === r.id).length;
+              return (
+                <div
+                  key={r.id}
+                  className="group flex items-center gap-2 px-3 py-1.5 hover:bg-ink-50"
+                >
+                  <span className="min-w-0 flex-1 truncate text-sm text-ink-700">{r.name}</span>
+                  <span className="tnum text-2xs text-ink-400">
+                    {count} device{count === 1 ? '' : 's'}
+                  </span>
+                  <IconButton
+                    label={`Delete room ${r.name}`}
+                    size="sm"
+                    tooltipSide="left"
+                    className="opacity-0 transition-opacity focus-visible:opacity-100 group-hover:opacity-100"
+                    onClick={() => controller.deleteRoom(r.id)}
+                  >
+                    ✕
+                  </IconButton>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="px-3 text-2xs leading-relaxed text-ink-400">
+            No rooms yet. Add one, then assign devices to it from their properties.
+          </div>
+        )}
+        <div className="px-3 pt-2">
+          <Button size="sm" className="w-full" onClick={onAddRoom}>
+            Add room…
+          </Button>
+        </div>
+      </Section>
+
       <Section title="Grid & snapping" open={sections.grid} onToggle={() => toggleSection('grid')}>
         <Row label="Snap">
           <div className="flex items-center gap-2">
@@ -237,6 +289,22 @@ function DrawingProperties({
           </div>
         </div>
       </Section>
+
+      {/* Symbol size is a readability preference, not drawing data — a
+          dense job needs small symbols, a presentation print needs large.
+          Production offers the same three steps. */}
+      <Section title="Display" open={sections.display} onToggle={() => toggleSection('display')}>
+        <Row label="Symbols">
+          <Select
+            value={String(doc.state.symbolSize || 16)}
+            onChange={e => controller.setSymbolSize(parseInt(e.target.value, 10))}
+          >
+            <option value="12">Small</option>
+            <option value="16">Medium</option>
+            <option value="22">Large</option>
+          </Select>
+        </Row>
+      </Section>
     </>
   );
 }
@@ -244,7 +312,8 @@ function DrawingProperties({
 // --- one device -------------------------------------------------------
 
 function DeviceProperties({ obj, doc, controller, sections, toggleSection }) {
-  const sym = symbolFor(obj.symbolId);
+  const rooms = currentFloor(doc.state).rooms || [];
+  const sym = resolveSymbol(doc.state, obj.symbolId);
   const props = obj.props || {};
   const defaults = (sym && sym.defaultProps) || {};
   const scale = currentFloor(doc.state).scale;
@@ -365,6 +434,27 @@ function DeviceProperties({ obj, doc, controller, sections, toggleSection }) {
         </Section>
       )}
 
+      {/* Room is a location property, not an electrical one — it groups
+          devices for takeoffs ("how many GPOs in the kitchen"), so it sits
+          in its own section rather than under Electrical. */}
+      {rooms.length > 0 && (
+        <Section title="Location" open={sections.general} onToggle={() => toggleSection('general')}>
+          <Row label="Room">
+            <Select
+              value={obj.room || ''}
+              onChange={e => controller.setObjectRoom(obj.id, e.target.value)}
+            >
+              <option value="">— none —</option>
+              {rooms.map(r => (
+                <option key={r.id} value={r.id}>
+                  {r.name}
+                </option>
+              ))}
+            </Select>
+          </Row>
+        </Section>
+      )}
+
       <Section title="Cost" open={sections.cost} onToggle={() => toggleSection('cost')} dense>
         <Row label="Material">
           <NumberInput
@@ -397,16 +487,16 @@ function AlignButton({ label, onClick, children }) {
   );
 }
 
-function MultiProperties({ objects, controller, sections, toggleSection }) {
+function MultiProperties({ objects, controller, sections, toggleSection, project }) {
   const breakdown = useMemo(() => {
     const by = new Map();
     for (const o of objects) {
-      const s = symbolFor(o.symbolId);
+      const s = resolveSymbol(project, o.symbolId);
       const key = s ? s.label : o.symbolId;
       by.set(key, (by.get(key) || 0) + 1);
     }
     return Array.from(by.entries()).sort((a, b) => b[1] - a[1]);
-  }, [objects]);
+  }, [objects, project]);
 
   return (
     <>
@@ -489,9 +579,9 @@ function MultiProperties({ objects, controller, sections, toggleSection }) {
 
 // --- tool context -----------------------------------------------------
 
-function ToolContext({ controller }) {
+function ToolContext({ controller, project }) {
   if (controller.tool === 'place' && controller.activeSymbolId) {
-    const sym = symbolFor(controller.activeSymbolId);
+    const sym = resolveSymbol(project, controller.activeSymbolId);
     return (
       <div className="px-3 py-3">
         <div className="flex items-center gap-2.5">
@@ -644,7 +734,15 @@ function SegmentProperties({ segment, doc, controller }) {
 // that collapsing them would hide everything the panel exists to show.
 const sections_open = true;
 
-export function Inspector({ doc, controller, sections, toggleSection, onImportPlan, onCalibrate }) {
+export function Inspector({
+  doc,
+  controller,
+  sections,
+  toggleSection,
+  onImportPlan,
+  onCalibrate,
+  onAddRoom,
+}) {
   const selected = controller.selectedObjects();
   const segment = controller.selectedSegmentObject();
   const toolCtx =
@@ -653,7 +751,7 @@ export function Inspector({ doc, controller, sections, toggleSection, onImportPl
   return (
     <div className="flex h-full flex-col">
       <div className="min-h-0 flex-1 overflow-y-auto">
-        {toolCtx && <ToolContext controller={controller} />}
+        {toolCtx && <ToolContext controller={controller} project={doc.state} />}
         {!toolCtx && selected.length === 0 && segment && (
           <SegmentProperties segment={segment} doc={doc} controller={controller} />
         )}
@@ -665,6 +763,7 @@ export function Inspector({ doc, controller, sections, toggleSection, onImportPl
             toggleSection={toggleSection}
             onImportPlan={onImportPlan}
             onCalibrate={onCalibrate}
+            onAddRoom={onAddRoom}
           />
         )}
         {!toolCtx && selected.length === 1 && (
@@ -680,6 +779,7 @@ export function Inspector({ doc, controller, sections, toggleSection, onImportPl
           <MultiProperties
             objects={selected}
             controller={controller}
+            project={doc.state}
             sections={sections}
             toggleSection={toggleSection}
           />

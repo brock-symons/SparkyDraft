@@ -78,7 +78,15 @@ function SymbolTile({ sym, active, favourite, onPick, onToggleFavourite }) {
   );
 }
 
-export function LibraryPanel({ controller, favourites, recent, onToggleFavourite, autoFocus }) {
+export function LibraryPanel({
+  controller,
+  favourites,
+  recent,
+  onToggleFavourite,
+  autoFocus,
+  customSymbols = [],
+  onAddFitting,
+}) {
   const [query, setQuery] = useState('');
   const [collapsed, setCollapsed] = useState({});
   const inputRef = useRef(null);
@@ -87,19 +95,23 @@ export function LibraryPanel({ controller, favourites, recent, onToggleFavourite
     if (autoFocus && inputRef.current) inputRef.current.focus();
   }, [autoFocus]);
 
+  // Custom fittings are searched and browsed alongside catalog devices —
+  // a user who added "Oven outlet" expects to find it by typing "oven",
+  // not to remember it lives in a separate list.
+  const allSymbols = useMemo(() => SYMBOL_LIBRARY.concat(customSymbols), [customSymbols]);
   const q = query.trim().toLowerCase();
   const matches = useMemo(() => {
     if (!q) return null;
-    return SYMBOL_LIBRARY.filter(
+    return allSymbols.filter(
       s =>
         s.label.toLowerCase().includes(q) ||
         s.abbr.toLowerCase().includes(q) ||
         (CATEGORY_LABELS[s.category] || '').toLowerCase().includes(q)
     );
-  }, [q]);
+  }, [q, allSymbols]);
 
-  const favSyms = favourites.map(id => SYMBOL_LIBRARY.find(s => s.id === id)).filter(Boolean);
-  const recentSyms = recent.map(id => SYMBOL_LIBRARY.find(s => s.id === id)).filter(Boolean);
+  const favSyms = favourites.map(id => allSymbols.find(s => s.id === id)).filter(Boolean);
+  const recentSyms = recent.map(id => allSymbols.find(s => s.id === id)).filter(Boolean);
 
   function pick(sym) {
     controller.setActiveSymbol(sym.id);
@@ -199,6 +211,36 @@ export function LibraryPanel({ controller, favourites, recent, onToggleFavourite
                 </Section>
               );
             })}
+
+            {/* Custom fittings last: the shipped catalog is what people
+                reach for constantly, and a job-specific fitting is the
+                exception rather than the thing you scroll past daily. */}
+            <Section
+              title="Custom"
+              open={!collapsed.custom}
+              onToggle={() => setCollapsed(c => ({ ...c, custom: !c.custom }))}
+            >
+              {customSymbols.length > 0 && (
+                <div className="mb-2 grid grid-cols-3 gap-1 px-2">
+                  {customSymbols.map(sym => (
+                    <SymbolTile key={sym.id} {...tileProps(sym)} />
+                  ))}
+                </div>
+              )}
+              <div className="px-2">
+                <button
+                  onClick={onAddFitting}
+                  className={cx(
+                    'flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed',
+                    'border-ink-300 py-2 text-2xs font-medium text-ink-500',
+                    'transition-colors hover:border-accent-400 hover:bg-accent-50 hover:text-accent-700',
+                    focusRing
+                  )}
+                >
+                  <span className="text-sm leading-none">＋</span> Add fitting
+                </button>
+              </div>
+            </Section>
           </>
         )}
       </div>

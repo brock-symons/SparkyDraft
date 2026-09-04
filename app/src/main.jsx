@@ -11,11 +11,17 @@
 // action later means adding one entry, not touching four files.
 // ===================================================================
 
-import { createDocument, emptyProject, currentFloor, migrateFlatDrawing } from './core/document.js';
+import {
+  createDocument,
+  emptyProject,
+  currentFloor,
+  migrateFlatDrawing,
+  findDuplicateDevices,
+} from './core/document.js';
 import { createController } from './core/controller.js';
 import { createCommandRegistry, matchesShortcut, isTypingTarget } from './core/commands.js';
 import { boundsOf, viewForBounds, gridWorldUnits } from './core/geometry.js';
-import { SYMBOL_LIBRARY } from './core/catalog.js';
+import { SYMBOL_LIBRARY, LAYER_DEFS } from './core/catalog.js';
 import {
   listProjects,
   loadProject,
@@ -45,7 +51,18 @@ import { ProjectPicker } from './ui/ProjectPicker.jsx';
 
 const { useState, useEffect, useRef, useMemo, useCallback } = React;
 
-const symbolFor = id => SYMBOL_LIBRARY.find(s => s.id === id);
+/**
+ * Resolving a symbol has to consider the project's own custom fittings,
+ * not just the shipped catalog — otherwise a device placed from a custom
+ * fitting renders as an unknown '?' and prices at zero. Built per project
+ * rather than module-level for that reason.
+ */
+function makeSymbolResolver(getProject) {
+  return id => {
+    const custom = (getProject().customSymbols || []).find(s => s.id === id);
+    return custom || SYMBOL_LIBRARY.find(s => s.id === id);
+  };
+}
 const AUTOSAVE_MS = 1200;
 
 function WorkspaceRoot({ projectId, onExit, pushToast }) {
@@ -96,6 +113,11 @@ function WorkspaceRoot({ projectId, onExit, pushToast }) {
   // so the controller (created once) can reach the current handler.
   const calibrationRef = useRef(null);
   const [calibrateLength, setCalibrateLength] = useState(null);
+  const [roomDialogOpen, setRoomDialogOpen] = useState(false);
+  const [fittingDialogOpen, setFittingDialogOpen] = useState(false);
+  const [assignRoomOpen, setAssignRoomOpen] = useState(false);
+  const [duplicateGroups, setDuplicateGroups] = useState(null);
+  const [historyOpen, setHistoryOpen] = useState(false);
 
   const controllerRef = useRef(null);
   if (!controllerRef.current) {
@@ -107,9 +129,11 @@ function WorkspaceRoot({ projectId, onExit, pushToast }) {
       onChange: rerender,
       onCalibrate: len => calibrationRef.current && calibrationRef.current(len),
     });
-    controllerRef.current.setSymbolResolver(symbolFor);
+    controllerRef.current.setSymbolResolver(makeSymbolResolver(() => doc.state));
   }
   const controller = controllerRef.current;
+  // Same resolver the controller uses, for rendering and the inspector.
+  const symbolFor = useMemo(() => makeSymbolResolver(() => doc.state), [doc]);
   calibrationRef.current = len => setCalibrateLength(len);
 
   // --- workspace UI state (persisted, §3 "intelligently remembered") -
@@ -138,7 +162,9 @@ function WorkspaceRoot({ projectId, onExit, pushToast }) {
     savedUI.sections || {
       drawing: true,
       plan: true,
+      rooms: false,
       grid: true,
+      display: false,
       general: true,
       electrical: true,
       cost: false,
@@ -729,6 +755,51 @@ function WorkspaceRoot({ projectId, onExit, pushToast }) {
         run: c => c.togglePanel('right', 'inspector'),
       },
 
+      // Drawing organisation
+      {
+        id: 'room.add',
+        title: 'Add room',
+        group: 'Drawing',
+        icon: '▭',
+        keywords: 'room area zone kitchen group takeoff',
+        run: c => c.openRoomDialog(),
+      },
+      {
+        id: 'room.assignSelection',
+        title: 'Assign selection to room…',
+        group: 'Drawing',
+        icon: '▭',
+        keywords: 'room assign group bulk',
+        // Only meaningful with devices selected AND somewhere to put them.
+        when: c =>
+          c.controller.selectedIds.size > 0 && (currentFloor(c.doc.state).rooms || []).length > 0,
+        run: c => c.openAssignRoom(),
+      },
+      {
+        id: 'library.addFitting',
+        title: 'Add custom fitting',
+        group: 'Drawing',
+        icon: '✚',
+        keywords: 'custom device symbol fitting library new',
+        run: c => c.openFittingDialog(),
+      },
+      {
+        id: 'project.history',
+        title: 'Version history',
+        group: 'Project',
+        icon: '21ba',
+        keywords: 'history versions snapshot revert restore timeline',
+        run: c => c.openHistory(),
+      },
+      {
+        id: 'tools.findDuplicates',
+        title: 'Find stacked duplicates',
+        group: 'Drawing',
+        icon: '⧉',
+        keywords: 'duplicate stacked overlap cleanup audit qa',
+        run: c => c.openDuplicates(),
+      },
+
       // Project
       {
         id: 'project.save',
@@ -775,6 +846,11 @@ function WorkspaceRoot({ projectId, onExit, pushToast }) {
       importPlan,
       startCalibrate,
       openPalette: () => setPaletteOpen(true),
+      openRoomDialog: () => setRoomDialogOpen(true),
+      openFittingDialog: () => setFittingDialogOpen(true),
+      openAssignRoom: () => setAssignRoomOpen(true),
+      openDuplicates: () => setDuplicateGroups(findDuplicateDevices(doc.state)),
+      openHistory: () => setHistoryOpen(true),
       pushToast,
     }),
     [
@@ -891,6 +967,8 @@ function WorkspaceRoot({ projectId, onExit, pushToast }) {
         recent={recent}
         onToggleFavourite={toggleFavourite}
         autoFocus={breakpoint.name === 'desktop'}
+        customSymbols={doc.state.customSymbols || []}
+        onAddFitting={() => setFittingDialogOpen(true)}
       />
     ) : null;
 
@@ -902,6 +980,7 @@ function WorkspaceRoot({ projectId, onExit, pushToast }) {
       toggleSection={toggleSection}
       onImportPlan={importPlan}
       onCalibrate={startCalibrate}
+      onAddRoom={() => setRoomDialogOpen(true)}
     />
   );
 
@@ -963,6 +1042,61 @@ function WorkspaceRoot({ projectId, onExit, pushToast }) {
         }}
         onApply={applyCalibration}
       />
+      {roomDialogOpen && (
+        <RoomDialog
+          onCancel={() => setRoomDialogOpen(false)}
+          onCreate={name => {
+            controller.addRoom(name);
+            setRoomDialogOpen(false);
+            pushToast('Room "' + name + '" added');
+          }}
+        />
+      )}
+      {assignRoomOpen && (
+        <AssignRoomDialog
+          rooms={currentFloor(doc.state).rooms || []}
+          count={controller.selectedIds.size}
+          onCancel={() => setAssignRoomOpen(false)}
+          onAssign={roomId => {
+            controller.assignSelectionToRoom(roomId);
+            setAssignRoomOpen(false);
+          }}
+        />
+      )}
+      {historyOpen && (
+        <HistoryDialog
+          entries={doc.history()}
+          onCancel={() => setHistoryOpen(false)}
+          onJump={i => {
+            doc.jumpTo(i);
+            controller.clearSelection();
+            setHistoryOpen(false);
+          }}
+        />
+      )}
+      {duplicateGroups && (
+        <DuplicatesDialog
+          groups={duplicateGroups}
+          symbolFor={symbolFor}
+          onCancel={() => setDuplicateGroups(null)}
+          onRemove={() => {
+            const n = controller.removeDuplicates(duplicateGroups);
+            setDuplicateGroups(null);
+            pushToast(n + ' duplicate' + (n === 1 ? '' : 's') + ' removed');
+          }}
+        />
+      )}
+      {fittingDialogOpen && (
+        <CustomFittingDialog
+          onCancel={() => setFittingDialogOpen(false)}
+          onCreate={form => {
+            const layer = LAYER_DEFS.find(l => l.id === form.category);
+            const sym = controller.addCustomSymbol(form, layer && layer.color);
+            setFittingDialogOpen(false);
+            if (sym) pushToast('"' + sym.label + '" added to your fittings');
+          }}
+        />
+      )}
     </>
   );
 }
@@ -973,6 +1107,298 @@ function WorkspaceRoot({ projectId, onExit, pushToast }) {
  * user convert in their head is exactly the kind of friction §29 is
  * about.
  */
+function timeAgo(ts) {
+  const s = Math.round((Date.now() - ts) / 1000);
+  if (s < 10) return 'just now';
+  if (s < 60) return s + 's ago';
+  const m = Math.round(s / 60);
+  if (m < 60) return m + 'm ago';
+  return Math.round(m / 60) + 'h ago';
+}
+
+/**
+ * Version history — jump to any point, not just one step back.
+ *
+ * Labelled by what changed ("Place device", "Draw cable") rather than
+ * only by time, because "14:32:07" tells you nothing about which state
+ * you're about to restore. Newest first, since recent points are the
+ * ones people actually reach for.
+ */
+function HistoryDialog({ entries, onCancel, onJump }) {
+  return (
+    <Dialog open onClose={onCancel} title="Version history" width="max-w-md">
+      <p className="mb-3 text-sm leading-relaxed text-ink-600">
+        Every change in this session. Jumping here doesn’t discard anything — you can jump forward
+        again until you make a new edit.
+      </p>
+      <div className="max-h-72 overflow-y-auto rounded-md border border-ink-200">
+        {entries
+          .slice()
+          .reverse()
+          .map((e, i) => (
+            <button
+              key={e.index}
+              disabled={e.current}
+              onClick={() => onJump(e.index)}
+              className={
+                'flex w-full items-center gap-2 px-3 py-2 text-left transition-colors ' +
+                (i > 0 ? 'border-t border-ink-100 ' : '') +
+                (e.current ? 'bg-accent-50' : 'hover:bg-ink-50')
+              }
+            >
+              <span className="w-3 shrink-0 text-center text-2xs text-ink-400">
+                {e.current ? '●' : '↺'}
+              </span>
+              <span className="min-w-0 flex-1 truncate text-sm text-ink-700">{e.label}</span>
+              <span className="tnum shrink-0 text-2xs text-ink-400">
+                {e.current ? 'Current' : timeAgo(e.ts)}
+              </span>
+            </button>
+          ))}
+      </div>
+    </Dialog>
+  );
+}
+
+/**
+ * Bulk room assignment for a multi-selection. Separate from the
+ * single-device inspector field because assigning twelve GPOs to
+ * "Kitchen" one at a time is exactly the kind of friction §29 targets.
+ */
+function AssignRoomDialog({ rooms, count, onCancel, onAssign }) {
+  const [roomId, setRoomId] = useState(rooms.length ? rooms[0].id : '');
+  return (
+    <Dialog
+      open
+      onClose={onCancel}
+      title="Assign to room"
+      footer={
+        <>
+          <Button onClick={onCancel}>Cancel</Button>
+          <Button variant="primary" onClick={() => onAssign(roomId)}>
+            Assign
+          </Button>
+        </>
+      }
+    >
+      <p className="mb-3 text-sm leading-relaxed text-ink-600">
+        Assign {count} selected device{count === 1 ? '' : 's'} to:
+      </p>
+      <Select value={roomId} onChange={e => setRoomId(e.target.value)} aria-label="Room">
+        <option value="">— none (clear room) —</option>
+        {rooms.map(r => (
+          <option key={r.id} value={r.id}>
+            {r.name}
+          </option>
+        ))}
+      </Select>
+    </Dialog>
+  );
+}
+
+/**
+ * Stacked-duplicate report. Shows what would be removed BEFORE removing
+ * it — this deletes real work, so it is not a one-click "clean up" with
+ * no preview.
+ */
+function DuplicatesDialog({ groups, symbolFor, onCancel, onRemove }) {
+  const extras = groups.reduce((s, g) => s + g.objs.length - 1, 0);
+  return (
+    <Dialog
+      open
+      onClose={onCancel}
+      title="Stacked duplicates"
+      width="max-w-lg"
+      footer={
+        <>
+          <Button onClick={onCancel}>Close</Button>
+          {groups.length > 0 && (
+            <Button variant="danger" onClick={onRemove}>
+              Remove {extras} duplicate{extras === 1 ? '' : 's'}
+            </Button>
+          )}
+        </>
+      }
+    >
+      {groups.length === 0 ? (
+        <p className="text-sm leading-relaxed text-ink-600">
+          No stacked duplicates — every device sits at its own position.
+        </p>
+      ) : (
+        <>
+          <p className="mb-3 text-sm leading-relaxed text-ink-600">
+            Found {groups.length} spot{groups.length === 1 ? '' : 's'} where devices sit exactly on
+            top of each other ({extras} extra device{extras === 1 ? '' : 's'}). The first at each
+            spot is kept; the rest are removed.
+          </p>
+          <div className="max-h-64 overflow-y-auto rounded-md border border-ink-200">
+            {groups.map((g, i) => {
+              const sym = symbolFor(g.objs[0].symbolId);
+              return (
+                <div key={i} className={cxRow(i)}>
+                  <span className="min-w-0 flex-1 truncate text-sm text-ink-700">
+                    {sym ? sym.label : g.objs[0].symbolId}
+                  </span>
+                  <span className="text-2xs text-ink-400">{g.floorName}</span>
+                  <span className="tnum text-2xs font-medium text-red-600">×{g.objs.length}</span>
+                </div>
+              );
+            })}
+          </div>
+        </>
+      )}
+    </Dialog>
+  );
+}
+// Tiny helper so the row classes stay readable inline above.
+function cxRow(i) {
+  return 'flex items-center gap-2 px-3 py-2' + (i > 0 ? ' border-t border-ink-100' : '');
+}
+
+/** Name-only, because that's all a room is in this model. */
+function RoomDialog({ onCancel, onCreate }) {
+  const [name, setName] = useState('');
+  const valid = name.trim().length > 0;
+  function submit(e) {
+    e && e.preventDefault();
+    if (valid) onCreate(name.trim());
+  }
+  return (
+    <Dialog
+      open
+      onClose={onCancel}
+      title="New room"
+      footer={
+        <>
+          <Button onClick={onCancel}>Cancel</Button>
+          <Button variant="primary" disabled={!valid} onClick={submit}>
+            Add room
+          </Button>
+        </>
+      }
+    >
+      <form onSubmit={submit}>
+        <TextInput
+          autoFocus
+          value={name}
+          onChange={e => setName(e.target.value)}
+          placeholder="e.g. Kitchen"
+          aria-label="Room name"
+        />
+        <p className="mt-2 text-2xs leading-relaxed text-ink-400">
+          Assign devices to this room from their properties, or select several and assign them at
+          once.
+        </p>
+      </form>
+    </Dialog>
+  );
+}
+
+/**
+ * Custom fitting. Colour is taken from the chosen layer rather than being
+ * a free choice — that's what keeps a plan readable by category, and it
+ * matches production, which does the same.
+ */
+function CustomFittingDialog({ onCancel, onCreate }) {
+  const [form, setForm] = useState({
+    name: '',
+    abbr: '',
+    category: 'power',
+    material_cost: '20',
+    labour_hours: '0.3',
+  });
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+  const valid = form.name.trim().length > 0;
+
+  function submit(e) {
+    e && e.preventDefault();
+    if (!valid) return;
+    onCreate({
+      name: form.name,
+      abbr: form.abbr,
+      category: form.category,
+      material_cost: parseFloat(form.material_cost) || 0,
+      labour_hours: parseFloat(form.labour_hours) || 0,
+    });
+  }
+
+  return (
+    <Dialog
+      open
+      onClose={onCancel}
+      title="Add a custom fitting"
+      footer={
+        <>
+          <Button onClick={onCancel}>Cancel</Button>
+          <Button variant="primary" disabled={!valid} onClick={submit}>
+            Add fitting
+          </Button>
+        </>
+      }
+    >
+      <form onSubmit={submit} className="flex flex-col gap-2.5">
+        <label className="flex flex-col gap-1">
+          <span className="text-2xs font-medium uppercase tracking-wide text-ink-400">Name</span>
+          <TextInput
+            autoFocus
+            value={form.name}
+            onChange={e => set('name', e.target.value)}
+            placeholder="e.g. Oven outlet"
+          />
+        </label>
+        <div className="flex gap-2">
+          <label className="flex flex-1 flex-col gap-1">
+            <span className="text-2xs font-medium uppercase tracking-wide text-ink-400">
+              Plan label
+            </span>
+            <TextInput
+              value={form.abbr}
+              onChange={e => set('abbr', e.target.value.slice(0, 3))}
+              placeholder="max 3 chars"
+            />
+          </label>
+          <label className="flex flex-1 flex-col gap-1">
+            <span className="text-2xs font-medium uppercase tracking-wide text-ink-400">Layer</span>
+            <Select value={form.category} onChange={e => set('category', e.target.value)}>
+              {LAYER_DEFS.filter(l => l.id !== 'architectural').map(l => (
+                <option key={l.id} value={l.id}>
+                  {l.name}
+                </option>
+              ))}
+            </Select>
+          </label>
+        </div>
+        <div className="flex gap-2">
+          <label className="flex flex-1 flex-col gap-1">
+            <span className="text-2xs font-medium uppercase tracking-wide text-ink-400">
+              Material $
+            </span>
+            <TextInput
+              inputMode="decimal"
+              value={form.material_cost}
+              onChange={e => set('material_cost', e.target.value)}
+            />
+          </label>
+          <label className="flex flex-1 flex-col gap-1">
+            <span className="text-2xs font-medium uppercase tracking-wide text-ink-400">
+              Labour (hrs)
+            </span>
+            <TextInput
+              inputMode="decimal"
+              value={form.labour_hours}
+              onChange={e => set('labour_hours', e.target.value)}
+            />
+          </label>
+        </div>
+        <p className="text-2xs leading-relaxed text-ink-400">
+          Saved with this project and priced like any catalog device. Its colour comes from the
+          layer you pick.
+        </p>
+      </form>
+    </Dialog>
+  );
+}
+
 function CalibrateDialog({ length, onCancel, onApply }) {
   const [value, setValue] = useState('');
   const [unit, setUnit] = useState('mm');

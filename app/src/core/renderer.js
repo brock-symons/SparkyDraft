@@ -277,15 +277,23 @@ function drawDraft(ctx, view, draft, cursor, cableColor) {
   ctx.fill();
 }
 
-function deviceRadius(zoom) {
-  // Symbols grow with zoom but clamp, so a zoomed-out overview stays
-  // readable and a zoomed-in view doesn't produce absurd blobs.
-  return Math.max(7, Math.min(DEVICE_R * zoom, 26));
+/**
+ * Drawn radius of a device symbol.
+ *
+ * Symbols grow with zoom but clamp at both ends, so a zoomed-out
+ * overview stays readable and a zoomed-in view doesn't produce absurd
+ * blobs. `base` is the project's symbolSize setting (production: 12 / 16
+ * / 22); the clamps scale with it so Large actually reads larger at the
+ * extremes instead of being flattened to the same ceiling as Small.
+ */
+function deviceRadius(zoom, base) {
+  const b = base || DEVICE_R;
+  return Math.max(b * 0.47, Math.min(b * zoom, b * 1.73));
 }
 
 function drawDevice(ctx, view, obj, sym, opts) {
   const p = worldToScreen(view, obj.x, obj.y);
-  const r = deviceRadius(view.zoom);
+  const r = deviceRadius(view.zoom, opts.symbolSize);
   const color = sym ? sym.color : '#94a3b8';
 
   ctx.beginPath();
@@ -403,11 +411,11 @@ function drawMarquee(ctx, view, marquee) {
 }
 
 /** Bounding box + corner ticks around a multi-selection (§8). */
-function drawSelectionBounds(ctx, view, bounds) {
+function drawSelectionBounds(ctx, view, bounds, symbolSize) {
   if (!bounds) return;
   const a = worldToScreen(view, bounds.minX, bounds.minY);
   const b = worldToScreen(view, bounds.maxX, bounds.maxY);
-  const pad = deviceRadius(view.zoom) + 8;
+  const pad = deviceRadius(view.zoom, symbolSize) + 8;
   const x = a.x - pad,
     y = a.y - pad;
   const w = b.x - a.x + pad * 2,
@@ -468,10 +476,10 @@ function drawMeasure(ctx, view, measure, scale, formatDistance) {
 }
 
 /** Ghost preview of the device about to be placed, at the snapped point. */
-function drawPlacementGhost(ctx, view, ghost, sym) {
+function drawPlacementGhost(ctx, view, ghost, sym, symbolSize) {
   if (!ghost || !sym) return;
   const p = worldToScreen(view, ghost.x, ghost.y);
-  const r = deviceRadius(view.zoom);
+  const r = deviceRadius(view.zoom, symbolSize);
   ctx.globalAlpha = 0.55;
   ctx.beginPath();
   ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
@@ -535,6 +543,7 @@ export function renderScene(ctx, cssW, cssH, scene) {
       hovered: scene.hoverId === o.id,
       locked: scene.lockedIds ? scene.lockedIds.has(o.id) : false,
       label: scene.showLabels ? (o.props && o.props.customName) || null : null,
+      symbolSize: scene.symbolSize,
     });
   }
 
@@ -548,12 +557,12 @@ export function renderScene(ctx, cssW, cssH, scene) {
   );
   drawDraft(ctx, view, scene.draft, scene.cursorWorld, scene.activeCableColor);
 
-  if (scene.selectedIds.size > 1) drawSelectionBounds(ctx, view, scene.bounds);
+  if (scene.selectedIds.size > 1) drawSelectionBounds(ctx, view, scene.bounds, scene.symbolSize);
   if (scene.snap) {
     drawSnapGuides(ctx, view, scene.snap.guides, cssW, cssH);
     drawSnapTarget(ctx, view, scene.snap.target);
   }
-  drawPlacementGhost(ctx, view, scene.ghost, scene.ghostSymbol);
+  drawPlacementGhost(ctx, view, scene.ghost, scene.ghostSymbol, scene.symbolSize);
   drawMarquee(ctx, view, scene.marquee);
   drawMeasure(ctx, view, scene.measure, drawing.scale, scene.formatDistance);
 }

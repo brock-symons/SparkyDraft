@@ -117,6 +117,11 @@ export function createController({ doc, getView, setView, getViewport, onChange,
     return out;
   }
 
+  /** Project's configured symbol radius, falling back to the default. */
+  function symbolRadius() {
+    return project().symbolSize || DEVICE_R;
+  }
+
   function toWorld(clientX, clientY, rect) {
     return screenToWorld(getView(), clientX - rect.left, clientY - rect.top);
   }
@@ -200,6 +205,126 @@ export function createController({ doc, getView, setView, getViewport, onChange,
     selectedSegment = null;
     notify();
     return true;
+  }
+
+  // --- rooms ----------------------------------------------------------
+  //
+  // Deliberately lightweight, matching production: a room is a name and
+  // an id, and devices point at it by `room`. There is no polygon and no
+  // spatial containment — an electrician assigns devices to "Kitchen" by
+  // selecting them, which is what takeoffs and grouping actually need.
+
+  function addRoom(name) {
+    if (!name || !name.trim()) return false;
+    let id = null;
+    doc.commit('Add room', d => {
+      const f = currentFloor(d);
+      id = 'RM-' + String(d.nextId++).padStart(3, '0');
+      f.rooms.push({ id, name: name.trim() });
+    });
+    notify();
+    return id;
+  }
+
+  function renameRoom(id, name) {
+    if (!name || !name.trim()) return false;
+    doc.commit('Rename room', d => {
+      const r = currentFloor(d).rooms.find(x => x.id === id);
+      if (!r) return false;
+      r.name = name.trim();
+    });
+    notify();
+    return true;
+  }
+
+  /** Deleting a room unassigns its devices rather than deleting them. */
+  function deleteRoom(id) {
+    doc.commit('Delete room', d => {
+      const f = currentFloor(d);
+      f.rooms = f.rooms.filter(r => r.id !== id);
+      f.objects.forEach(o => {
+        if (o.room === id) o.room = '';
+      });
+    });
+    notify();
+    return true;
+  }
+
+  /** Assign the current device selection to a room (or clear it). */
+  function assignSelectionToRoom(roomId) {
+    if (!selectedIds.size) return false;
+    doc.commit('Assign room', d => {
+      currentFloor(d).objects.forEach(o => {
+        if (selectedIds.has(o.id)) o.room = roomId || '';
+      });
+    });
+    notify();
+    return true;
+  }
+
+  // --- custom fittings -------------------------------------------------
+
+  /**
+   * A user-defined device. Shape matches production's exactly, including
+   * the `custom_<timestamp>` id and the 3-character abbreviation, so a
+   * project carrying custom fittings opens the same in either app.
+   * Colour is inherited from the chosen layer rather than picked freely —
+   * that is what keeps the plan readable by category at a glance.
+   */
+  function addCustomSymbol({ name, abbr, category, material_cost, labour_hours }, layerColor) {
+    if (!name || !name.trim()) return null;
+    const sym = {
+      id: 'custom_' + Date.now(),
+      label: name.trim(),
+      abbr: (abbr || name).toUpperCase().slice(0, 3) || '?',
+      color: layerColor,
+      category,
+      defaultProps: {
+        height_mm: 300,
+        cable: '1.5mm² TPS',
+        protection: '-',
+        material_cost: material_cost || 0,
+        labour_hours: labour_hours || 0,
+      },
+    };
+    doc.commit('Add custom fitting', d => {
+      d.customSymbols.push(sym);
+    });
+    notify();
+    return sym;
+  }
+
+  function deleteCustomSymbol(symbolId) {
+    doc.commit('Delete custom fitting', d => {
+      d.customSymbols = d.customSymbols.filter(s => s.id !== symbolId);
+    });
+    notify();
+    return true;
+  }
+
+  /**
+   * Removes stacked duplicates, keeping the FIRST device found at each
+   * spot — same rule production states in its own report ("the first one
+   * found in each spot is kept, the rest are removed"). One undo step
+   * covers the whole cleanup, since it reads as a single action.
+   */
+  function removeDuplicates(groups) {
+    const doomed = new Set();
+    for (const g of groups) g.objs.slice(1).forEach(o => doomed.add(o.id));
+    if (!doomed.size) return 0;
+    doc.commit('Remove duplicates', d => {
+      for (const f of d.floors) f.objects = f.objects.filter(o => !doomed.has(o.id));
+    });
+    selectedIds = new Set();
+    notify();
+    return doomed.size;
+  }
+
+  function setSymbolSize(px) {
+    doc.commit('Set symbol size', d => {
+      d.symbolSize = px;
+    });
+    notify();
   }
 
   function cancelDraft() {
@@ -363,6 +488,16 @@ export function createController({ doc, getView, setView, getViewport, onChange,
     notify();
   }
 
+  /** Assign a single device to a room from the inspector. */
+  function setObjectRoom(id, roomId) {
+    doc.commit('Set room', d => {
+      const o = currentFloor(d).objects.find(ob => ob.id === id);
+      if (!o) return false;
+      o.room = roomId || '';
+    });
+    notify();
+  }
+
   function setObjectProps(id, patch) {
     doc.commit('Edit properties', d => {
       const o = currentFloor(d).objects.find(ob => ob.id === id);
@@ -433,7 +568,10 @@ export function createController({ doc, getView, setView, getViewport, onChange,
 
     const isTouch = e.pointerType === 'touch';
     const world = toWorld(e.clientX, e.clientY, rect);
-    const tol = (DEVICE_R + (isTouch ? 10 : 2)) / getView().zoom; // fatter target for fingers (§12)
+    // Tolerance tracks the DRAWN symbol size, so what you can click always
+    // matches what you can see (§8) — a Large symbol still hit-tested at
+    // the default radius would feel dead near its edge.
+    const tol = (symbolRadius() + (isTouch ? 10 : 2)) / getView().zoom; // fatter target for fingers (§12)
     const hit = hitTestObjects(floor().objects, world, tol, selectable);
 
     const wantsPan = spaceHeld || e.button === 1 || tool === 'pan';
@@ -578,7 +716,7 @@ export function createController({ doc, getView, setView, getViewport, onChange,
 
     if (!gesture) {
       // Hover + live placement ghost.
-      const tol = (DEVICE_R + (e.pointerType === 'touch' ? 10 : 2)) / getView().zoom;
+      const tol = (symbolRadius() + (e.pointerType === 'touch' ? 10 : 2)) / getView().zoom;
       const hit = hitTestObjects(floor().objects, world, tol, selectable);
       const nextHover = hit ? hit.id : null;
       if (tool === 'place' && activeSymbolId) {
@@ -693,7 +831,7 @@ export function createController({ doc, getView, setView, getViewport, onChange,
    */
   function onContextMenu(e, rect) {
     const world = toWorld(e.clientX, e.clientY, rect);
-    const tol = (DEVICE_R + (e.pointerType === 'touch' ? 10 : 2)) / getView().zoom;
+    const tol = (symbolRadius() + (e.pointerType === 'touch' ? 10 : 2)) / getView().zoom;
     const hit = hitTestObjects(floor().objects, world, tol, selectable);
     if (hit && !selectedIds.has(hit.id)) selectedIds = new Set([hit.id]);
     if (!hit) selectedIds = new Set();
@@ -775,6 +913,15 @@ export function createController({ doc, getView, setView, getViewport, onChange,
     setSegmentCableSize,
     cancelDraft,
     clearSegmentSelection,
+    addRoom,
+    renameRoom,
+    deleteRoom,
+    assignSelectionToRoom,
+    setObjectRoom,
+    addCustomSymbol,
+    deleteCustomSymbol,
+    setSymbolSize,
+    removeDuplicates,
     deleteSelectedSegment,
     selectedSegmentObject,
     select,
