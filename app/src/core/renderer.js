@@ -18,6 +18,7 @@
 
 import { worldToScreen, gridWorldUnits, DEVICE_R } from './geometry.js';
 import { computeLightingBanks, computeChainOrder, computeBankAttachPoints } from './switching.js';
+import { computeGpoChains } from './circuits.js';
 
 export const PAINT = {
   bg: '#0b0f14',
@@ -268,7 +269,7 @@ function drawDimensions(ctx, view, dims, scale, formatDistance, selectedId) {
 
 function drawSwitchRuns(ctx, view, floor, opts) {
   if (!floor.switchLinks || !floor.switchLinks.length) return;
-  const { selectedIds, showAll, lightingHidden } = opts;
+  const { selectedIds, showAll, lightingHidden, isolatedCircuitId } = opts;
   if (lightingHidden) return;
 
   // Production strokes these near-black over its dark canvas, which is
@@ -281,7 +282,15 @@ function drawSwitchRuns(ctx, view, floor, opts) {
 
   for (const bank of computeLightingBanks(floor)) {
     const relevantIds = new Set([...bank.lightIds, ...bank.switches.map(s => s.switchId)]);
-    if (!showAll && ![...relevantIds].some(id => selectedIds.has(id))) continue;
+    // Isolating a circuit overrides selection and the show-all toggle:
+    // the point of isolate is "show me this circuit and nothing else".
+    if (isolatedCircuitId) {
+      const onCircuit = [...relevantIds].some(id => {
+        const o = floor.objects.find(x => x.id === id);
+        return o && o.circuit === isolatedCircuitId;
+      });
+      if (!onCircuit) continue;
+    } else if (!showAll && ![...relevantIds].some(id => selectedIds.has(id))) continue;
 
     const lightObjs = bank.lightIds.map(id => floor.objects.find(o => o.id === id)).filter(Boolean);
     if (!lightObjs.length) continue;
@@ -312,6 +321,75 @@ function drawSwitchRuns(ctx, view, floor, opts) {
     }
   }
   ctx.setLineDash([]);
+}
+
+// -------------------------------------------------------------------
+// Power circuit runs.
+//
+// Same derive-don't-store idea as the lighting banks, but branching
+// rather than chained (see circuits.js) and grouped by circuit rather
+// than by switch link. Different circuits never share a run.
+//
+// A run carrying a hard-active switch — one with its own circuit, fed
+// from the board instead of looped off its light — draws red so it reads
+// as a different kind of feed, and follows the Lighting layer's
+// visibility, since that is the layer the switch lives on.
+// -------------------------------------------------------------------
+
+function drawCircuitRuns(ctx, view, project, floor, opts) {
+  const { selectedIds, showAll, powerHidden, lightingHidden, isolatedCircuitId, categoryOf } = opts;
+  for (const chain of computeGpoChains(project, floor, categoryOf)) {
+    if (!chain.edges.length) continue;
+    if (chain.hardActive ? lightingHidden : powerHidden) continue;
+
+    const relevantIds = new Set(chain.gpoIds);
+    if (chain.boardObj) relevantIds.add(chain.boardObj.id);
+    const relevant = isolatedCircuitId
+      ? chain.circuitId === isolatedCircuitId
+      : showAll || [...relevantIds].some(id => selectedIds.has(id));
+    if (!relevant) continue;
+
+    ctx.strokeStyle = chain.hardActive ? 'rgba(255,77,77,0.8)' : 'rgba(79,179,255,0.8)';
+    ctx.lineWidth = 2.5;
+    ctx.setLineDash([4, 4]);
+    for (const { from, to } of chain.edges) {
+      const p1 = worldToScreen(view, from.x, from.y);
+      const p2 = worldToScreen(view, to.x, to.y);
+      ctx.beginPath();
+      ctx.moveTo(p1.x, p1.y);
+      ctx.lineTo(p2.x, p2.y);
+      ctx.stroke();
+    }
+    ctx.setLineDash([]);
+  }
+}
+
+/**
+ * Circuit id stamped under each assigned device. Ported from
+ * production's label block, including the zoom-scaled font: the label is
+ * a reading aid on a printed plan, so it must stay legible zoomed out
+ * without swamping the symbol zoomed in.
+ */
+function drawCircuitLabels(ctx, view, floor, visibleObjects) {
+  for (const { o, p } of visibleObjects) {
+    if (!o.circuit) continue;
+    const fontPx = Math.max(9, Math.min(12, 8 + view.zoom * 1.5));
+    ctx.font = 'bold ' + fontPx + 'px ui-monospace, SFMono-Regular, Menlo, monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    const tw = ctx.measureText(o.circuit).width;
+    const padX = 3,
+      padY = 1;
+    const boxW = tw + padX * 2;
+    const boxH = fontPx + padY * 2;
+    const r = deviceRadius(view.zoom, 12);
+    const bx = p.x - boxW / 2;
+    const by = p.y + r + 3;
+    ctx.fillStyle = 'rgba(9,13,18,0.92)';
+    ctx.fillRect(bx, by, boxW, boxH);
+    ctx.fillStyle = PAINT.label;
+    ctx.fillText(o.circuit, p.x, by + padY);
+  }
 }
 
 function drawDraft(ctx, view, draft, cursor, cableColor) {
@@ -592,11 +670,16 @@ export function renderScene(ctx, cssW, cssH, scene) {
   // Switch runs sit with the cables, under the devices: they are wiring,
   // and a dashed line crossing a device symbol makes the symbol harder to
   // read than the run it belongs to.
-  drawSwitchRuns(ctx, view, drawing, {
+  const runOpts = {
     selectedIds: scene.selectedIds,
     showAll: scene.showSwitchRuns,
+    isolatedCircuitId: scene.isolatedCircuitId,
     lightingHidden: scene.isLayerHidden('lighting'),
-  });
+    powerHidden: scene.isLayerHidden('power'),
+    categoryOf: scene.categoryOf,
+  };
+  drawSwitchRuns(ctx, view, drawing, runOpts);
+  drawCircuitRuns(ctx, view, scene.project, drawing, runOpts);
 
   // Viewport culling — only pay for what's visible (§27).
   // A device on a hidden layer is skipped here rather than at hit-test
@@ -620,6 +703,8 @@ export function renderScene(ctx, cssW, cssH, scene) {
       symbolSize: scene.symbolSize,
     });
   }
+
+  if (scene.showCircuitLabels) drawCircuitLabels(ctx, view, drawing, visible);
 
   drawDimensions(
     ctx,

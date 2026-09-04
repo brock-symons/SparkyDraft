@@ -67,6 +67,16 @@ export function CanvasStage({
       isVisible: c.visible,
       isLayerHidden: c.isLayerHidden,
       showSwitchRuns: c.showSwitchRuns,
+      // Circuits are project-level and can be fed from a board on
+      // another floor, so the run derivation needs the whole project,
+      // not just the floor being drawn.
+      project: d.state,
+      categoryOf: o => {
+        const s = sf(o.symbolId);
+        return s ? s.category : null;
+      },
+      isolatedCircuitId: c.isolatedCircuitId,
+      showCircuitLabels: c.showCircuitLabels,
       snap: c.snap,
       marquee: c.marquee,
       measure: c.measure,

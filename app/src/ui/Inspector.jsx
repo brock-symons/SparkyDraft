@@ -592,9 +592,30 @@ function DeviceProperties({ obj, doc, controller, sections, toggleSection, onSta
               />
             </Row>
           )}
+          {/* Circuit sits with the electrical fields, not in its own
+              section: which circuit a device is on is read alongside its
+              cable and protection, not separately from them. */}
+          <Row label="Circuit">
+            <Select
+              value={obj.circuit || ''}
+              onChange={e => controller.assignCircuit([obj.id], e.target.value)}
+            >
+              <option value="">— unassigned —</option>
+              {(doc.state.circuits || []).map(c => (
+                <option key={c.id} value={c.id}>
+                  {c.id}
+                  {c.description ? ' — ' + c.description : ''}
+                </option>
+              ))}
+            </Select>
+          </Row>
+          {isSwitchSymbol(obj.symbolId) && obj.circuit && (
+            <div className="px-3 pt-1 text-2xs leading-relaxed text-amber-600">
+              Hard active — the lights this switch controls are fed from this circuit too.
+            </div>
+          )}
           <div className="px-3 pt-1.5 text-2xs leading-relaxed text-ink-400">
-            Circuit assignment and comms ports live in the full app — not yet ported into this
-            workspace.
+            Comms ports live in the full app — not yet ported into this workspace.
           </div>
         </Section>
       )}

@@ -21,7 +21,8 @@ import {
 import { createController } from './core/controller.js';
 import { createCommandRegistry, matchesShortcut, isTypingTarget } from './core/commands.js';
 import { boundsOf, viewForBounds, gridWorldUnits } from './core/geometry.js';
-import { SYMBOL_LIBRARY, LAYER_DEFS } from './core/catalog.js';
+import { SYMBOL_LIBRARY, LAYER_DEFS, CABLE_SIZES, PROTECTION_LIBRARY } from './core/catalog.js';
+import { findBoardObjects } from './core/circuits.js';
 import {
   listProjects,
   loadProject,
@@ -44,7 +45,7 @@ import {
 } from './ui/primitives.jsx';
 import { Workspace } from './ui/Workspace.jsx';
 import { Inspector, inspectorTitle } from './ui/Inspector.jsx';
-import { LibraryPanel, LayersPanel } from './ui/Panels.jsx';
+import { LibraryPanel, LayersPanel, CircuitsPanel } from './ui/Panels.jsx';
 import { CommandPalette } from './ui/CommandPalette.jsx';
 import { CanvasContextMenu } from './ui/ContextMenu.jsx';
 import { ProjectPicker } from './ui/ProjectPicker.jsx';
@@ -118,6 +119,9 @@ function WorkspaceRoot({ projectId, onExit, pushToast }) {
   const [assignRoomOpen, setAssignRoomOpen] = useState(false);
   const [duplicateGroups, setDuplicateGroups] = useState(null);
   const [historyOpen, setHistoryOpen] = useState(false);
+  // null = closed; { id } = editing that circuit; { id: null } = adding.
+  const [circuitDialog, setCircuitDialog] = useState(null);
+  const [assignCircuitOpen, setAssignCircuitOpen] = useState(false);
 
   const controllerRef = useRef(null);
   if (!controllerRef.current) {
@@ -558,7 +562,10 @@ function WorkspaceRoot({ projectId, onExit, pushToast }) {
         id: 'tool.link',
         title: 'Link switch to lights',
         group: 'Tools',
-        shortcut: 'L',
+        // K, not L: L already opens the Layers panel, and a tool quietly
+        // shadowing an existing shortcut is exactly the kind of drift the
+        // single command registry exists to prevent.
+        shortcut: 'K',
         icon: '⚯',
         keywords: 'link switch light bank gang two-way control switching',
         run: c => c.controller.setTool('link'),
@@ -771,6 +778,52 @@ function WorkspaceRoot({ projectId, onExit, pushToast }) {
         run: c => c.togglePanel('left', 'layers'),
       },
       {
+        id: 'panel.circuits',
+        title: 'Toggle circuits panel',
+        group: 'Panels',
+        shortcut: 'Shift+C',
+        icon: '◎',
+        keywords: 'circuit board protection breaker rcbo assign',
+        run: c => c.togglePanel('left', 'circuits'),
+      },
+      {
+        id: 'circuit.add',
+        title: 'New circuit',
+        group: 'Circuits',
+        icon: '＋',
+        keywords: 'circuit add create board protection',
+        run: c => c.openCircuitDialog(null),
+      },
+      {
+        id: 'circuit.assign',
+        title: 'Assign selection to a circuit',
+        group: 'Circuits',
+        icon: '⌁',
+        keywords: 'circuit assign devices selection',
+        when: hasSel,
+        run: c => c.openAssignCircuit(),
+      },
+      {
+        id: 'view.circuitLabels',
+        title: 'Show circuit labels',
+        group: 'View',
+        icon: '⌗',
+        keywords: 'circuit label id stamp plan',
+        run: c => {
+          const on = c.controller.toggleCircuitLabels();
+          c.pushToast(on ? 'Circuit labels on' : 'Circuit labels off');
+        },
+      },
+      {
+        id: 'view.clearIsolate',
+        title: 'Stop isolating circuit',
+        group: 'View',
+        icon: '◍',
+        keywords: 'isolate circuit clear show all',
+        when: c => !!c.controller.isolatedCircuitId,
+        run: c => c.controller.toggleIsolatedCircuit(c.controller.isolatedCircuitId),
+      },
+      {
         id: 'panel.library',
         title: 'Toggle component library',
         group: 'Panels',
@@ -885,6 +938,8 @@ function WorkspaceRoot({ projectId, onExit, pushToast }) {
       openAssignRoom: () => setAssignRoomOpen(true),
       openDuplicates: () => setDuplicateGroups(findDuplicateDevices(doc.state)),
       openHistory: () => setHistoryOpen(true),
+      openCircuitDialog: id => setCircuitDialog({ id: id || null }),
+      openAssignCircuit: () => setAssignCircuitOpen(true),
       pushToast,
     }),
     [
@@ -1006,6 +1061,13 @@ function WorkspaceRoot({ projectId, onExit, pushToast }) {
         customSymbols={doc.state.customSymbols || []}
         onAddFitting={() => setFittingDialogOpen(true)}
       />
+    ) : panels.left === 'circuits' ? (
+      <CircuitsPanel
+        doc={doc}
+        controller={controller}
+        onAddCircuit={() => setCircuitDialog({ id: null })}
+        onEditCircuit={id => setCircuitDialog({ id })}
+      />
     ) : null;
 
   const rightPanel = (
@@ -1052,7 +1114,13 @@ function WorkspaceRoot({ projectId, onExit, pushToast }) {
         onDockResize={onDockResize}
         leftPanelContent={leftPanel}
         rightPanelContent={rightPanel}
-        leftPanelTitle={panels.left === 'layers' ? 'Layers' : 'Components'}
+        leftPanelTitle={
+          panels.left === 'layers'
+            ? 'Layers'
+            : panels.left === 'circuits'
+              ? 'Circuits'
+              : 'Components'
+        }
         rightPanelTitle={inspectorTitle(controller)}
         onFit={fit}
         onViewportChange={onViewportChange}
@@ -1079,6 +1147,34 @@ function WorkspaceRoot({ projectId, onExit, pushToast }) {
         }}
         onApply={applyCalibration}
       />
+      {circuitDialog && (
+        <CircuitDialog
+          circuit={
+            circuitDialog.id
+              ? (doc.state.circuits || []).find(c => c.id === circuitDialog.id)
+              : null
+          }
+          boards={findBoardObjects(doc.state)}
+          onCancel={() => setCircuitDialog(null)}
+          onSubmit={fields => {
+            if (circuitDialog.id) {
+              controller.updateCircuit(circuitDialog.id, fields);
+              pushToast('Circuit ' + circuitDialog.id + ' updated');
+            } else if (controller.addCircuit(fields)) {
+              pushToast('Circuit ' + fields.id + ' added');
+            } else {
+              pushToast('A circuit called ' + fields.id + ' already exists', 'error');
+              return;
+            }
+            setCircuitDialog(null);
+          }}
+          onDelete={() => {
+            controller.deleteCircuit(circuitDialog.id);
+            pushToast('Circuit ' + circuitDialog.id + ' deleted — its devices are unassigned');
+            setCircuitDialog(null);
+          }}
+        />
+      )}
       {roomDialogOpen && (
         <RoomDialog
           onCancel={() => setRoomDialogOpen(false)}
@@ -1086,6 +1182,18 @@ function WorkspaceRoot({ projectId, onExit, pushToast }) {
             controller.addRoom(name);
             setRoomDialogOpen(false);
             pushToast('Room "' + name + '" added');
+          }}
+        />
+      )}
+      {assignCircuitOpen && (
+        <AssignCircuitDialog
+          circuits={doc.state.circuits || []}
+          count={controller.selectedIds.size}
+          onCancel={() => setAssignCircuitOpen(false)}
+          onAssign={circuitId => {
+            controller.assignCircuit([...controller.selectedIds], circuitId);
+            setAssignCircuitOpen(false);
+            pushToast(circuitId ? 'Assigned to ' + circuitId : 'Circuit cleared');
           }}
         />
       )}
@@ -1202,6 +1310,49 @@ function HistoryDialog({ entries, onCancel, onJump }) {
  * single-device inspector field because assigning twelve GPOs to
  * "Kitchen" one at a time is exactly the kind of friction §29 targets.
  */
+
+/**
+ * Bulk circuit assignment. Separate from the room version because the
+ * consequence is different: assigning a switch to a circuit propagates
+ * to the lights it controls, so the dialog says so rather than letting
+ * the user discover it afterwards.
+ */
+function AssignCircuitDialog({ circuits, count, onCancel, onAssign }) {
+  const [circuitId, setCircuitId] = useState(circuits.length ? circuits[0].id : '');
+  return (
+    <Dialog
+      open
+      onClose={onCancel}
+      title="Assign to circuit"
+      footer={
+        <>
+          <Button onClick={onCancel}>Cancel</Button>
+          <Button variant="primary" onClick={() => onAssign(circuitId)}>
+            Assign
+          </Button>
+        </>
+      }
+    >
+      <p className="mb-3 text-sm leading-relaxed text-ink-600">
+        Assign {count} selected device{count === 1 ? '' : 's'} to:
+      </p>
+      <Select value={circuitId} onChange={e => setCircuitId(e.target.value)} aria-label="Circuit">
+        <option value="">— none (clear circuit) —</option>
+        {circuits.map(c => (
+          <option key={c.id} value={c.id}>
+            {c.id}
+            {c.description ? ' — ' + c.description : ''}
+          </option>
+        ))}
+      </Select>
+      <p className="mt-2 text-2xs leading-relaxed text-ink-400">
+        A switch assigned to its own circuit is a hard active — the lights it controls move onto
+        that circuit too.
+      </p>
+    </Dialog>
+  );
+}
+
 function AssignRoomDialog({ rooms, count, onCancel, onAssign }) {
   const [roomId, setRoomId] = useState(rooms.length ? rooms[0].id : '');
   return (
@@ -1293,6 +1444,140 @@ function cxRow(i) {
 }
 
 /** Name-only, because that's all a room is in this model. */
+
+/**
+ * Add or edit a circuit. Fields mirror production's form exactly, in the
+ * same order — the board/cable/protection trio is what the panel
+ * schedule and the quote read, so this is data entry an electrician
+ * already knows the shape of, not a place to get creative.
+ *
+ * Editing an existing circuit deliberately does NOT allow changing its
+ * id: devices reference a circuit by id, so a rename would orphan every
+ * assignment. Production allows it and silently orphans them.
+ */
+function CircuitDialog({ circuit, boards, onCancel, onSubmit, onDelete }) {
+  const editing = !!circuit;
+  const [id, setId] = useState(circuit ? circuit.id : '');
+  const [description, setDescription] = useState(circuit ? circuit.description || '' : '');
+  const [switchboardObjectId, setSwitchboard] = useState(
+    circuit ? circuit.switchboardObjectId || '' : ''
+  );
+  const [board, setBoard] = useState(circuit ? circuit.board || '' : 'MSB');
+  const [cable, setCable] = useState(circuit ? circuit.cable : '2.5mm²');
+  const [protectionId, setProtection] = useState(circuit ? circuit.protectionId : 'rcbo20');
+
+  const valid = id.trim().length > 0;
+  function submit(e) {
+    e && e.preventDefault();
+    if (!valid) return;
+    onSubmit({
+      id: id.trim(),
+      description,
+      // A <select> hands back a string; device ids are numbers. Map the
+      // choice back to the real id or the board lookup silently never
+      // matches, and every circuit quietly falls back to "whichever
+      // board happens to be on this floor".
+      switchboardObjectId:
+        (boards.find(b => String(b.id) === String(switchboardObjectId)) || {}).id ?? null,
+      board,
+      cable,
+      protectionId,
+    });
+  }
+
+  return (
+    <Dialog
+      open
+      onClose={onCancel}
+      title={editing ? 'Circuit ' + circuit.id : 'New circuit'}
+      footer={
+        <>
+          {editing && (
+            <Button variant="danger" onClick={onDelete}>
+              Delete
+            </Button>
+          )}
+          <div className="flex-1" />
+          <Button onClick={onCancel}>Cancel</Button>
+          <Button variant="primary" disabled={!valid} onClick={submit}>
+            {editing ? 'Save' : 'Add circuit'}
+          </Button>
+        </>
+      }
+    >
+      <form onSubmit={submit} className="flex flex-col gap-2">
+        <label className="text-2xs font-medium uppercase tracking-wide text-ink-400">
+          Circuit ID
+        </label>
+        <TextInput
+          autoFocus={!editing}
+          disabled={editing}
+          value={id}
+          onChange={e => setId(e.target.value)}
+          placeholder="e.g. GPO-01"
+          aria-label="Circuit ID"
+        />
+        <label className="mt-1 text-2xs font-medium uppercase tracking-wide text-ink-400">
+          Description
+        </label>
+        <TextInput
+          value={description}
+          onChange={e => setDescription(e.target.value)}
+          placeholder="e.g. General power — kitchen"
+          aria-label="Circuit description"
+        />
+        <label className="mt-1 text-2xs font-medium uppercase tracking-wide text-ink-400">
+          Switchboard
+        </label>
+        <Select
+          value={switchboardObjectId}
+          onChange={e => setSwitchboard(e.target.value)}
+          aria-label="Linked switchboard"
+        >
+          <option value="">— name the board below instead —</option>
+          {boards.map(b => (
+            <option key={b.id} value={b.id}>
+              {b.label} ({b.floorName})
+            </option>
+          ))}
+        </Select>
+        {!switchboardObjectId && (
+          <TextInput
+            value={board}
+            onChange={e => setBoard(e.target.value)}
+            placeholder="MSB"
+            aria-label="Board name"
+          />
+        )}
+        <label className="mt-1 text-2xs font-medium uppercase tracking-wide text-ink-400">
+          Cable
+        </label>
+        <Select value={cable} onChange={e => setCable(e.target.value)} aria-label="Circuit cable">
+          {CABLE_SIZES.map(cs => (
+            <option key={cs.size} value={cs.size}>
+              {cs.size}
+            </option>
+          ))}
+        </Select>
+        <label className="mt-1 text-2xs font-medium uppercase tracking-wide text-ink-400">
+          Protection
+        </label>
+        <Select
+          value={protectionId}
+          onChange={e => setProtection(e.target.value)}
+          aria-label="Protection device"
+        >
+          {PROTECTION_LIBRARY.map(p => (
+            <option key={p.id} value={p.id}>
+              {p.label} — ${p.cost}
+            </option>
+          ))}
+        </Select>
+      </form>
+    </Dialog>
+  );
+}
+
 function RoomDialog({ onCancel, onCreate }) {
   const [name, setName] = useState('');
   const valid = name.trim().length > 0;

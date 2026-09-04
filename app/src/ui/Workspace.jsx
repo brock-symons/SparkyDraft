@@ -228,6 +228,15 @@ function ToolRail({ tools, controller, registry, ctx, panels, onTogglePanel }) {
       )}
       <div className="flex-1" />
       <IconButton
+        label="Circuits"
+        shortcut="Shift+C"
+        tooltipSide="right"
+        active={panels.left === 'circuits'}
+        onClick={() => onTogglePanel('left', 'circuits')}
+      >
+        ◎
+      </IconButton>
+      <IconButton
         label="Layers"
         shortcut="L"
         tooltipSide="right"
@@ -508,7 +517,7 @@ export function Workspace({
       key: 'link',
       label: 'Link switch',
       shortLabel: 'Link',
-      shortcut: 'L',
+      shortcut: 'K',
       icon: '⚯',
       // In the mobile bar: linking is done on site, standing in the room,
       // working out what switches what — the phone case, not the desk one.

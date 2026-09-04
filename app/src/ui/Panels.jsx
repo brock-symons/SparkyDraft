@@ -326,3 +326,90 @@ export function LayersPanel({ doc, counts }) {
     </div>
   );
 }
+
+// ===================================================================
+// CIRCUITS  (migration Phase 3)
+//
+// A circuit is project-level: it can feed devices on any floor, so the
+// device count here is deliberately project-wide rather than scoped to
+// the floor on screen. Isolate is the panel's most useful control on a
+// busy plan — "show me this circuit and nothing else" — so it sits on
+// the row rather than behind an edit dialog.
+// ===================================================================
+
+export function CircuitsPanel({ doc, controller, onAddCircuit, onEditCircuit }) {
+  const project = doc.state;
+  const circuits = project.circuits || [];
+  const counts = useMemo(() => {
+    const by = {};
+    for (const f of project.floors) {
+      for (const o of f.objects) if (o.circuit) by[o.circuit] = (by[o.circuit] || 0) + 1;
+    }
+    return by;
+  }, [project.floors]);
+
+  return (
+    <div className="flex h-full flex-col">
+      <div className="min-h-0 flex-1 overflow-y-auto py-1">
+        {circuits.length === 0 ? (
+          <EmptyState
+            title="No circuits yet"
+            hint="Add a circuit, then assign devices to it from the inspector."
+          />
+        ) : (
+          circuits.map(c => {
+            const isolated = controller.isolatedCircuitId === c.id;
+            const n = counts[c.id] || 0;
+            return (
+              <div
+                key={c.id}
+                className={cx(
+                  'flex items-center gap-2 px-3 py-1.5 transition-colors hover:bg-ink-50',
+                  isolated && 'bg-accent-50'
+                )}
+              >
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-sm font-medium text-ink-800">{c.id}</div>
+                  <div className="truncate text-2xs text-ink-400">
+                    {c.description || c.board || '—'} · {c.cable}
+                  </div>
+                </div>
+                <span className="tnum text-2xs text-ink-400">{n || ''}</span>
+                <IconButton
+                  label={isolated ? `Stop isolating ${c.id}` : `Isolate ${c.id}`}
+                  size="sm"
+                  active={isolated}
+                  tooltipSide="left"
+                  onClick={() => controller.toggleIsolatedCircuit(c.id)}
+                >
+                  ◎
+                </IconButton>
+                <IconButton
+                  label={`Edit ${c.id}`}
+                  size="sm"
+                  tooltipSide="left"
+                  onClick={() => onEditCircuit(c.id)}
+                >
+                  ⋯
+                </IconButton>
+              </div>
+            );
+          })
+        )}
+      </div>
+      <div className="shrink-0 border-t border-ink-100 p-2">
+        <button
+          onClick={onAddCircuit}
+          className={cx(
+            'flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed',
+            'border-ink-300 py-2 text-2xs font-medium text-ink-500',
+            'transition-colors hover:border-accent-400 hover:bg-accent-50 hover:text-accent-700',
+            focusRing
+          )}
+        >
+          <span className="text-sm leading-none">＋</span> Add circuit
+        </button>
+      </div>
+    </div>
+  );
+}

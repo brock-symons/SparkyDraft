@@ -37,6 +37,7 @@ import {
 import { snapPoint } from './snapping.js';
 import { currentFloor } from './document.js';
 import { CABLE_SIZES } from './catalog.js';
+import { makeCircuit } from './circuits.js';
 import {
   isSwitchSymbol,
   autoGroupForSwitchLink,
@@ -83,6 +84,11 @@ export function createController({ doc, getView, setView, getViewport, onChange,
   // plan doesn't turn into spaghetti. This shows all of them at once,
   // matching production's showSwitchRuns toggle.
   let showSwitchRuns = false;
+  // Circuit view state: isolate one circuit's run, and stamp circuit ids
+  // under the symbols. Both are ways of reading the drawing, not edits,
+  // so neither belongs in the document or the undo history.
+  let isolatedCircuitId = null;
+  let showCircuitLabels = false;
 
   let gesture = null; // active pointer gesture
   const pointers = new Map(); // pointerId -> {x,y} for multi-touch
@@ -438,6 +444,84 @@ export function createController({ doc, getView, setView, getViewport, onChange,
     showSwitchRuns = !showSwitchRuns;
     notify();
     return showSwitchRuns;
+  }
+
+  // --- circuits (Phase 3) ---------------------------------------------
+
+  /** Adds a circuit. Returns false if the id is blank or already taken. */
+  function addCircuit(fields) {
+    const id = (fields.id || '').trim();
+    if (!id) return false;
+    let ok = false;
+    doc.commit('Add circuit', d => {
+      d.circuits = d.circuits || [];
+      if (d.circuits.some(c => c.id === id)) return false;
+      d.circuits.push(makeCircuit({ ...fields, id }));
+      ok = true;
+    });
+    notify();
+    return ok;
+  }
+
+  function updateCircuit(id, patch) {
+    doc.commit('Edit circuit', d => {
+      const c = (d.circuits || []).find(x => x.id === id);
+      if (!c) return false;
+      Object.assign(c, patch);
+    });
+    notify();
+  }
+
+  /**
+   * Deletes a circuit and unassigns its devices. Production clears the
+   * assignment on the current floor only; circuits are project-level, so
+   * that leaves devices on other floors pointing at a circuit that no
+   * longer exists — which then shows up as a phantom assignment in the
+   * quote and schedule. Cleared across every floor here.
+   */
+  function deleteCircuit(id) {
+    doc.commit('Delete circuit', d => {
+      d.circuits = (d.circuits || []).filter(c => c.id !== id);
+      for (const f of d.floors) {
+        for (const o of f.objects) if (o.circuit === id) o.circuit = '';
+      }
+    });
+    if (isolatedCircuitId === id) isolatedCircuitId = null;
+    notify();
+  }
+
+  /**
+   * Assigns devices to a circuit (or clears it with ''). A switch given
+   * its own circuit is a hard active, and its lights loop off that same
+   * run — so the assignment propagates, exactly as production does when
+   * a switch's circuit is set.
+   */
+  function assignCircuit(ids, circuitId) {
+    const set = new Set(ids);
+    if (!set.size) return false;
+    doc.commit(set.size > 1 ? `Assign ${set.size} devices` : 'Assign circuit', d => {
+      const f = currentFloor(d);
+      for (const o of f.objects) {
+        if (!set.has(o.id)) continue;
+        o.circuit = circuitId;
+        propagateSwitchCircuitToLinkedLights(f, o);
+      }
+    });
+    notify();
+    return true;
+  }
+
+  /** Show one circuit's run alone; passing the current id clears it. */
+  function toggleIsolatedCircuit(id) {
+    isolatedCircuitId = isolatedCircuitId === id ? null : id;
+    notify();
+    return isolatedCircuitId;
+  }
+
+  function toggleCircuitLabels() {
+    showCircuitLabels = !showCircuitLabels;
+    notify();
+    return showCircuitLabels;
   }
 
   function cancelDraft() {
@@ -1074,6 +1158,12 @@ export function createController({ doc, getView, setView, getViewport, onChange,
     get showSwitchRuns() {
       return showSwitchRuns;
     },
+    get isolatedCircuitId() {
+      return isolatedCircuitId;
+    },
+    get showCircuitLabels() {
+      return showCircuitLabels;
+    },
     get spaceHeld() {
       return spaceHeld;
     },
@@ -1111,6 +1201,12 @@ export function createController({ doc, getView, setView, getViewport, onChange,
     startLinking,
     setBankName,
     toggleSwitchRuns,
+    addCircuit,
+    updateCircuit,
+    deleteCircuit,
+    assignCircuit,
+    toggleIsolatedCircuit,
+    toggleCircuitLabels,
     deleteSelectedSegment,
     selectedSegmentObject,
     select,
