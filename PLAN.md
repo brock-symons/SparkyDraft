@@ -12,7 +12,7 @@ versioned markdown next to the code.
 | | |
 |---|---|
 | Branch | `feature/cad-workspace-redesign` |
-| Status | Phases 0-2 complete · Phase 3 (circuits) next |
+| Status | Phases 0-3 complete · Phase 4 (panel schedule + load) next |
 | Merged to main | **No — and not without explicit owner review** |
 | Last updated | 2026-09-04 |
 
@@ -26,9 +26,9 @@ undo/redo, layers, plan import + calibration, command registry driving
 palette/shortcuts/tooltips/context-menu, three responsive models, and as of
 Phase 0 a project-of-floors document model.
 
-**Not done:** the electrical, commercial, output and cloud halves of the
-product. Circuits, panel schedule, quoting, comms, civil, elevations,
-print/PDF and all cloud/auth features remain.
+**Not done:** the commercial, output and cloud halves of the product.
+Panel schedule, load/demand, quoting, comms, civil, elevations, print/PDF
+and all cloud/auth features remain.
 
 ---
 
@@ -87,11 +87,20 @@ the inspector covering the plan you had to tap.
 
 **Why before circuits:** circuit assignment propagates through switch links.
 
-### Phase 3 — Circuits
-CRUD, assignment, branching runs (`computeGpoChains()`,
-`computeChainEdges()` — branching, *not* a strict chain),
-`propagateSwitchCircuitToLinkedLights()`, isolate view, circuit labels,
-switch-run overlay.
+### Phase 3 — Circuits ✅ complete
+
+- [x] **Circuit CRUD** (`7b891b0`) — production's field shape, panel +
+      dialog, duplicate-id guard, delete unassigns across all floors.
+- [x] **Assignment** (`7b891b0`) — per device and in bulk; hard-active
+      switches propagate to their linked lights.
+- [x] **Branching runs** (`7b891b0`) — `computeChainEdges()` ported
+      verbatim (degree-constrained tree, board capped at one feed).
+- [x] **Isolate view + circuit labels + switch-run overlay** (`7b891b0`)
+
+Fixed here: the linked-switchboard select returned a string against
+numeric device ids, so every circuit silently fell back to "whichever
+board is on this floor". The link tool's shortcut moved L → K, which
+the Layers panel already owned.
 
 ### Phase 4 — Panel schedule + load/demand
 Panel schedule, the demand estimate, cable-run estimate, board main-switch

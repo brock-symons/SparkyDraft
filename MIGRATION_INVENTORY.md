@@ -92,17 +92,17 @@ Status key: **✅ complete** · **◐ partial** · **✗ missing** · **⚙ need
 | Custom symbols | `state.customSymbols[]` | — | ✗ | User-defined devices added to library |
 | Duplicate-device finder | `findDuplicateDevices()` L4138 | — | ✗ | QA tool: finds overlapping/duplicated devices |
 | Symbol size setting | `state.symbolSize` | — | ✗ | |
-| Circuit isolate view | `state.isolatedCircuitId` | — | ✗ | Show one circuit's cabling at a time |
-| Circuit label / switch-run overlays | `showCircuitLabels`, `showSwitchRuns` | — | ✗ | |
+| Circuit isolate view | `state.isolatedCircuitId` | controller + renderer | ✅ | Overrides selection and show-all |
+| Circuit label / switch-run overlays | `showCircuitLabels`, `showSwitchRuns` | controller + renderer | ✅ | |
 
 ### A2. Electrical systems
 
 | Feature | Current | New | Status | Notes |
 |---|---|---|---|---|
-| Circuits CRUD | `renderCircuits()` L5121 | — | ✗ | `state.circuits[]`, kinds incl. `data` |
-| Circuit assignment to devices | `openProps` circuit select | — | ✗ | |
-| Auto-assign circuit to linked lights | `propagateSwitchCircuitToLinkedLights()` | — | ✗ | Business logic |
-| Branching circuit runs | `computeGpoChains()` L1863, `computeChainEdges()` L1822 | — | ✗ | Power/hard-active runs branch rather than strict chain |
+| Circuits CRUD | `renderCircuits()` L5121 | `core/circuits.js` + Circuits panel | ✅ | `data` kind lands with comms (Phase 5) |
+| Circuit assignment to devices | `openProps` circuit select | Inspector + bulk assign | ✅ | |
+| Auto-assign circuit to linked lights | `propagateSwitchCircuitToLinkedLights()` | `core/switching.js` | ✅ | Ported verbatim |
+| Branching circuit runs | `computeGpoChains()` L1863, `computeChainEdges()` L1822 | `core/circuits.js` | ✅ | Degree-constrained tree, ported verbatim |
 | Lighting banks / gangs | `computeLightingBanks()` L1764, `bankNames{}` | `core/switching.js` | ✅ | Ported verbatim; gang only ever raised |
 | Panel schedule | `renderPanelSchedule()` L7051 | — | ✗ | |
 | Load / demand estimate | L6937–7050 | — | ✗ | **Formulas below must be preserved verbatim** |
@@ -414,7 +414,7 @@ still in flux would mean migrating stored cloud records twice.
 | Inspector / properties | Complete | Partial | Significant | Medium | High | Pending |
 | Walls / cables / dimensions / rooms | Complete | Complete | None | Medium | Done | ✅ |
 | Switch links + banks | Complete | Complete | None | High | Done | ✅ |
-| Circuits | Complete | Missing | Significant | **Critical** | **Critical** | Pending |
+| Circuits | Complete | Complete | None | **Critical** | Done | ✅ |
 | Panel schedule + load estimate | Complete | Missing | Significant | **Critical** | **Critical** | Pending |
 | Quote + price list | Complete | Missing | Significant | **Critical** | **Critical** | Pending |
 | Comms racks | Complete | Missing | Significant | High | High | Pending |
