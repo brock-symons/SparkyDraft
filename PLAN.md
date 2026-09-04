@@ -12,7 +12,7 @@ versioned markdown next to the code.
 | | |
 |---|---|
 | Branch | `feature/cad-workspace-redesign` |
-| Status | Phase 0 done · formatting done · Phase 1 in progress (3 of 6) |
+| Status | Phases 0-1 complete · Phase 2 (switch links) next |
 | Merged to main | **No — and not without explicit owner review** |
 | Last updated | 2026-09-04 |
 
@@ -27,7 +27,8 @@ palette/shortcuts/tooltips/context-menu, three responsive models, and as of
 Phase 0 a project-of-floors document model.
 
 **Not done:** the electrical, commercial, output and cloud halves of the
-product. 5 of 23 parity areas complete.
+product. Circuits, panel schedule, quoting, comms, civil, elevations,
+print/PDF and all cloud/auth features remain.
 
 ---
 
@@ -50,16 +51,23 @@ Order follows the inventory's dependency analysis (§F), not the directive's
 original §7 — the inventory found dependencies that make a different order
 safer, and §7 permits that.
 
-### Phase 1 — Canvas primitives the later phases consume
+### Phase 1 — Canvas primitives ✅ complete
 
 - [x] **Cable routes, walls, dimensions** (`5c4e078`) — shared two-click
       draw with rubber-band preview, production-identical id/shape,
       independent selection, contextual inspector, delete + undo.
-- [ ] Rooms
-- [ ] Custom symbols
-- [ ] Version history (browse/jump to past snapshots — distinct from undo)
-- [ ] Symbol size setting
-- [ ] Duplicate-device finder
+- [x] **Rooms** (`83f3ab8`) — name+id model matching production, single and
+      bulk assignment, delete unassigns rather than deletes.
+- [x] **Custom fittings** (`83f3ab8`) — production-identical shape; fixed a
+      real bug where symbol resolution was catalog-only, which would have
+      rendered custom devices as '?' and priced them at zero.
+- [x] **Version history** (`83f3ab8`) — jump to any point. Required
+      replacing the undo stacks with a linear timeline; jumping does not
+      truncate the future.
+- [x] **Symbol size** (`83f3ab8`) — 12/16/22; hit-test tolerance tracks the
+      drawn size so clickable matches visible.
+- [x] **Duplicate-device finder** (`83f3ab8`) — detection ported verbatim,
+      with a preview before removal.
 
 **Why first:** circuits need cables; the panel schedule's cable-run
 estimate needs both cables and calibration.

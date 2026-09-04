@@ -406,13 +406,13 @@ still in flux would mean migrating stored cloud records twice.
 
 | Area | Current | New | Gap | Business-logic risk | Priority | Status |
 |---|---|---|---|---|---|---|
-| Document model / floors | Complete | Missing | Fundamental | Critical | **Critical** | Pending |
+| Document model / floors | Complete | Complete (model) | Floor-switching UI still to come | Critical | Done | ✅ |
 | Canvas core (pan/zoom/grid/snap/select) | Complete | Complete | Minor | Low | Done | ✅ |
 | Undo/redo | Complete | Complete (better) | None | Medium | Done | ✅ |
 | Plan import + calibration | Complete | Complete | None | Low | Done | ✅ |
 | Layers | Complete | Partial | Moderate | Low | Medium | Pending |
 | Inspector / properties | Complete | Partial | Significant | Medium | High | Pending |
-| Walls / cables / dimensions / rooms | Complete | Missing | Significant | Medium | High | Pending |
+| Walls / cables / dimensions / rooms | Complete | Complete | None | Medium | Done | ✅ |
 | Switch links + banks | Complete | Missing | Significant | High | High | Pending |
 | Circuits | Complete | Missing | Significant | **Critical** | **Critical** | Pending |
 | Panel schedule + load estimate | Complete | Missing | Significant | **Critical** | **Critical** | Pending |
@@ -421,7 +421,7 @@ still in flux would mean migrating stored cloud records twice.
 | Civil / underground | Complete | Missing | Significant | High | High | Pending |
 | Elevations | Complete | Missing | Significant | Medium | Medium | Pending |
 | Print / PDF / export | Complete | Missing | Significant | Medium | Medium | Pending |
-| Version history | Complete | Missing | Moderate | Low | Medium | Pending |
+| Version history | Complete | Complete | None | Low | Done | ✅ |
 | Local persistence | Complete | Partial (own schema) | Significant | **Critical** | High | Pending |
 | Auth | Complete | Missing | Fundamental | **Critical** | **Critical** | Pending |
 | Supabase sync | Complete | Missing | Fundamental | **Critical** | **Critical** | Pending |
