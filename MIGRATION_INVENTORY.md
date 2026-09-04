@@ -104,12 +104,12 @@ Status key: **✅ complete** · **◐ partial** · **✗ missing** · **⚙ need
 | Auto-assign circuit to linked lights | `propagateSwitchCircuitToLinkedLights()` | `core/switching.js` | ✅ | Ported verbatim |
 | Branching circuit runs | `computeGpoChains()` L1863, `computeChainEdges()` L1822 | `core/circuits.js` | ✅ | Degree-constrained tree, ported verbatim |
 | Lighting banks / gangs | `computeLightingBanks()` L1764, `bankNames{}` | `core/switching.js` | ✅ | Ported verbatim; gang only ever raised |
-| Panel schedule | `renderPanelSchedule()` L7051 | — | ✗ | |
-| Load / demand estimate | L6937–7050 | — | ✗ | **Formulas below must be preserved verbatim** |
-| Cable-run length estimate | `estimateCircuitCableLength()` L7000 | — | ✗ | Needs calibration + visible cable route |
-| Board main-switch rating | `state.boardMainSwitchAmps{}` | — | ✗ | Feeds capacity-used estimate |
+| Panel schedule | `renderPanelSchedule()` L7051 | `core/panelSchedule.js` | ✅ | Grouped by board, capacity check, text export |
+| Load / demand estimate | L6937–7050 | `core/panelSchedule.js` | ✅ | Verbatim; checked by `app/test/panel-schedule-parity.mjs` |
+| Cable-run length estimate | `estimateCircuitCableLength()` L7000 | `core/panelSchedule.js` | ✅ | Hard-active runs only — extending it is an owner decision |
+| Board main-switch rating | `state.boardMainSwitchAmps{}` | controller + panel schedule | ✅ | Feeds capacity-used estimate |
 | Cable size library | `CABLE_SIZES` | catalog.js ✅ (data only) | ◐ | Data ported; no UI |
-| Protection library | `PROTECTION_LIBRARY` | catalog.js ✅ (data only) | ◐ | Data ported; no UI/costing |
+| Protection library | `PROTECTION_LIBRARY` | catalog.js + circuit dialog | ◐ | Selectable per circuit; costing lands with the quote (Phase 6) |
 
 ### A3. Commercial
 
@@ -415,7 +415,7 @@ still in flux would mean migrating stored cloud records twice.
 | Walls / cables / dimensions / rooms | Complete | Complete | None | Medium | Done | ✅ |
 | Switch links + banks | Complete | Complete | None | High | Done | ✅ |
 | Circuits | Complete | Complete | None | **Critical** | Done | ✅ |
-| Panel schedule + load estimate | Complete | Missing | Significant | **Critical** | **Critical** | Pending |
+| Panel schedule + load estimate | Complete | Complete | None | **Critical** | Done | ✅ (parity-tested) |
 | Quote + price list | Complete | Missing | Significant | **Critical** | **Critical** | Pending |
 | Comms racks | Complete | Missing | Significant | High | High | Pending |
 | Civil / underground | Complete | Missing | Significant | High | High | Pending |
@@ -449,8 +449,16 @@ Per §8/§20 — these change product behaviour and are **not** mine to decide:
    in place, or run both schemas during a transition? Data-loss risk either way.
 4. **GST hard-coded at 10%.** Correct for AU today; flagging only because it
    is a literal in the total, not a setting.
-5. **Grid spacing units.** Current uses `gridSpacingMM` (real mm); new uses
-   abstract world units. Reconciling changes what the grid means.
+5. **Grid spacing units.** RESOLVED in Phase 0 — the new model now stores
+   `gridSpacingMM` in real millimetres like production, converted through the
+   plan's calibration by `gridWorldUnits()`. Left listed so the decision is
+   visible rather than silently made.
+6. **Cable-run estimate for switched lighting.** The estimate covers
+   hard-active runs only. Production's source carries the owner's own
+   instruction (30 Aug 2026) that extending it needs a redesign around a
+   switch's view of what it feeds, and that it must not be built
+   speculatively. Carried across verbatim in `core/panelSchedule.js`;
+   still awaiting that conversation.
 
 ---
 
