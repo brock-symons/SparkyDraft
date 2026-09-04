@@ -518,6 +518,23 @@ export function createController({ doc, getView, setView, getViewport, onChange,
     return isolatedCircuitId;
   }
 
+  /**
+   * Main-switch rating for a board, keyed by the board's display label
+   * exactly as production keys it — the panel schedule groups by that
+   * same label, so the two must agree. A falsy or non-positive value
+   * clears the entry rather than storing a zero that would read as a
+   * 0 A board.
+   */
+  function setBoardMainSwitchAmps(boardLabel, amps) {
+    doc.commit('Set main switch rating', d => {
+      d.boardMainSwitchAmps = d.boardMainSwitchAmps || {};
+      const val = parseFloat(amps);
+      if (!val || val <= 0) delete d.boardMainSwitchAmps[boardLabel];
+      else d.boardMainSwitchAmps[boardLabel] = val;
+    });
+    notify();
+  }
+
   function toggleCircuitLabels() {
     showCircuitLabels = !showCircuitLabels;
     notify();
@@ -1207,6 +1224,7 @@ export function createController({ doc, getView, setView, getViewport, onChange,
     assignCircuit,
     toggleIsolatedCircuit,
     toggleCircuitLabels,
+    setBoardMainSwitchAmps,
     deleteSelectedSegment,
     selectedSegmentObject,
     select,

@@ -24,6 +24,12 @@ import { boundsOf, viewForBounds, gridWorldUnits } from './core/geometry.js';
 import { SYMBOL_LIBRARY, LAYER_DEFS, CABLE_SIZES, PROTECTION_LIBRARY } from './core/catalog.js';
 import { findBoardObjects } from './core/circuits.js';
 import {
+  buildPanelScheduleData,
+  panelScheduleText,
+  DIVERSITY_TYPE_LABELS,
+  MAINS_VOLTAGE,
+} from './core/panelSchedule.js';
+import {
   listProjects,
   loadProject,
   saveProject,
@@ -42,6 +48,7 @@ import {
   Button,
   TextInput,
   Select,
+  cx,
 } from './ui/primitives.jsx';
 import { Workspace } from './ui/Workspace.jsx';
 import { Inspector, inspectorTitle } from './ui/Inspector.jsx';
@@ -122,6 +129,9 @@ function WorkspaceRoot({ projectId, onExit, pushToast }) {
   // null = closed; { id } = editing that circuit; { id: null } = adding.
   const [circuitDialog, setCircuitDialog] = useState(null);
   const [assignCircuitOpen, setAssignCircuitOpen] = useState(false);
+  const [panelScheduleOpen, setPanelScheduleOpen] = useState(false);
+  // { title, text } while a text export is on screen.
+  const [exportText, setExportText] = useState(null);
 
   const controllerRef = useRef(null);
   if (!controllerRef.current) {
@@ -795,6 +805,14 @@ function WorkspaceRoot({ projectId, onExit, pushToast }) {
         run: c => c.openCircuitDialog(null),
       },
       {
+        id: 'report.panelSchedule',
+        title: 'Panel schedule',
+        group: 'Reports',
+        icon: '▦',
+        keywords: 'panel schedule board load demand amps protection cable run',
+        run: c => c.openPanelSchedule(),
+      },
+      {
         id: 'circuit.assign',
         title: 'Assign selection to a circuit',
         group: 'Circuits',
@@ -940,6 +958,7 @@ function WorkspaceRoot({ projectId, onExit, pushToast }) {
       openHistory: () => setHistoryOpen(true),
       openCircuitDialog: id => setCircuitDialog({ id: id || null }),
       openAssignCircuit: () => setAssignCircuitOpen(true),
+      openPanelSchedule: () => setPanelScheduleOpen(true),
       pushToast,
     }),
     [
@@ -1147,6 +1166,27 @@ function WorkspaceRoot({ projectId, onExit, pushToast }) {
         }}
         onApply={applyCalibration}
       />
+      {panelScheduleOpen && (
+        <PanelScheduleDialog
+          doc={doc}
+          controller={controller}
+          symbolFor={symbolFor}
+          onClose={() => setPanelScheduleOpen(false)}
+          onExport={boards =>
+            setExportText({
+              title: 'Panel schedule — select and copy',
+              text: panelScheduleText(doc.state, boards, doc.state.boardMainSwitchAmps),
+            })
+          }
+        />
+      )}
+      {exportText && (
+        <ExportTextDialog
+          title={exportText.title}
+          text={exportText.text}
+          onClose={() => setExportText(null)}
+        />
+      )}
       {circuitDialog && (
         <CircuitDialog
           circuit={
@@ -1455,6 +1495,256 @@ function cxRow(i) {
  * id: devices reference a circuit by id, so a rename would orphan every
  * assignment. Production allows it and silently orphans them.
  */
+
+/**
+ * Panel schedule. A read-only report, not an editor — the one thing you
+ * can change here is each board's main-switch rating, because the
+ * capacity check is meaningless without it and the board is what you are
+ * looking at when you think of it.
+ *
+ * Every number is produced by core/panelSchedule.js, which is ported
+ * verbatim from the current app and checked against it by
+ * app/test/panel-schedule-parity.mjs. The estimate disclaimers are part
+ * of the output, not decoration: they must travel with the numbers
+ * wherever the numbers go.
+ */
+function PanelScheduleDialog({ doc, controller, symbolFor, onClose, onExport }) {
+  const [ceilingMm, setCeilingMm] = useState(3000);
+  const [slackPct, setSlackPct] = useState(0);
+  const project = doc.state;
+  const boards = useMemo(
+    () => buildPanelScheduleData(project, { ceilingMm, slackPct }, symbolFor),
+    [project, ceilingMm, slackPct, symbolFor]
+  );
+  const mainAmps = project.boardMainSwitchAmps || {};
+
+  return (
+    <Dialog
+      open
+      onClose={onClose}
+      title="Panel schedule"
+      width="max-w-3xl"
+      footer={
+        <>
+          <Button onClick={() => onExport(boards)}>Export as text…</Button>
+          <div className="flex-1" />
+          <Button variant="primary" onClick={onClose}>
+            Done
+          </Button>
+        </>
+      }
+    >
+      {/* The report can run long; it scrolls inside the dialog so the
+          footer actions stay reachable rather than sliding off-screen. */}
+      <div className="max-h-[65vh] overflow-y-auto pr-1">
+        <div className="mb-3 flex flex-wrap items-end gap-3">
+          <label className="flex flex-col gap-1">
+            <span className="text-2xs font-medium uppercase tracking-wide text-ink-400">
+              Ceiling height
+            </span>
+            <input
+              type="number"
+              value={ceilingMm}
+              onChange={e => setCeilingMm(parseFloat(e.target.value) || 3000)}
+              aria-label="Ceiling height in millimetres"
+              className="w-28 rounded-md border border-ink-200 px-2 py-1 text-sm tnum"
+            />
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="text-2xs font-medium uppercase tracking-wide text-ink-400">
+              Slack %
+            </span>
+            <input
+              type="number"
+              value={slackPct}
+              onChange={e => setSlackPct(parseFloat(e.target.value) || 0)}
+              aria-label="Cable slack percentage"
+              className="w-24 rounded-md border border-ink-200 px-2 py-1 text-sm tnum"
+            />
+          </label>
+        </div>
+
+        {boards.length === 0 ? (
+          <p className="py-3 text-sm leading-relaxed text-ink-500">
+            No electrical circuits yet — add circuits and assign devices to them first.
+          </p>
+        ) : (
+          boards.map(b => {
+            const demandA = b.demandW / MAINS_VOLTAGE;
+            const amps = mainAmps[b.boardLabel];
+            const pctOfMain = amps && amps > 0 ? (demandA / amps) * 100 : null;
+            const anyOverRated = b.circuits.some(r => r.overRated);
+            return (
+              <div key={b.boardLabel} className="mb-4 rounded-lg border border-ink-200 p-3">
+                <div className="mb-2 text-sm font-semibold text-ink-800">{b.boardLabel}</div>
+                <div className="overflow-x-auto">
+                  <table className="w-full border-collapse text-2xs">
+                    <thead>
+                      <tr className="text-left text-ink-400">
+                        <th className="py-1 pr-2 font-medium">Circuit</th>
+                        <th className="py-1 pr-2 font-medium">Description</th>
+                        <th className="py-1 pr-2 font-medium">Cable</th>
+                        <th className="py-1 pr-2 font-medium">Protection</th>
+                        <th className="py-1 pr-2 font-medium">Qty</th>
+                        <th className="py-1 pr-2 font-medium">Connected</th>
+                        <th className="py-1 pr-2 font-medium">Est. demand</th>
+                        <th className="py-1 font-medium">Est. cable run</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {b.circuits.map(row => {
+                        const ce = row.cableEstimate;
+                        return (
+                          <tr key={row.circuit.id} className="border-t border-ink-100">
+                            <td className="py-1 pr-2 font-medium text-ink-800">
+                              {row.circuit.id}
+                              {row.overRated && <span className="ml-1 text-red-600">⚠</span>}
+                            </td>
+                            <td className="py-1 pr-2 text-ink-600">
+                              {row.circuit.description || '—'}
+                            </td>
+                            <td className="py-1 pr-2 text-ink-600">{row.circuit.cable || '—'}</td>
+                            <td className="py-1 pr-2 text-ink-600">{row.protectionLabel}</td>
+                            <td className="py-1 pr-2 tnum text-ink-600">{row.deviceCount}</td>
+                            <td className="py-1 pr-2 tnum text-ink-600">
+                              {row.connectedW.toFixed(0)}W / {row.connectedA.toFixed(1)}A
+                            </td>
+                            <td
+                              className="py-1 pr-2 tnum text-ink-600"
+                              title={DIVERSITY_TYPE_LABELS[row.diversityType]}
+                            >
+                              {row.demandW.toFixed(0)}W
+                            </td>
+                            <td className="py-1 tnum text-ink-600">
+                              {ce.ok ? (
+                                <>
+                                  ~{ce.meters.toFixed(1)}m
+                                  {ce.otherFloorCount ? (
+                                    <span
+                                      className="text-ink-400"
+                                      title={
+                                        ce.otherFloorCount +
+                                        ' device(s) on another floor not included'
+                                      }
+                                    >
+                                      {' '}
+                                      (+{ce.otherFloorCount} elsewhere)
+                                    </span>
+                                  ) : null}
+                                </>
+                              ) : (
+                                <span className="text-ink-400" title={ce.reason}>
+                                  —
+                                </span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className="mt-2 flex flex-wrap items-end gap-4 text-2xs">
+                  <div>
+                    <div className="text-ink-400">Connected load</div>
+                    <div className="tnum text-sm text-ink-800">
+                      {(b.connectedW / 1000).toFixed(2)} kW
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-ink-400">Est. demand load</div>
+                    <div className="tnum text-sm text-ink-800">
+                      {(b.demandW / 1000).toFixed(2)} kW ({demandA.toFixed(1)}A)
+                    </div>
+                  </div>
+                  <label className="flex flex-col gap-1">
+                    <span className="text-ink-400">Main switch rating (A)</span>
+                    <input
+                      type="number"
+                      defaultValue={amps || ''}
+                      placeholder="e.g. 63"
+                      aria-label={'Main switch rating for ' + b.boardLabel}
+                      onBlur={e => controller.setBoardMainSwitchAmps(b.boardLabel, e.target.value)}
+                      className="w-24 rounded-md border border-ink-200 px-2 py-1 text-sm tnum"
+                    />
+                  </label>
+                </div>
+
+                {pctOfMain != null && (
+                  <div
+                    className={cx(
+                      'mt-1.5 text-2xs',
+                      pctOfMain > 100 ? 'text-red-600' : 'text-ink-400'
+                    )}
+                  >
+                    {pctOfMain.toFixed(0)}% of main switch capacity used (estimate)
+                    {pctOfMain > 100 ? ' — exceeds rating' : ''}
+                  </div>
+                )}
+                {anyOverRated && (
+                  <div className="mt-1.5 text-2xs text-red-600">
+                    ⚠ One or more circuits have a connected load above their protection device
+                    rating — review before relying on this board.
+                  </div>
+                )}
+              </div>
+            );
+          })
+        )}
+
+        <p className="mt-2 text-2xs leading-relaxed text-ink-400">
+          Connected load uses each device's typical load from the device library (editable per
+          device and per type). Demand load applies a simplified diversity estimate for early
+          planning only — always verify against AS/NZS 3000 and your own professional judgement
+          before relying on it for a real installation.
+        </p>
+        <p className="mt-1.5 text-2xs leading-relaxed text-ink-400">
+          Est. cable run only covers circuits linked to a switchboard on a calibrated floor. For
+          lighting it covers hard-active runs only (switch fed straight from the switchboard) — the
+          cable for actually switching the lights or fans is <b>not</b> included, since too many
+          cable combinations are possible to estimate generically.
+        </p>
+      </div>
+    </Dialog>
+  );
+}
+
+/** Read-only text output, selected on open so it can be copied straight out. */
+function ExportTextDialog({ title, text, onClose }) {
+  const ref = useRef(null);
+  useEffect(() => {
+    if (ref.current) {
+      ref.current.focus();
+      ref.current.select();
+    }
+  }, []);
+  return (
+    <Dialog
+      open
+      onClose={onClose}
+      title={title}
+      width="max-w-3xl"
+      footer={
+        <>
+          <div className="flex-1" />
+          <Button variant="primary" onClick={onClose}>
+            Done
+          </Button>
+        </>
+      }
+    >
+      <textarea
+        ref={ref}
+        readOnly
+        value={text}
+        aria-label={title}
+        className="h-72 w-full resize-none rounded-md border border-ink-200 p-2 font-mono text-2xs leading-relaxed"
+      />
+    </Dialog>
+  );
+}
+
 function CircuitDialog({ circuit, boards, onCancel, onSubmit, onDelete }) {
   const editing = !!circuit;
   const [id, setId] = useState(circuit ? circuit.id : '');
