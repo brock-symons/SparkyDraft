@@ -126,10 +126,10 @@ Status key: **✅ complete** · **◐ partial** · **✗ missing** · **⚙ need
 
 | Feature | Current | New | Status |
 |---|---|---|---|
-| Comms racks + ports | L1906+, `renderCommsRacksSheet()` L5254 | — | ✗ |
-| Port assignment (home runs) | `commsPortOptions()` | — | ✗ |
-| Derived patch panels | `PATCH_PANEL_PORTS_PER_UNIT` | — | ✗ |
-| Comms run rendering | `computeCommsRuns()` L1992 | — | ✗ |
+| Comms racks + ports | L1906+, `renderCommsRacksSheet()` L5254 | `core/comms.js` + Comms panel | ✅ |
+| Port assignment (home runs) | `commsPortOptions()` | Inspector Data section | ✅ |
+| Derived patch panels | `PATCH_PANEL_PORTS_PER_UNIT` | `core/comms.js` | ✅ |
+| Comms run rendering | `computeCommsRuns()` L1992 | `core/renderer.js` | ✅ |
 | Legacy comms migration | `migrateLegacyCommsData()` | — | ✗ ⚠ | Data-integrity: converts old saves |
 
 ### A5. Civil / underground
@@ -417,7 +417,7 @@ still in flux would mean migrating stored cloud records twice.
 | Circuits | Complete | Complete | None | **Critical** | Done | ✅ |
 | Panel schedule + load estimate | Complete | Complete | None | **Critical** | Done | ✅ (parity-tested) |
 | Quote + price list | Complete | Missing | Significant | **Critical** | **Critical** | Pending |
-| Comms racks | Complete | Missing | Significant | High | High | Pending |
+| Comms racks | Complete | Complete | None | High | Done | ✅ (parity-tested) |
 | Civil / underground | Complete | Missing | Significant | High | High | Pending |
 | Elevations | Complete | Missing | Significant | Medium | Medium | Pending |
 | Print / PDF / export | Complete | Missing | Significant | Medium | Medium | Pending |

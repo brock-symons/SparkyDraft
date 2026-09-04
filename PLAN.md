@@ -12,7 +12,7 @@ versioned markdown next to the code.
 | | |
 |---|---|
 | Branch | `feature/cad-workspace-redesign` |
-| Status | Phases 0-4 complete · Phase 5 (comms racks) next |
+| Status | Phases 0-5 complete · Phase 6 (quote + price list) next |
 | Merged to main | **No — and not without explicit owner review** |
 | Last updated | 2026-09-04 |
 
@@ -119,10 +119,20 @@ cable that actually switches a light/fan is an explicit owner decision
 (see the scope note in `core/panelSchedule.js`) — not to be built
 speculatively.
 
-### Phase 5 — Comms racks
-Racks, ports, home-run assignment, derived patch panels, comms run
-rendering, **and `migrateLegacyCommsData()`** (data-integrity critical —
-port it before the UI, or old saves corrupt on load).
+### Phase 5 — Comms racks ✅ complete
+
+- [x] **Racks + ports** (`2eba280`) — 24 slots on placement, panel to
+      manage them, patch panels derived not placed.
+- [x] **Home-run assignment** (`2eba280`) — one run per outlet, drawn
+      point-to-point, port label on the plan.
+- [x] **`migrateLegacyCommsData()`** (`2eba280`) — ported first, run
+      through one load entry point, and parity-tested over 300
+      randomised old-format projects
+      (`node app/test/comms-migration-parity.mjs`).
+
+Also fixed: patch_panel was placeable here but is hidden from
+production's placement grid — placing one would have double-counted
+against the derived panel.
 
 ### Phase 6 — Quote + price list
 Quote totals, itemised/summary toggle, price list editing, per-object price
@@ -210,7 +220,20 @@ Two deliberate exclusions, in `.prettierignore` with reasons:
   its value is being byte-comparable with its source, and reformatting
   would drown the next re-extraction diff.
 
-**To run it again:** Node lives at `C:\Program Files\nodejs` but is not on
+## Running the parity tests
+
+Both compare the ported core against the LIVE `index.html`, extracting
+its functions by name at run time so they survive edits to that file:
+
+```bash
+node app/test/panel-schedule-parity.mjs
+node app/test/comms-migration-parity.mjs
+```
+
+If either fails, the port has drifted from the product — fix the port,
+not the expectation.
+
+**To run Prettier again:** Node lives at `C:\Program Files\nodejs` but is not on
 the Git-Bash PATH — prepend `export PATH="/c/Program Files/nodejs:$PATH"`.
 `npx prettier` hung on this machine; installing prettier into a scratch dir
 and calling `node_modules/.bin/prettier` directly works and is fast.
