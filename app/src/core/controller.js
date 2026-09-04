@@ -27,6 +27,7 @@
 import {
   screenToWorld,
   hitTestObjects,
+  hitTestSegments,
   objectsInRect,
   boundsOf,
   zoomAt,
@@ -35,6 +36,7 @@ import {
 } from './geometry.js';
 import { snapPoint } from './snapping.js';
 import { currentFloor } from './document.js';
+import { CABLE_SIZES } from './catalog.js';
 
 const DRAG_THRESHOLD_PX = 4;
 
@@ -50,6 +52,14 @@ export function createController({ doc, getView, setView, getViewport, onChange,
   let measure = null;
   let spaceHeld = false;
   let cursorWorld = null;
+  // In-progress linear primitive (first click placed, second pending).
+  let draft = null;
+  // Cables/walls/dimensions select independently of devices, matching
+  // production's separate selectedCableId — they are not part of a
+  // device multi-selection and don't participate in align/distribute.
+  let selectedSegment = null;
+  // 2.5mm² default matches production's CABLE_SIZES[2].
+  let activeCableSize = CABLE_SIZES[2];
 
   let gesture = null; // active pointer gesture
   const pointers = new Map(); // pointerId -> {x,y} for multi-touch
@@ -131,8 +141,104 @@ export function createController({ doc, getView, setView, getViewport, onChange,
 
   // --- tools ---------------------------------------------------------
 
+  // --- linear primitives (cables / walls / dimensions) ----------------
+
+  /**
+   * Production ids are prefixed and zero-padded (`C-001`, `W-002`,
+   * `M-003`) and drawn from the same `nextId` counter as devices. Kept
+   * identical so ids stay comparable across the old and new apps while
+   * both exist, and so a project round-tripped through either looks the
+   * same.
+   */
+  const SEGMENT_KIND = {
+    cable: { prefix: 'C', collection: 'cables', label: 'Draw cable' },
+    wall: { prefix: 'W', collection: 'walls', label: 'Draw wall' },
+    dimension: { prefix: 'M', collection: 'dimensions', label: 'Add dimension' },
+  };
+
+  function commitSegment(kind, a, b) {
+    const spec = SEGMENT_KIND[kind];
+    if (!spec) return;
+    doc.commit(spec.label, d => {
+      const f = currentFloor(d);
+      const id = spec.prefix + '-' + String(d.nextId++).padStart(3, '0');
+      const seg = { id, x1: a.x, y1: a.y, x2: b.x, y2: b.y };
+      if (kind === 'cable') {
+        // Cables carry their size + colour so the drawing stays readable
+        // and the quote can price the run. Defaults to the active size.
+        seg.layer = 'cable';
+        seg.size = activeCableSize.size;
+        seg.color = activeCableSize.color;
+      }
+      f[spec.collection].push(seg);
+    });
+  }
+
+  /** Topmost cable/wall/dimension under the cursor, with its kind. */
+  function hitTestLinear(world) {
+    const f = floor();
+    const tol = 14 / getView().zoom;
+    const wallTol = 22 / getView().zoom; // production uses a fatter wall target
+    const cable = hitTestSegments(f.cables || [], world, tol);
+    if (cable) return { kind: 'cable', item: cable };
+    const dim = hitTestSegments(f.dimensions || [], world, tol);
+    if (dim) return { kind: 'dimension', item: dim };
+    const wall = hitTestSegments(f.walls || [], world, wallTol);
+    if (wall) return { kind: 'wall', item: wall };
+    return null;
+  }
+
+  function deleteSelectedSegment() {
+    if (!selectedSegment) return false;
+    const spec = SEGMENT_KIND[selectedSegment.kind];
+    if (!spec) return false;
+    const id = selectedSegment.id;
+    doc.commit('Delete ' + selectedSegment.kind, d => {
+      const f = currentFloor(d);
+      f[spec.collection] = f[spec.collection].filter(s => s.id !== id);
+    });
+    selectedSegment = null;
+    notify();
+    return true;
+  }
+
+  function cancelDraft() {
+    draft = null;
+    notify();
+  }
+
+  function clearSegmentSelection() {
+    selectedSegment = null;
+    notify();
+  }
+
+  function setCableSize(size) {
+    activeCableSize = size;
+    notify();
+  }
+
+  /** Change an already-drawn cable's size/colour from the inspector. */
+  function setSegmentCableSize(id, size) {
+    doc.commit('Set cable size', d => {
+      const c = currentFloor(d).cables.find(x => x.id === id);
+      if (!c) return false;
+      c.size = size.size;
+      c.color = size.color;
+    });
+    notify();
+  }
+
+  function selectedSegmentObject() {
+    if (!selectedSegment) return null;
+    const spec = SEGMENT_KIND[selectedSegment.kind];
+    if (!spec) return null;
+    const item = (floor()[spec.collection] || []).find(s => s.id === selectedSegment.id);
+    return item ? { kind: selectedSegment.kind, item } : null;
+  }
+
   function setTool(next) {
     tool = next;
+    draft = null;
     if (next !== 'place') {
       activeSymbolId = null;
       ghost = null;
@@ -189,7 +295,11 @@ export function createController({ doc, getView, setView, getViewport, onChange,
   }
 
   function deleteSelected() {
-    if (!selectedIds.size) return false;
+    // A selected cable/wall/dimension is deleted by the same Delete key
+    // and the same command — the user does not think of them as a
+    // separate delete action.
+    if (!selectedIds.size) return deleteSelectedSegment();
+
     const n = selectedIds.size;
     doc.commit(n > 1 ? `Delete ${n} devices` : 'Delete device', d => {
       const f = currentFloor(d);
@@ -368,7 +478,47 @@ export function createController({ doc, getView, setView, getViewport, onChange,
       return;
     }
 
+    // Linear primitives — cable runs, walls and dimensions all share one
+    // two-click gesture (click start, click end), matching production.
+    // They differ only in which collection they land in and what they
+    // carry, so the draw interaction is written once here rather than
+    // three times.
+    if (tool === 'cable' || tool === 'wall' || tool === 'dimension') {
+      const s = computeSnap(world, null);
+      if (!draft) {
+        draft = { kind: tool, a: s.point, b: null };
+      } else {
+        const a = draft.a;
+        const b = s.point;
+        draft = null;
+        // A zero-length segment is a mis-click, not a drawing — dropping
+        // it here avoids leaving invisible artefacts that still hit-test.
+        if (Math.hypot(b.x - a.x, b.y - a.y) > 0.5) commitSegment(tool, a, b);
+      }
+      notify();
+      return;
+    }
+
     // Select tool
+    // Devices win over linear primitives when both are under the cursor:
+    // a device is a smaller, more deliberate target, and cables are drawn
+    // *between* devices so they overlap constantly.
+    if (!hit) {
+      const seg = hitTestLinear(world);
+      if (seg) {
+        selectedIds = new Set();
+        selectedSegment = { kind: seg.kind, id: seg.item.id };
+        notify();
+        return;
+      }
+      if (selectedSegment) {
+        selectedSegment = null;
+        notify();
+      }
+    } else {
+      selectedSegment = null;
+    }
+
     if (hit) {
       if (e.shiftKey || e.metaKey || e.ctrlKey) {
         if (selectedIds.has(hit.id)) selectedIds.delete(hit.id);
@@ -594,6 +744,15 @@ export function createController({ doc, getView, setView, getViewport, onChange,
     get measure() {
       return measure;
     },
+    get draft() {
+      return draft;
+    },
+    get selectedSegment() {
+      return selectedSegment;
+    },
+    get activeCableSize() {
+      return activeCableSize;
+    },
     get spaceHeld() {
       return spaceHeld;
     },
@@ -612,6 +771,12 @@ export function createController({ doc, getView, setView, getViewport, onChange,
     setSymbolResolver,
     setTool,
     setActiveSymbol,
+    setCableSize,
+    setSegmentCableSize,
+    cancelDraft,
+    clearSegmentSelection,
+    deleteSelectedSegment,
+    selectedSegmentObject,
     select,
     clearSelection,
     selectAll,

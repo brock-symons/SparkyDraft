@@ -132,19 +132,149 @@ function drawOrigin(ctx, view, w, h, drawing) {
   }
 }
 
-function drawWalls(ctx, view, walls) {
+function drawWalls(ctx, view, walls, selectedId) {
   if (!walls || !walls.length) return;
-  ctx.strokeStyle = 'rgba(190,205,220,0.55)';
-  ctx.lineWidth = Math.max(1.5, 3 * view.zoom * 0.5);
+  const width = Math.max(1.5, 3 * view.zoom * 0.5);
   ctx.lineCap = 'round';
+  // Unselected walls are stroked as one path (one canvas call for the
+  // whole set); a selected wall is stroked separately so it can carry a
+  // different colour without breaking that batching.
+  ctx.strokeStyle = 'rgba(190,205,220,0.55)';
+  ctx.lineWidth = width;
   ctx.beginPath();
   for (const wl of walls) {
+    if (wl.id === selectedId) continue;
     const a = worldToScreen(view, wl.x1, wl.y1);
     const b = worldToScreen(view, wl.x2, wl.y2);
     ctx.moveTo(a.x, a.y);
     ctx.lineTo(b.x, b.y);
   }
   ctx.stroke();
+
+  const sel = selectedId && walls.find(w => w.id === selectedId);
+  if (sel) {
+    const a = worldToScreen(view, sel.x1, sel.y1);
+    const b = worldToScreen(view, sel.x2, sel.y2);
+    ctx.strokeStyle = PAINT.selection;
+    ctx.lineWidth = width + 1.5;
+    ctx.beginPath();
+    ctx.moveTo(a.x, a.y);
+    ctx.lineTo(b.x, b.y);
+    ctx.stroke();
+  }
+}
+
+/**
+ * Cable runs. Dashed and colour-coded by size, with a mid-run label
+ * showing size and (once calibrated) real length — ported from
+ * production, where that label is how an electrician reads a run's
+ * spec off the plan without selecting it.
+ */
+function drawCables(ctx, view, cables, scale, selectedId) {
+  if (!cables || !cables.length) return;
+  for (const c of cables) {
+    const p1 = worldToScreen(view, c.x1, c.y1);
+    const p2 = worldToScreen(view, c.x2, c.y2);
+    const col = c.color || '#c084fc';
+    const selected = c.id === selectedId;
+
+    ctx.strokeStyle = col;
+    ctx.lineWidth = selected ? 5 : 3;
+    ctx.setLineDash([7, 4]);
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(p1.x, p1.y);
+    ctx.lineTo(p2.x, p2.y);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Length divides by scale because scale is world-units-per-metre
+    // (see geometry.js) — the same arithmetic production uses.
+    const len = Math.hypot(c.x2 - c.x1, c.y2 - c.y1);
+    const label = (c.size || '') + (scale ? ' · ' + (len / scale).toFixed(1) + 'm' : '');
+    if (label.trim()) {
+      const mx = (p1.x + p2.x) / 2,
+        my = (p1.y + p2.y) / 2;
+      ctx.font = '600 10.5px Inter, ui-sans-serif, system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      const w = ctx.measureText(label).width + 10;
+      ctx.fillStyle = 'rgba(11,15,20,0.92)';
+      ctx.fillRect(mx - w / 2, my - 8, w, 16);
+      ctx.fillStyle = col;
+      ctx.fillText(label, mx, my);
+    }
+  }
+}
+
+/** Persistent dimension annotations, with end ticks and a length label. */
+function drawDimensions(ctx, view, dims, scale, formatDistance, selectedId) {
+  if (!dims || !dims.length) return;
+  for (const d of dims) {
+    const a = worldToScreen(view, d.x1, d.y1);
+    const b = worldToScreen(view, d.x2, d.y2);
+    const selected = d.id === selectedId;
+    ctx.strokeStyle = selected ? '#ffffff' : PAINT.measure;
+    ctx.lineWidth = selected ? 2 : 1.25;
+    ctx.beginPath();
+    ctx.moveTo(a.x, a.y);
+    ctx.lineTo(b.x, b.y);
+    ctx.stroke();
+
+    // End ticks perpendicular to the run, so the extents are unambiguous
+    // where a dimension sits alongside other linework.
+    const ang = Math.atan2(b.y - a.y, b.x - a.x) + Math.PI / 2;
+    const tx = Math.cos(ang) * 5,
+      ty = Math.sin(ang) * 5;
+    ctx.beginPath();
+    ctx.moveTo(a.x - tx, a.y - ty);
+    ctx.lineTo(a.x + tx, a.y + ty);
+    ctx.moveTo(b.x - tx, b.y - ty);
+    ctx.lineTo(b.x + tx, b.y + ty);
+    ctx.stroke();
+
+    const len = Math.hypot(d.x2 - d.x1, d.y2 - d.y1);
+    const text = formatDistance(len, scale);
+    const mx = (a.x + b.x) / 2,
+      my = (a.y + b.y) / 2;
+    ctx.font = '600 10.5px Inter, ui-sans-serif, system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    const w = ctx.measureText(text).width + 10;
+    ctx.fillStyle = 'rgba(11,15,20,0.92)';
+    ctx.fillRect(mx - w / 2, my - 16, w, 15);
+    ctx.fillStyle = PAINT.measure;
+    ctx.fillText(text, mx, my - 8.5);
+  }
+}
+
+/**
+ * Rubber-band preview between the first click and the cursor while a
+ * cable/wall/dimension is being drawn. Without it the first click gives
+ * no feedback and the tool feels broken until the second click lands.
+ */
+function drawDraft(ctx, view, draft, cursor, cableColor) {
+  if (!draft || !draft.a || !cursor) return;
+  const a = worldToScreen(view, draft.a.x, draft.a.y);
+  const b = worldToScreen(view, cursor.x, cursor.y);
+  ctx.strokeStyle =
+    draft.kind === 'cable'
+      ? cableColor || '#c084fc'
+      : draft.kind === 'wall'
+        ? 'rgba(190,205,220,0.9)'
+        : PAINT.measure;
+  ctx.lineWidth = draft.kind === 'wall' ? 2.5 : 2;
+  ctx.setLineDash([6, 4]);
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(a.x, a.y);
+  ctx.lineTo(b.x, b.y);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.beginPath();
+  ctx.arc(a.x, a.y, 3, 0, Math.PI * 2);
+  ctx.fillStyle = '#ffffff';
+  ctx.fill();
 }
 
 function deviceRadius(zoom) {
@@ -381,7 +511,14 @@ export function renderScene(ctx, cssW, cssH, scene) {
   }
   drawGrid(ctx, view, cssW, cssH, drawing);
   drawOrigin(ctx, view, cssW, cssH, drawing);
-  drawWalls(ctx, view, drawing.walls);
+
+  // Draw order is deliberate: walls are architecture the devices sit on,
+  // cables run between devices and must read *under* them, and dimensions
+  // are annotation that should never be obscured. So walls → cables →
+  // devices → dimensions.
+  const seg = scene.selectedSegment;
+  drawWalls(ctx, view, drawing.walls, seg && seg.kind === 'wall' ? seg.id : null);
+  drawCables(ctx, view, drawing.cables, drawing.scale, seg && seg.kind === 'cable' ? seg.id : null);
 
   // Viewport culling — only pay for what's visible (§27).
   const pad = 60;
@@ -400,6 +537,16 @@ export function renderScene(ctx, cssW, cssH, scene) {
       label: scene.showLabels ? (o.props && o.props.customName) || null : null,
     });
   }
+
+  drawDimensions(
+    ctx,
+    view,
+    drawing.dimensions,
+    drawing.scale,
+    scene.formatDistance,
+    seg && seg.kind === 'dimension' ? seg.id : null
+  );
+  drawDraft(ctx, view, scene.draft, scene.cursorWorld, scene.activeCableColor);
 
   if (scene.selectedIds.size > 1) drawSelectionBounds(ctx, view, scene.bounds);
   if (scene.snap) {

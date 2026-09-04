@@ -40,6 +40,35 @@ export function hitTestObjects(objects, world, tolerance, isSelectable) {
   return best;
 }
 
+/**
+ * Distance from a point to a line segment (not the infinite line).
+ * Ported from production's distToSegment — cables, walls and dimensions
+ * are all segments, and hit-testing them against the infinite line would
+ * make a short cable selectable from across the drawing.
+ */
+export function distToSegment(p, a, b) {
+  const vx = b.x - a.x,
+    vy = b.y - a.y;
+  const len2 = vx * vx + vy * vy;
+  if (len2 === 0) return Math.hypot(p.x - a.x, p.y - a.y);
+  let t = ((p.x - a.x) * vx + (p.y - a.y) * vy) / len2;
+  t = Math.max(0, Math.min(1, t));
+  return Math.hypot(p.x - (a.x + t * vx), p.y - (a.y + t * vy));
+}
+
+/**
+ * Topmost segment within `tolerance` of a world point. Iterates in
+ * reverse so the most recently drawn segment wins, matching production —
+ * when runs overlap, the one you just drew is the one you meant to grab.
+ */
+export function hitTestSegments(segments, world, tolerance) {
+  for (let i = segments.length - 1; i >= 0; i--) {
+    const s = segments[i];
+    if (distToSegment(world, { x: s.x1, y: s.y1 }, { x: s.x2, y: s.y2 }) < tolerance) return s;
+  }
+  return null;
+}
+
 /** Objects whose centres fall inside a world-space rectangle (marquee select). */
 export function objectsInRect(objects, rect, isSelectable) {
   const x1 = Math.min(rect.x1, rect.x2),

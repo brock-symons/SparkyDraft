@@ -547,17 +547,106 @@ function ToolContext({ controller }) {
  * The inspector's title changes with context, so it is computed here and
  * rendered by the hosting dock/sheet — one header, always accurate.
  */
+const SEGMENT_TITLE = { cable: 'Cable', wall: 'Wall', dimension: 'Dimension' };
+
 export function inspectorTitle(controller) {
   const n = controller.selectedIds.size;
   if ((controller.tool === 'place' && controller.activeSymbolId) || controller.tool === 'measure')
     return 'Tool';
   if (n > 1) return 'Selection';
   if (n === 1) return 'Device';
+  const seg = controller.selectedSegment;
+  if (seg) return SEGMENT_TITLE[seg.kind] || 'Object';
   return 'Drawing';
 }
 
+/**
+ * A selected cable / wall / dimension. Cables get their size editable
+ * here (it drives both how the run reads on the plan and what the quote
+ * prices); walls and dimensions carry no properties beyond geometry, so
+ * they show length and the delete action rather than inventing fields.
+ */
+function SegmentProperties({ segment, doc, controller }) {
+  const { kind, item } = segment;
+  const scale = currentFloor(doc.state).scale;
+  const length = Math.hypot(item.x2 - item.x1, item.y2 - item.y1);
+
+  return (
+    <>
+      <div className="flex items-center gap-2.5 px-3 py-3">
+        <span
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-bold"
+          style={
+            kind === 'cable'
+              ? {
+                  background: (item.color || '#c084fc') + '22',
+                  color: item.color || '#c084fc',
+                  border: '1px solid ' + (item.color || '#c084fc') + '55',
+                }
+              : { background: '#e0e5ec', color: '#4c5a6e', border: '1px solid #c8d1dc' }
+          }
+        >
+          {kind === 'cable' ? '⌇' : kind === 'wall' ? '▬' : '⟺'}
+        </span>
+        <div className="min-w-0">
+          <div className="truncate text-sm font-semibold text-ink-800">
+            {SEGMENT_TITLE[kind] || 'Object'}
+          </div>
+          <div className="text-2xs text-ink-400">ID {item.id}</div>
+        </div>
+      </div>
+      <Divider />
+
+      <Section title="General" open={sections_open} onToggle={() => {}}>
+        <Row label="Length">
+          <div className="tnum text-sm text-ink-700">{formatDistance(length, scale)}</div>
+        </Row>
+        {!scale && (
+          <div className="px-3 pt-1 text-2xs leading-relaxed text-ink-400">
+            Calibrate the drawing to show this in real units.
+          </div>
+        )}
+        {kind === 'cable' && (
+          <Row label="Size">
+            <Select
+              value={item.size || ''}
+              onChange={e => {
+                const size = CABLE_SIZES.find(s => s.size === e.target.value);
+                if (size) controller.setSegmentCableSize(item.id, size);
+              }}
+            >
+              {CABLE_SIZES.map(s => (
+                <option key={s.size} value={s.size}>
+                  {s.size}
+                </option>
+              ))}
+            </Select>
+          </Row>
+        )}
+      </Section>
+
+      <Section title="Actions" open={sections_open} onToggle={() => {}}>
+        <div className="px-3">
+          <Button
+            size="sm"
+            variant="danger"
+            className="w-full"
+            onClick={() => controller.deleteSelectedSegment()}
+          >
+            Delete {kind}
+          </Button>
+        </div>
+      </Section>
+    </>
+  );
+}
+// These two sections are always expanded: a segment has so few fields
+// that collapsing them would hide everything the panel exists to show.
+const sections_open = true;
+
 export function Inspector({ doc, controller, sections, toggleSection, onImportPlan, onCalibrate }) {
   const selected = controller.selectedObjects();
+  const segment = controller.selectedSegmentObject();
   const toolCtx =
     (controller.tool === 'place' && controller.activeSymbolId) || controller.tool === 'measure';
 
@@ -565,7 +654,10 @@ export function Inspector({ doc, controller, sections, toggleSection, onImportPl
     <div className="flex h-full flex-col">
       <div className="min-h-0 flex-1 overflow-y-auto">
         {toolCtx && <ToolContext controller={controller} />}
-        {!toolCtx && selected.length === 0 && (
+        {!toolCtx && selected.length === 0 && segment && (
+          <SegmentProperties segment={segment} doc={doc} controller={controller} />
+        )}
+        {!toolCtx && selected.length === 0 && !segment && (
           <DrawingProperties
             doc={doc}
             controller={controller}

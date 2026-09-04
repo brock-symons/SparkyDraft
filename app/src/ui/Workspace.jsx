@@ -358,6 +358,20 @@ function ModeHint({ controller }) {
   else if (controller.tool === 'calibrate')
     text = 'Click both ends of a length you know · Esc to exit';
   else if (controller.tool === 'measure') text = 'Click two points to measure · Esc to exit';
+  // The hint changes between the two clicks so the tool tells you what it
+  // is waiting for, rather than repeating a generic instruction.
+  else if (controller.tool === 'cable')
+    text = controller.draft
+      ? 'Click the end of the run · Esc to cancel'
+      : 'Click where the cable run starts · Esc to exit';
+  else if (controller.tool === 'wall')
+    text = controller.draft
+      ? 'Click the end of the wall · Esc to cancel'
+      : 'Click where the wall starts · Esc to exit';
+  else if (controller.tool === 'dimension')
+    text = controller.draft
+      ? 'Click the second point · Esc to cancel'
+      : 'Click the first point of the dimension · Esc to exit';
   else if (controller.tool === 'pan') text = 'Drag to pan · V to go back to Select';
   else if (controller.spaceHeld) text = 'Pan';
   if (!text) return null;
@@ -463,8 +477,39 @@ export function Workspace({
       onClick: () => controller.setTool('measure'),
     },
     { key: 'div1', divider: true },
+    // Drawing tools sit together, above the once-per-drawing setup
+    // actions. Cable is in the mobile primary bar (it's used constantly);
+    // wall and dimension are not (traced once, then rarely touched).
+    { key: 'sep-draw', divider: true },
+    {
+      key: 'cable',
+      label: 'Cable route',
+      shortLabel: 'Cable',
+      shortcut: 'W',
+      icon: '⌇',
+      primary: true,
+      isActive: () => controller.tool === 'cable',
+      onClick: () => registry.run('tool.cable', ctx),
+    },
+    {
+      key: 'wall',
+      label: 'Wall',
+      shortcut: 'Shift+W',
+      icon: '▬',
+      isActive: () => controller.tool === 'wall',
+      onClick: () => registry.run('tool.wall', ctx),
+    },
+    {
+      key: 'dimension',
+      label: 'Dimension',
+      shortcut: 'D',
+      icon: '⟺',
+      isActive: () => controller.tool === 'dimension',
+      onClick: () => registry.run('tool.dimension', ctx),
+    },
     // Calibrate is deliberately NOT in the mobile primary bar: it's a
     // once-per-drawing setup action, not something reached mid-draft.
+    { key: 'sep-setup', divider: true },
     {
       key: 'calibrate',
       label: 'Calibrate scale',

@@ -435,7 +435,14 @@ function WorkspaceRoot({ projectId, onExit, pushToast }) {
   // --- command registry ----------------------------------------------
   const registry = useMemo(() => {
     const r = createCommandRegistry();
-    const hasSel = c => c.controller.selectedIds.size > 0;
+    // "Something is selected" has to include cables/walls/dimensions, not
+    // just devices — they select independently (production keeps a
+    // separate selectedCableId for the same reason). Without this, Delete
+    // is greyed out and its shortcut silently does nothing while a cable
+    // is visibly selected.
+    const hasSel = c => c.controller.selectedIds.size > 0 || !!c.controller.selectedSegment;
+    // Device-only: align/distribute operate on device positions and have
+    // no meaning for a segment, so these stay strictly device selection.
     const hasMulti = c => c.controller.selectedIds.size > 1;
 
     r.registerAll([
@@ -475,6 +482,37 @@ function WorkspaceRoot({ projectId, onExit, pushToast }) {
         icon: '⚖',
         keywords: 'scale real units mm metres set',
         run: c => c.startCalibrate(),
+      },
+      // W goes to the cable tool, not the wall tool, on frequency: cable
+      // runs are drawn constantly, walls are traced once at the start of a
+      // job. `R` would be the better mnemonic for "run", but CLAUDE.md
+      // reserves it for repeat-placement, so it's left alone.
+      {
+        id: 'tool.cable',
+        title: 'Cable route tool',
+        group: 'Tools',
+        shortcut: 'W',
+        icon: '⌇',
+        keywords: 'cable run wire route tps circuit line',
+        run: c => c.controller.setTool('cable'),
+      },
+      {
+        id: 'tool.wall',
+        title: 'Wall tool',
+        group: 'Tools',
+        shortcut: 'Shift+W',
+        icon: '▬',
+        keywords: 'wall architecture outline trace',
+        run: c => c.controller.setTool('wall'),
+      },
+      {
+        id: 'tool.dimension',
+        title: 'Dimension tool',
+        group: 'Tools',
+        shortcut: 'D',
+        icon: '⟺',
+        keywords: 'dimension annotate length measurement permanent',
+        run: c => c.controller.setTool('dimension'),
       },
 
       // Plan
@@ -775,12 +813,23 @@ function WorkspaceRoot({ projectId, onExit, pushToast }) {
       // Escape backs out of the current mode before clearing selection —
       // one predictable "get me out of here" key (§10).
       if (e.key === 'Escape') {
+        // Escape unwinds one step at a time rather than dumping the user
+        // straight back to Select: cancel the half-drawn segment first,
+        // so a mis-clicked start point doesn't also cost you the tool.
+        if (controller.draft) {
+          controller.cancelDraft();
+          return;
+        }
         if (controller.tool !== 'select') {
           controller.setTool('select');
           return;
         }
         if (controller.selectedIds.size) {
           controller.clearSelection();
+          return;
+        }
+        if (controller.selectedSegment) {
+          controller.clearSegmentSelection();
           return;
         }
         return;
