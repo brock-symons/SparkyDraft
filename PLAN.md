@@ -12,7 +12,7 @@ versioned markdown next to the code.
 | | |
 |---|---|
 | Branch | `feature/cad-workspace-redesign` |
-| Status | Phase 0 complete; formatting pass done; Phase 1 in progress |
+| Status | Phase 0 done · formatting done · Phase 1 in progress (3 of 6) |
 | Merged to main | **No — and not without explicit owner review** |
 | Last updated | 2026-09-04 |
 
@@ -51,9 +51,16 @@ original §7 — the inventory found dependencies that make a different order
 safer, and §7 permits that.
 
 ### Phase 1 — Canvas primitives the later phases consume
-Walls (draw, not just read-for-snapping), cable routes (`line` tool),
-dimensions, rooms, custom symbols, version history, symbol size, duplicate
-finder.
+
+- [x] **Cable routes, walls, dimensions** (`5c4e078`) — shared two-click
+      draw with rubber-band preview, production-identical id/shape,
+      independent selection, contextual inspector, delete + undo.
+- [ ] Rooms
+- [ ] Custom symbols
+- [ ] Version history (browse/jump to past snapshots — distinct from undo)
+- [ ] Symbol size setting
+- [ ] Duplicate-device finder
+
 **Why first:** circuits need cables; the panel schedule's cable-run
 estimate needs both cables and calibration.
 
