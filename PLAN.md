@@ -12,7 +12,7 @@ versioned markdown next to the code.
 | | |
 |---|---|
 | Branch | `feature/cad-workspace-redesign` |
-| Status | Phase 0 complete, Phase 1 next |
+| Status | Phase 0 complete; formatting pass done; Phase 1 in progress |
 | Merged to main | **No — and not without explicit owner review** |
 | Last updated | 2026-09-04 |
 
@@ -146,22 +146,26 @@ Carried forward from the inventory. None block Phases 1–7.
 
 ---
 
-## Code style note (why no "condense" pass happened)
+## Code style / formatting ✅ resolved (`c8a0b43`)
 
-A condensing/simplification pass was requested. CLAUDE.md's only rule on
-this says the opposite of what a freehand pass would do:
+Node was installed on 2026-09-04, which unblocked the Prettier pass
+CLAUDE.md requires (it forbids freehand AI reformatting; a formatter
+reprints from the syntax tree and cannot change behaviour).
 
-> **Reformatting for readability goes through an actual formatter
-> (Prettier), never a freehand AI rewrite** … an AI manually "cleaning up"
-> dense code can drift into small semantic changes without meaning to.
+Done: Prettier 3.9.6 over `app/src`, own commit, zero functional changes,
+verified in-browser afterwards (place/undo/redo/selection all intact, no
+console errors). `.prettierrc.json` is committed so future runs reproduce
+the same output.
 
-Prettier can't run here — no Node, no npx, no `prettier` binary on this
-machine. So the compliant options are: install Node and run Prettier as its
-own zero-functional-change commit, or leave formatting alone. A freehand
-condensing pass would violate the rule it was meant to follow, so it wasn't
-done. Raised for the owner rather than silently skipped.
+Two deliberate exclusions, in `.prettierignore` with reasons:
+- **`index.html`** — the live product and this migration's fallback;
+  §21 says don't modify it while it's serving that role. If it ever is
+  reformatted, CLAUDE.md requires that be its own dedicated commit.
+- **`app/src/core/catalog.js`** — extracted verbatim from `index.html`;
+  its value is being byte-comparable with its source, and reformatting
+  would drown the next re-extraction diff.
 
-Note the rule targets *the legacy `index.html`'s* dense single-line areas.
-`app/src/` was written fresh in the house style (framework-free `core/`,
-React-only `ui/`, one command registry) and isn't the code that rule is
-aimed at.
+**To run it again:** Node lives at `C:\Program Files\nodejs` but is not on
+the Git-Bash PATH — prepend `export PATH="/c/Program Files/nodejs:$PATH"`.
+`npx prettier` hung on this machine; installing prettier into a scratch dir
+and calling `node_modules/.bin/prettier` directly works and is fast.
