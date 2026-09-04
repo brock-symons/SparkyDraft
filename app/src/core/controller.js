@@ -24,8 +24,9 @@
 // finger selects rather than nudging a device 2 mm across the plan.
 // ===================================================================
 
-import { screenToWorld, hitTestObjects, objectsInRect, boundsOf, zoomAt, DEVICE_R } from './geometry.js';
+import { screenToWorld, hitTestObjects, objectsInRect, boundsOf, zoomAt, gridWorldUnits, DEVICE_R } from './geometry.js';
 import { snapPoint } from './snapping.js';
+import { currentFloor } from './document.js';
 
 const DRAG_THRESHOLD_PX = 4;
 
@@ -47,13 +48,18 @@ export function createController({ doc, getView, setView, getViewport, onChange,
 
   function notify() { onChange && onChange(); }
 
-  function drawing() { return doc.state; }
+  // The document is a PROJECT; drafting happens on its active floor.
+  // Layer visibility/lock is project-level (hiding Power hides it on
+  // every floor), so the two accessors are kept distinct rather than
+  // collapsed into one "drawing".
+  function project() { return doc.state; }
+  function floor() { return currentFloor(doc.state); }
 
   function isLayerHidden(layerId) {
-    return (drawing().hiddenLayers || []).includes(layerId);
+    return (project().hiddenLayers || []).includes(layerId);
   }
   function isLayerLocked(layerId) {
-    return (drawing().lockedLayers || []).includes(layerId);
+    return (project().lockedLayers || []).includes(layerId);
   }
   function symbolCategoryOf(obj, symbolFor) {
     const s = symbolFor(obj.symbolId);
@@ -78,7 +84,7 @@ export function createController({ doc, getView, setView, getViewport, onChange,
 
   function lockedIds() {
     const out = new Set();
-    for (const o of drawing().objects) {
+    for (const o of floor().objects) {
       const cat = symbolCategoryOf(o, symbolFor);
       if (cat && isLayerLocked(cat)) out.add(o.id);
     }
@@ -90,15 +96,18 @@ export function createController({ doc, getView, setView, getViewport, onChange,
   }
 
   function computeSnap(world, excludeId) {
-    const d = drawing();
+    const f = floor();
     return snapPoint(world, {
-      objects: d.objects,
-      walls: d.walls,
-      gridStep: d.gridSpacing,
-      gridOriginX: d.gridOriginX,
-      gridOriginY: d.gridOriginY,
+      objects: f.objects,
+      walls: f.walls,
+      // Real-millimetre spacing converted to world units via the plan's
+      // calibration — see gridWorldUnits(). Snapping to an abstract
+      // screen grid would mean devices land on nothing meaningful.
+      gridStep: gridWorldUnits(f),
+      gridOriginX: f.gridOriginX,
+      gridOriginY: f.gridOriginY,
       zoom: getView().zoom,
-      enabled: d.snapEnabled !== false,
+      enabled: f.snapEnabled !== false,
       excludeId,
       isSelectable: visible,
     });
@@ -124,12 +133,12 @@ export function createController({ doc, getView, setView, getViewport, onChange,
   function select(ids) { selectedIds = new Set(ids); notify(); }
   function clearSelection() { selectedIds = new Set(); notify(); }
   function selectAll() {
-    selectedIds = new Set(drawing().objects.filter(selectable).map(o => o.id));
+    selectedIds = new Set(floor().objects.filter(selectable).map(o => o.id));
     notify();
   }
 
   function selectedObjects() {
-    return drawing().objects.filter(o => selectedIds.has(o.id));
+    return floor().objects.filter(o => selectedIds.has(o.id));
   }
 
   // --- mutations (all via doc.commit) ---------------------------------
@@ -137,8 +146,9 @@ export function createController({ doc, getView, setView, getViewport, onChange,
   function placeAt(world, symbolId) {
     let newId = null;
     doc.commit('Place device', d => {
+      const f = currentFloor(d);
       newId = d.nextId++;
-      d.objects.push({
+      f.objects.push({
         id: newId, symbolId, x: world.x, y: world.y,
         props: {},
       });
@@ -150,7 +160,8 @@ export function createController({ doc, getView, setView, getViewport, onChange,
     if (!selectedIds.size) return false;
     const n = selectedIds.size;
     doc.commit(n > 1 ? `Delete ${n} devices` : 'Delete device', d => {
-      d.objects = d.objects.filter(o => !selectedIds.has(o.id));
+      const f = currentFloor(d);
+      f.objects = f.objects.filter(o => !selectedIds.has(o.id));
     });
     selectedIds = new Set();
     notify();
@@ -161,11 +172,12 @@ export function createController({ doc, getView, setView, getViewport, onChange,
     if (!selectedIds.size) return false;
     const created = [];
     doc.commit(selectedIds.size > 1 ? 'Duplicate devices' : 'Duplicate device', d => {
-      const step = (d.gridSpacing || 40);
-      const copies = d.objects
+      const f = currentFloor(d);
+      const step = gridWorldUnits(f);
+      const copies = f.objects
         .filter(o => selectedIds.has(o.id))
         .map(o => ({ ...o, props: { ...(o.props || {}) }, id: d.nextId++, x: o.x + step, y: o.y + step }));
-      copies.forEach(c => { d.objects.push(c); created.push(c.id); });
+      copies.forEach(c => { f.objects.push(c); created.push(c.id); });
     });
     selectedIds = new Set(created);
     notify();
@@ -175,7 +187,7 @@ export function createController({ doc, getView, setView, getViewport, onChange,
   function nudgeSelected(dx, dy) {
     if (!selectedIds.size) return false;
     doc.commit('Move device', d => {
-      for (const o of d.objects) if (selectedIds.has(o.id)) { o.x += dx; o.y += dy; }
+      for (const o of currentFloor(d).objects) if (selectedIds.has(o.id)) { o.x += dx; o.y += dy; }
     }, { coalesce: true });
     notify();
     return true;
@@ -184,7 +196,7 @@ export function createController({ doc, getView, setView, getViewport, onChange,
   /** Exact numerical positioning from the inspector (§6). */
   function setObjectPosition(id, x, y) {
     doc.commit('Set position', d => {
-      const o = d.objects.find(ob => ob.id === id);
+      const o = currentFloor(d).objects.find(ob => ob.id === id);
       if (!o) return false;
       if (typeof x === 'number' && isFinite(x)) o.x = x;
       if (typeof y === 'number' && isFinite(y)) o.y = y;
@@ -194,7 +206,7 @@ export function createController({ doc, getView, setView, getViewport, onChange,
 
   function setObjectProps(id, patch) {
     doc.commit('Edit properties', d => {
-      const o = d.objects.find(ob => ob.id === id);
+      const o = currentFloor(d).objects.find(ob => ob.id === id);
       if (!o) return false;
       o.props = { ...(o.props || {}), ...patch };
     });
@@ -205,7 +217,7 @@ export function createController({ doc, getView, setView, getViewport, onChange,
   function alignSelected(mode) {
     if (selectedIds.size < 2) return false;
     doc.commit('Align ' + mode, d => {
-      const sel = d.objects.filter(o => selectedIds.has(o.id));
+      const sel = currentFloor(d).objects.filter(o => selectedIds.has(o.id));
       const b = boundsOf(sel);
       if (!b) return false;
       for (const o of sel) {
@@ -224,7 +236,7 @@ export function createController({ doc, getView, setView, getViewport, onChange,
   function distributeSelected(axis) {
     if (selectedIds.size < 3) return false;
     doc.commit('Distribute', d => {
-      const sel = d.objects.filter(o => selectedIds.has(o.id));
+      const sel = currentFloor(d).objects.filter(o => selectedIds.has(o.id));
       const key = axis === 'h' ? 'x' : 'y';
       sel.sort((a, b) => a[key] - b[key]);
       const first = sel[0][key], last = sel[sel.length - 1][key];
@@ -260,7 +272,7 @@ export function createController({ doc, getView, setView, getViewport, onChange,
     const isTouch = e.pointerType === 'touch';
     const world = toWorld(e.clientX, e.clientY, rect);
     const tol = (DEVICE_R + (isTouch ? 10 : 2)) / getView().zoom; // fatter target for fingers (§12)
-    const hit = hitTestObjects(drawing().objects, world, tol, selectable);
+    const hit = hitTestObjects(floor().objects, world, tol, selectable);
 
     const wantsPan = spaceHeld || e.button === 1 || tool === 'pan';
 
@@ -309,7 +321,7 @@ export function createController({ doc, getView, setView, getViewport, onChange,
       } else if (!selectedIds.has(hit.id)) {
         selectedIds = new Set([hit.id]);
       }
-      const moving = drawing().objects.filter(o => selectedIds.has(o.id));
+      const moving = floor().objects.filter(o => selectedIds.has(o.id));
       gesture = {
         type: 'maybe-move',
         startX: e.clientX, startY: e.clientY,
@@ -354,7 +366,7 @@ export function createController({ doc, getView, setView, getViewport, onChange,
     if (!gesture) {
       // Hover + live placement ghost.
       const tol = (DEVICE_R + (e.pointerType === 'touch' ? 10 : 2)) / getView().zoom;
-      const hit = hitTestObjects(drawing().objects, world, tol, selectable);
+      const hit = hitTestObjects(floor().objects, world, tol, selectable);
       const nextHover = hit ? hit.id : null;
       if (tool === 'place' && activeSymbolId) {
         const s = computeSnap(world, null);
@@ -399,7 +411,7 @@ export function createController({ doc, getView, setView, getViewport, onChange,
       const shiftY = s.point.y - anchorTarget.y;
       doc.commit('Move device', d => {
         for (const off of gesture.offsets) {
-          const o = d.objects.find(ob => ob.id === off.id);
+          const o = currentFloor(d).objects.find(ob => ob.id === off.id);
           if (!o) continue;
           let nx = world.x + off.dx + shiftX;
           let ny = world.y + off.dy + shiftY;
@@ -419,7 +431,7 @@ export function createController({ doc, getView, setView, getViewport, onChange,
 
     if (gesture.type === 'marquee') {
       marquee = { x1: gesture.startWorld.x, y1: gesture.startWorld.y, x2: world.x, y2: world.y };
-      const inRect = objectsInRect(drawing().objects, marquee, selectable);
+      const inRect = objectsInRect(floor().objects, marquee, selectable);
       const ids = new Set(gesture.additive ? Array.from(selectedIds) : []);
       inRect.forEach(o => ids.add(o.id));
       selectedIds = ids;
@@ -457,7 +469,7 @@ export function createController({ doc, getView, setView, getViewport, onChange,
   function onContextMenu(e, rect) {
     const world = toWorld(e.clientX, e.clientY, rect);
     const tol = (DEVICE_R + (e.pointerType === 'touch' ? 10 : 2)) / getView().zoom;
-    const hit = hitTestObjects(drawing().objects, world, tol, selectable);
+    const hit = hitTestObjects(floor().objects, world, tol, selectable);
     if (hit && !selectedIds.has(hit.id)) selectedIds = new Set([hit.id]);
     if (!hit) selectedIds = new Set();
     notify();

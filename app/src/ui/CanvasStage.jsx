@@ -14,6 +14,7 @@
 
 import { renderScene, getPlanImage } from '../core/renderer.js';
 import { boundsOf, formatDistance } from '../core/geometry.js';
+import { currentFloor } from '../core/document.js';
 
 const { useRef, useEffect, useCallback } = React;
 
@@ -39,13 +40,15 @@ export function CanvasStage({ controller, doc, view, symbolFor, showLabels, onVi
     // Resolve the plan image from cache; a cache miss kicks off decoding
     // and repaints when it lands, so the first frame after import isn't
     // blocked waiting on it.
-    const planImg = d.state.planImage
-      ? getPlanImage(d.state.planImage.src, () => requestPaintRef.current())
+    // The document is a project; the canvas draws its ACTIVE FLOOR.
+    const fl = currentFloor(d.state);
+    const planImg = fl.planImage
+      ? getPlanImage(fl.planImage.src, () => requestPaintRef.current())
       : null;
 
     renderScene(ctx, cssW, cssH, {
       planImg,
-      drawing: d.state,
+      drawing: fl,
       view: v,
       symbolFor: sf,
       selectedIds: c.selectedIds,
@@ -56,7 +59,7 @@ export function CanvasStage({ controller, doc, view, symbolFor, showLabels, onVi
       measure: c.measure,
       ghost: c.tool === 'place' ? c.ghost : null,
       ghostSymbol: c.activeSymbolId ? sf(c.activeSymbolId) : null,
-      bounds: boundsOf(d.state.objects.filter(o => c.selectedIds.has(o.id))),
+      bounds: boundsOf(fl.objects.filter(o => c.selectedIds.has(o.id))),
       showLabels: sl,
       formatDistance,
     });

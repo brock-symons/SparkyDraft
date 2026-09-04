@@ -19,6 +19,7 @@
 // ===================================================================
 
 import { Section, Row, NumberInput, TextInput, Select, Toggle, Button, IconButton, EmptyState, FieldLabel, Divider, cx } from './primitives.jsx';
+import { currentFloor } from "../core/document.js";
 import { SYMBOL_LIBRARY, CABLE_SIZES, PROTECTION_LIBRARY, CATEGORY_LABELS } from '../core/catalog.js';
 import { formatDistance } from '../core/geometry.js';
 
@@ -42,7 +43,7 @@ function SymbolChip({ sym, size = 'md' }) {
 // --- nothing selected -------------------------------------------------
 
 function DrawingProperties({ doc, controller, sections, toggleSection, onImportPlan, onCalibrate }) {
-  const d = doc.state;
+  const d = currentFloor(doc.state);
   const counts = useMemo(() => {
     const by = {};
     for (const o of d.objects) {
@@ -85,7 +86,7 @@ function DrawingProperties({ doc, controller, sections, toggleSection, onImportP
                 type="range" min="0.15" max="1" step="0.05"
                 aria-label="Floor plan opacity"
                 value={d.planImage.opacity == null ? 0.85 : d.planImage.opacity}
-                onChange={e => doc.commit('Plan opacity', dd => { dd.planImage.opacity = parseFloat(e.target.value); }, { coalesce: true })}
+                onChange={e => doc.commit('Plan opacity', dd => { currentFloor(dd).planImage.opacity = parseFloat(e.target.value); }, { coalesce: true })}
                 className="w-full accent-accent-500"
               />
             </Row>
@@ -94,14 +95,14 @@ function DrawingProperties({ doc, controller, sections, toggleSection, onImportP
                 value={d.planImage.scale || 1}
                 step={0.05}
                 suffix="×"
-                onCommit={v => doc.commit('Plan size', dd => { dd.planImage.scale = Math.max(0.05, v); })}
+                onCommit={v => doc.commit('Plan size', dd => { currentFloor(dd).planImage.scale = Math.max(0.05, v); })}
               />
             </Row>
             <div className="flex gap-1.5 px-3 pt-1.5">
               <Button size="sm" className="flex-1" onClick={onImportPlan}>Replace…</Button>
               <Button
                 size="sm" variant="danger" className="flex-1"
-                onClick={() => doc.commit('Remove plan', dd => { dd.planImage = null; })}
+                onClick={() => doc.commit('Remove plan', dd => { currentFloor(dd).planImage = null; })}
               >
                 Remove
               </Button>
@@ -123,30 +124,34 @@ function DrawingProperties({ doc, controller, sections, toggleSection, onImportP
             <Toggle
               label="Enable snapping"
               checked={d.snapEnabled !== false}
-              onChange={v => doc.commit('Toggle snapping', dd => { dd.snapEnabled = v; })}
+              onChange={v => doc.commit('Toggle snapping', dd => { currentFloor(dd).snapEnabled = v; })}
             />
             <span className="text-xs text-ink-400">{d.snapEnabled !== false ? 'On' : 'Off'}</span>
           </div>
         </Row>
+        {/* Grid spacing is REAL millimetres, tied to the plan's
+            calibration — "300 mm off the corner" means something to an
+            electrician in a way that abstract screen units never could. */}
         <Row label="Grid size">
           <NumberInput
-            value={d.gridSpacing}
-            step={5}
-            suffix="u"
-            onCommit={v => doc.commit('Set grid size', dd => { dd.gridSpacing = Math.max(2, v); })}
+            value={d.gridSpacingMM}
+            step={50}
+            suffix="mm"
+            onCommit={v => doc.commit('Set grid size', dd => { currentFloor(dd).gridSpacingMM = Math.max(1, v); })}
           />
         </Row>
         <Row label="Scale">
           <div className="flex items-center gap-1.5">
             {/* Pass null through rather than coercing to '' — NumberInput
                 treats null as "empty" and shows the placeholder, whereas
-                '' parses to 0 and displays a misleading scale of zero. */}
+                '' parses to 0 and displays a misleading scale of zero.
+                Units are world-units-per-metre, matching production. */}
             <NumberInput
               value={d.scale}
               step={1}
-              suffix="mm/u"
+              suffix="px/m"
               placeholder="not set"
-              onCommit={v => doc.commit('Set scale', dd => { dd.scale = v > 0 ? v : null; })}
+              onCommit={v => doc.commit('Set scale', dd => { currentFloor(dd).scale = v > 0 ? v : null; })}
             />
           </div>
         </Row>
@@ -171,7 +176,7 @@ function DeviceProperties({ obj, doc, controller, sections, toggleSection }) {
   const sym = symbolFor(obj.symbolId);
   const props = obj.props || {};
   const defaults = (sym && sym.defaultProps) || {};
-  const scale = doc.state.scale;
+  const scale = currentFloor(doc.state).scale;
 
   // Only show an electrical field when this device type actually has a
   // meaningful value for it — a light switch has no wattage of its own.

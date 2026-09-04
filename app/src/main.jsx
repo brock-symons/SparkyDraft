@@ -11,10 +11,10 @@
 // action later means adding one entry, not touching four files.
 // ===================================================================
 
-import { createDocument, emptyDrawing } from './core/document.js';
+import { createDocument, emptyProject, currentFloor, migrateFlatDrawing } from "./core/document.js";
 import { createController } from './core/controller.js';
 import { createCommandRegistry, matchesShortcut, isTypingTarget } from './core/commands.js';
-import { boundsOf, viewForBounds } from './core/geometry.js';
+import { boundsOf, viewForBounds, gridWorldUnits } from './core/geometry.js';
 import { SYMBOL_LIBRARY } from './core/catalog.js';
 import {
   listProjects, loadProject, saveProject, deleteProject, newProjectId,
@@ -39,7 +39,7 @@ function WorkspaceRoot({ projectId, onExit, pushToast }) {
 
   // --- document ------------------------------------------------------
   const docRef = useRef(null);
-  if (!docRef.current) docRef.current = createDocument(emptyDrawing());
+  if (!docRef.current) docRef.current = createDocument(emptyProject());
   const doc = docRef.current;
 
   const [, forceRender] = useState(0);
@@ -178,11 +178,14 @@ function WorkspaceRoot({ projectId, onExit, pushToast }) {
   useEffect(() => {
     const rec = loadProject(projectId);
     if (rec && rec.drawing) {
-      doc.load(rec.drawing);
+      // Records saved before the Phase 0 model change are flat drawings;
+      // migrate rather than orphan them (the redesign has been shared for
+      // testing, so such records exist in the wild).
+      doc.load(migrateFlatDrawing(rec.drawing));
       setProjectName(rec.name || rec.drawing.name || 'Untitled project');
       setLastSavedAt(rec.updatedAt);
     } else {
-      doc.load(emptyDrawing());
+      doc.load(emptyProject());
     }
     setSaveState(SaveState.SAVED);
     // Opening a drawing resets view ownership, so it gets auto-framed
@@ -236,11 +239,12 @@ function WorkspaceRoot({ projectId, onExit, pushToast }) {
     const vp = viewportRef.current;
     if (!vp.width || !vp.height) return;
     const d = doc.state;
-    let b = boundsOf(d.objects);
-    if (d.planImage) {
-      const s = d.planImage.scale || 1;
-      const px1 = d.planImage.x, py1 = d.planImage.y;
-      const px2 = px1 + d.planImage.width * s, py2 = py1 + d.planImage.height * s;
+    const fl = currentFloor(d);
+    let b = boundsOf(fl.objects);
+    if (fl.planImage) {
+      const s = fl.planImage.scale || 1;
+      const px1 = fl.planImage.x, py1 = fl.planImage.y;
+      const px2 = px1 + fl.planImage.width * s, py2 = py1 + fl.planImage.height * s;
       b = b
         ? { minX: Math.min(b.minX, px1), minY: Math.min(b.minY, py1),
             maxX: Math.max(b.maxX, px2), maxY: Math.max(b.maxY, py2) }
@@ -311,7 +315,7 @@ function WorkspaceRoot({ projectId, onExit, pushToast }) {
         doc.commit('Import floor plan', d => {
           // Centre the plan on the origin so it lands somewhere sensible
           // rather than off in a corner the user has to hunt for.
-          d.planImage = {
+          currentFloor(d).planImage = {
             src, width: probe.width, height: probe.height,
             x: -probe.width / 2, y: -probe.height / 2,
             scale: 1, opacity: 0.85,
@@ -334,7 +338,10 @@ function WorkspaceRoot({ projectId, onExit, pushToast }) {
 
   const applyCalibration = useCallback(realMm => {
     if (!calibrateLength || !(realMm > 0)) return;
-    doc.commit('Set scale', d => { d.scale = realMm / calibrateLength; });
+    doc.commit("Set scale", d => {
+      // Production semantics: world units per METRE (see geometry.js).
+      currentFloor(d).scale = calibrateLength / (realMm / 1000);
+    });
     setCalibrateLength(null);
     controller.clearMeasure();
     controller.setTool('select');
@@ -380,8 +387,8 @@ function WorkspaceRoot({ projectId, onExit, pushToast }) {
         keywords: 'background image trace pdf png jpg underlay', run: c => c.importPlan() },
       { id: 'plan.remove', title: 'Remove floor plan', group: 'Plan', icon: '⌫', danger: true,
         keywords: 'delete background underlay',
-        when: c => !!c.doc.state.planImage,
-        run: c => c.doc.commit('Remove plan', d => { d.planImage = null; }) },
+        when: c => !!currentFloor(c.doc.state).planImage,
+        run: c => c.doc.commit("Remove plan", d => { currentFloor(d).planImage = null; }) },
 
       // Edit
       { id: 'edit.undo', title: 'Undo', group: 'Edit', shortcut: 'Mod+Z', icon: '↶',
@@ -416,7 +423,7 @@ function WorkspaceRoot({ projectId, onExit, pushToast }) {
       { id: 'view.zoomOut', title: 'Zoom out', group: 'View', icon: '−', run: c => c.controller.zoomBy(1 / 1.2) },
       { id: 'view.toggleSnap', title: 'Toggle snapping', group: 'View', shortcut: 'Shift+S', icon: '⌗',
         keywords: 'grid align magnet',
-        run: c => c.doc.commit('Toggle snapping', d => { d.snapEnabled = d.snapEnabled === false; }) },
+        run: c => c.doc.commit("Toggle snapping", d => { const f = currentFloor(d); f.snapEnabled = f.snapEnabled === false; }) },
 
       // Panels
       { id: 'panel.layers', title: 'Toggle layers panel', group: 'Panels', shortcut: 'L', icon: '▤',
@@ -468,7 +475,7 @@ function WorkspaceRoot({ projectId, onExit, pushToast }) {
 
       // Arrow-key nudging: 1 grid step, or 1 unit with Alt for fine work.
       if (e.key.startsWith('Arrow') && controller.selectedIds.size) {
-        const step = e.altKey ? 1 : (doc.state.gridSpacing || 40);
+        const step = e.altKey ? 1 : gridWorldUnits(currentFloor(doc.state));
         const d = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] }[e.key];
         if (d) { e.preventDefault(); controller.nudgeSelected(d[0], d[1]); return; }
       }
@@ -496,12 +503,12 @@ function WorkspaceRoot({ projectId, onExit, pushToast }) {
   // --- layer counts for the panel -------------------------------------
   const layerCounts = useMemo(() => {
     const counts = {};
-    for (const o of doc.state.objects) {
+    for (const o of currentFloor(doc.state).objects) {
       const s = symbolFor(o.symbolId);
       if (s) counts[s.category] = (counts[s.category] || 0) + 1;
     }
     return counts;
-  }, [doc.state.objects]);
+  }, [doc.state]);
 
   const leftPanel = panels.left === 'layers'
     ? <LayersPanel doc={doc} counts={layerCounts} />
@@ -648,7 +655,7 @@ function App() {
 
   function create() {
     const id = newProjectId();
-    const res = saveProject(id, { ...emptyDrawing(), name: 'Untitled drawing' });
+    const res = saveProject(id, { ...emptyProject(), name: "Untitled drawing" });
     if (!res.ok) { setStorageError(res.error); return; }
     refresh();
     setProjectId(id);

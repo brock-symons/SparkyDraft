@@ -100,10 +100,45 @@ export function zoomAt(view, screenX, screenY, factor, min = 0.05, max = 12) {
   return next;
 }
 
-/** Format a world-unit distance using the drawing's mm-per-unit scale. */
+// SCALE SEMANTICS — matches the production app exactly.
+//
+//   scale = world units (canvas px) per METRE
+//
+// Set by calibration as `distancePx / realMetres`. The redesign
+// originally stored mm-per-unit, which is a different quantity in
+// different units; every ported calculation (cable-run estimates, the
+// panel schedule, dimension readouts) is written against production's
+// definition, so the production one is authoritative here. Getting this
+// backwards silently produces plausible-looking but wrong lengths.
+
+/** World units → metres. Null scale means uncalibrated. */
+export function worldToMetres(worldUnits, scale) {
+  if (!scale) return null;
+  return worldUnits / scale;
+}
+
+/** Metres → world units. */
+export function metresToWorld(metres, scale) {
+  if (!scale) return null;
+  return metres * scale;
+}
+
+/** Format a world-unit distance for display, given a units-per-metre scale. */
 export function formatDistance(worldUnits, scale) {
   if (!scale) return Math.round(worldUnits) + ' u';
-  const mm = worldUnits * scale;
-  if (mm >= 1000) return (mm / 1000).toFixed(2) + ' m';
+  const metres = worldUnits / scale;
+  const mm = metres * 1000;
+  if (mm >= 1000) return metres.toFixed(2) + ' m';
   return Math.round(mm) + ' mm';
+}
+
+/**
+ * Grid spacing in world units, from the floor's real-millimetre setting.
+ * Ported from production's effectiveGridWorldUnits(): before calibration
+ * there is no metre reference, so fall back to a fixed screen spacing
+ * that still gives a usable drafting grid.
+ */
+export function gridWorldUnits(floor) {
+  if (floor && floor.scale) return (floor.gridSpacingMM / 1000) * floor.scale;
+  return 25;
 }

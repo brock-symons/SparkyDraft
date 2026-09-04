@@ -25,6 +25,7 @@ import { CanvasStage } from './CanvasStage.jsx';
 import { formatShortcut } from '../core/commands.js';
 import { SaveState } from '../core/persistence.js';
 import { formatDistance } from '../core/geometry.js';
+import { currentFloor } from '../core/document.js';
 
 const { useState, useRef, useEffect, useCallback } = React;
 
@@ -137,7 +138,7 @@ function Sheet({ open, title, onClose, children }) {
 // the user having to ask.
 
 function StatusBar({ controller, doc, view }) {
-  const d = doc.state;
+  const d = currentFloor(doc.state);
   const sel = controller.selectedIds.size;
   const cur = controller.cursorWorld;
   const snapOn = d.snapEnabled !== false;
@@ -359,7 +360,7 @@ export function Workspace({
       : controller.tool === 'measure' ? 'cursor-crosshair'
       : 'cursor-default';
 
-  const isEmpty = doc.state.objects.length === 0;
+  const isEmpty = currentFloor(doc.state).objects.length === 0;
   // Two different thresholds, because the two docks cost different
   // amounts of canvas. The left (library/layers) dock only earns its
   // ~232px once there is desktop width to spare. The right inspector is
@@ -433,7 +434,7 @@ export function Workspace({
           {isEmpty && (
             <EmptyCanvasHint
               onOpenLibrary={() => onTogglePanel('left', 'library')}
-              hasPlan={!!doc.state.planImage}
+              hasPlan={!!currentFloor(doc.state).planImage}
             />
           )}
         </main>

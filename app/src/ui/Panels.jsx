@@ -4,6 +4,7 @@
 
 import { Section, TextInput, Toggle, IconButton, EmptyState, FieldLabel, cx, focusRing } from './primitives.jsx';
 import { SYMBOL_LIBRARY, CATEGORY_LABELS, CATEGORY_ORDER, LAYER_DEFS } from '../core/catalog.js';
+import { currentFloor } from '../core/document.js';
 
 const { useState, useMemo, useRef, useEffect } = React;
 
@@ -164,9 +165,12 @@ export function LibraryPanel({ controller, favourites, recent, onToggleFavourite
 // ===================================================================
 
 export function LayersPanel({ doc, counts }) {
-  const d = doc.state;
-  const hidden = d.hiddenLayers || [];
-  const locked = d.lockedLayers || [];
+  // Layer visibility/lock is PROJECT-level, not per-floor: hiding Power
+  // hides it on every floor at once, matching production. Only the device
+  // count is floor-scoped.
+  const project = doc.state;
+  const hidden = project.hiddenLayers || [];
+  const locked = project.lockedLayers || [];
 
   function toggle(list, id, label) {
     doc.commit(label, dd => {

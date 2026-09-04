@@ -16,7 +16,7 @@
 // roughly what's on screen rather than what's in the file.
 // ===================================================================
 
-import { worldToScreen, DEVICE_R } from './geometry.js';
+import { worldToScreen, gridWorldUnits, DEVICE_R } from "./geometry.js";
 
 export const PAINT = {
   bg: '#0b0f14',
@@ -75,7 +75,7 @@ function gridStepsFor(spacing, zoom) {
 }
 
 function drawGrid(ctx, view, w, h, drawing) {
-  const spacing = drawing.gridSpacing || 40;
+  const spacing = gridWorldUnits(drawing);
   if (spacing <= 0) return;
   const { minor, major } = gridStepsFor(spacing, view.zoom);
   const ox = drawing.gridOriginX || 0;
