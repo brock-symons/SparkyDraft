@@ -167,6 +167,7 @@ function WorkspaceRoot({ projectId, onExit, pushToast }) {
       display: false,
       general: true,
       electrical: true,
+      switching: true,
       cost: false,
       align: true,
       actions: true,
@@ -352,6 +353,19 @@ function WorkspaceRoot({ projectId, onExit, pushToast }) {
   const togglePanel = useCallback((slot, value) => {
     setPanels(p => ({ ...p, [slot]: p[slot] === value ? null : value }));
   }, []);
+
+  // Linking is done ON the plan, so arming it from the inspector has to
+  // get the inspector out of the way — but only where it is an overlay.
+  // On a desktop dock it costs no canvas, and closing it there would
+  // throw away the panel the user is working in. 768 is the same
+  // breakpoint the dock itself uses (showRightDock).
+  const startLinking = useCallback(
+    (switchId, newGroup) => {
+      controller.startLinking(switchId, newGroup);
+      if (window.innerWidth < 768) setPanels(p => ({ ...p, right: null }));
+    },
+    [controller]
+  );
 
   const onDockResize = useCallback((slot, clientX) => {
     setDockWidths(w => {
@@ -539,6 +553,26 @@ function WorkspaceRoot({ projectId, onExit, pushToast }) {
         icon: '⟺',
         keywords: 'dimension annotate length measurement permanent',
         run: c => c.controller.setTool('dimension'),
+      },
+      {
+        id: 'tool.link',
+        title: 'Link switch to lights',
+        group: 'Tools',
+        shortcut: 'L',
+        icon: '⚯',
+        keywords: 'link switch light bank gang two-way control switching',
+        run: c => c.controller.setTool('link'),
+      },
+      {
+        id: 'view.switchRuns',
+        title: 'Show all switch runs',
+        group: 'View',
+        icon: '⚯',
+        keywords: 'switch runs banks lighting show all wiring',
+        run: c => {
+          const on = c.controller.toggleSwitchRuns();
+          c.pushToast(on ? 'Showing all switch runs' : 'Switch runs follow the selection');
+        },
       },
 
       // Plan
@@ -892,7 +926,9 @@ function WorkspaceRoot({ projectId, onExit, pushToast }) {
         // Escape unwinds one step at a time rather than dumping the user
         // straight back to Select: cancel the half-drawn segment first,
         // so a mis-clicked start point doesn't also cost you the tool.
-        if (controller.draft) {
+        // cancelDraft also clears a half-made switch link, which is the
+        // same kind of "I started something" state.
+        if (controller.draft || controller.linkPendingSwitch) {
           controller.cancelDraft();
           return;
         }
@@ -981,6 +1017,7 @@ function WorkspaceRoot({ projectId, onExit, pushToast }) {
       onImportPlan={importPlan}
       onCalibrate={startCalibrate}
       onAddRoom={() => setRoomDialogOpen(true)}
+      onStartLinking={startLinking}
     />
   );
 

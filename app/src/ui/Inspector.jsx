@@ -31,6 +31,7 @@ import {
   FieldLabel,
   Divider,
   cx,
+  focusRing,
 } from './primitives.jsx';
 import { currentFloor } from '../core/document.js';
 import {
@@ -40,6 +41,13 @@ import {
   CATEGORY_LABELS,
 } from '../core/catalog.js';
 import { formatDistance } from '../core/geometry.js';
+import {
+  isSwitchSymbol,
+  isLightSymbol,
+  groupsForSwitch,
+  linksForLight,
+  bankDisplayName,
+} from '../core/switching.js';
 
 const { useState, useMemo } = React;
 
@@ -311,7 +319,164 @@ function DrawingProperties({
 
 // --- one device -------------------------------------------------------
 
-function DeviceProperties({ obj, doc, controller, sections, toggleSection }) {
+/** "Kitchen downlights" if named, else "Downlight (7)". */
+function deviceDisplayName(project, obj) {
+  if (!obj) return '';
+  if (obj.props && obj.props.customName) return obj.props.customName;
+  const sym = resolveSymbol(project, obj.symbolId);
+  return (sym ? sym.label : obj.symbolId) + ' (' + obj.id + ')';
+}
+
+function LinkChip({ label, note, onRemove, removeLabel }) {
+  return (
+    <span className="mb-1 mr-1 inline-flex max-w-full items-center gap-1 rounded-full border border-ink-200 bg-ink-50 py-0.5 pl-2 pr-1 text-2xs text-ink-700">
+      <span className="truncate">{label}</span>
+      {note && <span className="shrink-0 text-amber-600">{note}</span>}
+      <button
+        type="button"
+        aria-label={removeLabel}
+        onClick={onRemove}
+        className={cx(
+          'flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[10px] leading-none',
+          'text-ink-400 hover:bg-ink-200 hover:text-ink-700',
+          focusRing
+        )}
+      >
+        ✕
+      </button>
+    </span>
+  );
+}
+
+/**
+ * Switching, from whichever end the user selected.
+ *
+ * On a SWITCH this is the editable side: one block per gang, each with
+ * the bank's name and the devices on it. Gang is shown as an editable
+ * override because the auto-count only ever raises (see
+ * recomputeSwitchGang) — a 4-gang plate with two functions wired is a
+ * real thing, and the app must not argue with it.
+ *
+ * On a LIGHT it is read-only apart from unlinking: "controlled by" is a
+ * consequence of the links, and two or more entries is exactly what
+ * two-way switching looks like, so it is called out rather than left for
+ * the user to notice.
+ */
+function SwitchingSection({ obj, doc, controller, sections, toggleSection, onStartLinking }) {
+  const beginLink = (id, newGroup) =>
+    onStartLinking ? onStartLinking(id, newGroup) : controller.startLinking(id, newGroup);
+  const project = doc.state;
+  const floor = currentFloor(project);
+  const symbolFor = id => resolveSymbol(project, id);
+  const isSwitch = isSwitchSymbol(obj.symbolId);
+  const controlledBy = linksForLight(floor, obj.id);
+
+  if (!isSwitch && !(isLightSymbol(obj.symbolId) && controlledBy.length)) return null;
+
+  if (!isSwitch) {
+    return (
+      <Section
+        title="Switching"
+        open={sections.switching !== false}
+        onToggle={() => toggleSection('switching')}
+      >
+        <div className="px-3 pb-2">
+          <FieldLabel className="mb-1.5">
+            Controlled by
+            {controlledBy.length >= 2 && (
+              <span className="ml-1 font-normal text-amber-600">
+                two-way — switched from {controlledBy.length} locations
+              </span>
+            )}
+          </FieldLabel>
+          <div>
+            {controlledBy.map(l => {
+              const so = floor.objects.find(o => o.id === l.switchId);
+              return (
+                <LinkChip
+                  key={l.switchId}
+                  label={so ? deviceDisplayName(project, so) : String(l.switchId)}
+                  note={'gang ' + (l.group || 1)}
+                  removeLabel="Unlink this switch"
+                  onRemove={() => controller.unlinkLight(l.switchId, obj.id)}
+                />
+              );
+            })}
+          </div>
+        </div>
+      </Section>
+    );
+  }
+
+  const groups = groupsForSwitch(floor, obj.id);
+  const defaults = (resolveSymbol(project, obj.symbolId) || {}).defaultProps || {};
+
+  return (
+    <Section
+      title="Switching"
+      open={sections.switching !== false}
+      onToggle={() => toggleSection('switching')}
+    >
+      <Row label="Gang">
+        <Select
+          value={(obj.props && obj.props.gang) || 1}
+          onChange={e => controller.setObjectProps(obj.id, { gang: parseInt(e.target.value, 10) })}
+        >
+          {[1, 2, 3, 4, 5, 6].map(n => (
+            <option key={n} value={n}>
+              {n} gang
+            </option>
+          ))}
+        </Select>
+      </Row>
+      {groups.length === 0 ? (
+        <div className="px-3 pb-2 pt-1">
+          <p className="mb-2 text-2xs leading-relaxed text-ink-400">Not linked to anything yet.</p>
+          <Button onClick={() => beginLink(obj.id, false)}>Start linking lights</Button>
+        </div>
+      ) : (
+        <div className="px-3 pb-2 pt-1">
+          {groups.map(g => (
+            <div key={g.group} className="mb-3">
+              <FieldLabel className="mb-1">
+                Gang {g.group} — {g.lightIds.length} device
+                {g.lightIds.length === 1 ? '' : 's'}
+              </FieldLabel>
+              <TextInput
+                className="mb-1.5"
+                value={(floor.bankNames || {})[obj.id + '::' + g.group] || ''}
+                placeholder={bankDisplayName(floor, obj.id, g.group, g.lightIds, symbolFor)}
+                aria-label={'Name for gang ' + g.group}
+                onChange={e => controller.setBankName(obj.id, g.group, e.target.value)}
+              />
+              <div>
+                {g.links.map(l => {
+                  const lt = floor.objects.find(o => o.id === l.lightId);
+                  // A device switched from more than one place is the
+                  // signature of two-way switching — worth surfacing here,
+                  // because from this switch alone it looks ordinary.
+                  const others = linksForLight(floor, l.lightId).filter(x => x.switchId !== obj.id);
+                  return (
+                    <LinkChip
+                      key={l.lightId}
+                      label={lt ? deviceDisplayName(project, lt) : String(l.lightId)}
+                      note={others.length ? 'also switched elsewhere' : null}
+                      removeLabel="Unlink this device"
+                      onRemove={() => controller.unlinkLight(obj.id, l.lightId)}
+                    />
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+          <Button onClick={() => beginLink(obj.id, true)}>+ New group (adds a gang)</Button>
+        </div>
+      )}
+    </Section>
+  );
+}
+
+function DeviceProperties({ obj, doc, controller, sections, toggleSection, onStartLinking }) {
   const rooms = currentFloor(doc.state).rooms || [];
   const sym = resolveSymbol(doc.state, obj.symbolId);
   const props = obj.props || {};
@@ -428,11 +593,23 @@ function DeviceProperties({ obj, doc, controller, sections, toggleSection }) {
             </Row>
           )}
           <div className="px-3 pt-1.5 text-2xs leading-relaxed text-ink-400">
-            Circuit assignment, comms ports and switch linking live in the full app — not yet ported
-            into this workspace.
+            Circuit assignment and comms ports live in the full app — not yet ported into this
+            workspace.
           </div>
         </Section>
       )}
+
+      {/* Switching sits directly under Electrical because it *is* an
+          electrical property — but only for the device types it applies
+          to, so the section renders nothing at all for a GPO. */}
+      <SwitchingSection
+        obj={obj}
+        doc={doc}
+        controller={controller}
+        sections={sections}
+        toggleSection={toggleSection}
+        onStartLinking={onStartLinking}
+      />
 
       {/* Room is a location property, not an electrical one — it groups
           devices for takeoffs ("how many GPOs in the kitchen"), so it sits
@@ -742,6 +919,7 @@ export function Inspector({
   onImportPlan,
   onCalibrate,
   onAddRoom,
+  onStartLinking,
 }) {
   const selected = controller.selectedObjects();
   const segment = controller.selectedSegmentObject();
@@ -773,6 +951,7 @@ export function Inspector({
             controller={controller}
             sections={sections}
             toggleSection={toggleSection}
+            onStartLinking={onStartLinking}
           />
         )}
         {!toolCtx && selected.length > 1 && (

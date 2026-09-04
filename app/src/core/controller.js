@@ -37,6 +37,14 @@ import {
 import { snapPoint } from './snapping.js';
 import { currentFloor } from './document.js';
 import { CABLE_SIZES } from './catalog.js';
+import {
+  isSwitchSymbol,
+  autoGroupForSwitchLink,
+  nextGroupForSwitch,
+  recomputeSwitchGang,
+  propagateSwitchCircuitToLinkedLights,
+  removeLinksForObjects,
+} from './switching.js';
 
 const DRAG_THRESHOLD_PX = 4;
 
@@ -60,6 +68,21 @@ export function createController({ doc, getView, setView, getViewport, onChange,
   let selectedSegment = null;
   // 2.5mm² default matches production's CABLE_SIZES[2].
   let activeCableSize = CABLE_SIZES[2];
+  // Link tool: the switch awaiting its lights, and which gang they join.
+  // `activeLinkGroup === null` means "work the gang out from device type"
+  // (see autoGroupForSwitchLink); a number means the user explicitly
+  // started a new group and it must not be auto-merged into an existing
+  // one. Same two-variable model as production.
+  let linkPendingSwitch = null;
+  let activeLinkGroup = null;
+  // Last thing the link tool wanted to say — including refusals ("tap a
+  // switch first"). Surfaced in the mode hint rather than a toast: the
+  // user's eyes are on the plan, not the top of the screen.
+  let linkNotice = null;
+  // Switch runs are drawn only for the selected device by default, so the
+  // plan doesn't turn into spaghetti. This shows all of them at once,
+  // matching production's showSwitchRuns toggle.
+  let showSwitchRuns = false;
 
   let gesture = null; // active pointer gesture
   const pointers = new Map(); // pointerId -> {x,y} for multi-touch
@@ -313,7 +336,10 @@ export function createController({ doc, getView, setView, getViewport, onChange,
     for (const g of groups) g.objs.slice(1).forEach(o => doomed.add(o.id));
     if (!doomed.size) return 0;
     doc.commit('Remove duplicates', d => {
-      for (const f of d.floors) f.objects = f.objects.filter(o => !doomed.has(o.id));
+      for (const f of d.floors) {
+        f.objects = f.objects.filter(o => !doomed.has(o.id));
+        removeLinksForObjects(f, doomed);
+      }
     });
     selectedIds = new Set();
     notify();
@@ -327,8 +353,100 @@ export function createController({ doc, getView, setView, getViewport, onChange,
     notify();
   }
 
+  // --- switch links (Phase 2) -----------------------------------------
+
+  /**
+   * Record "this switch controls this light". `group` may be null, in
+   * which case the gang is worked out from what is already linked.
+   * Gang recount and circuit propagation happen inside the same commit,
+   * so one link is one undo step and the derived state can never be
+   * committed half-updated.
+   */
+  function linkLight(switchId, lightId, group) {
+    let created = false;
+    doc.commit('Link switch', d => {
+      const f = currentFloor(d);
+      f.switchLinks = f.switchLinks || [];
+      const exists = f.switchLinks.find(l => l.switchId === switchId && l.lightId === lightId);
+      if (exists) return false;
+      const light = f.objects.find(o => o.id === lightId);
+      if (!light) return false;
+      const g = group || autoGroupForSwitchLink(f, switchId, light.symbolId);
+      f.switchLinks.push({ switchId, lightId, group: g });
+      recomputeSwitchGang(f, switchId);
+      const swObj = f.objects.find(o => o.id === switchId);
+      if (swObj) propagateSwitchCircuitToLinkedLights(f, swObj);
+      created = true;
+    });
+    return created;
+  }
+
+  function unlinkLight(switchId, lightId) {
+    doc.commit('Unlink switch', d => {
+      const f = currentFloor(d);
+      const before = (f.switchLinks || []).length;
+      f.switchLinks = (f.switchLinks || []).filter(
+        l => !(l.switchId === switchId && l.lightId === lightId)
+      );
+      if (f.switchLinks.length === before) return false;
+      // Gang is only ever raised, so this will not drop the plate size —
+      // it keeps the stored count consistent with what is still linked.
+      recomputeSwitchGang(f, switchId);
+    });
+    notify();
+  }
+
+  /**
+   * Arm the link tool for a specific switch. Passing `newGroup` starts a
+   * deliberate new gang instead of letting the next light auto-join an
+   * existing one — that's the "+ New group" action in the inspector.
+   */
+  function startLinking(switchId, newGroup) {
+    tool = 'link';
+    draft = null;
+    linkPendingSwitch = switchId;
+    activeLinkGroup = newGroup ? nextGroupForSwitch(floor(), switchId) : null;
+    linkNotice = activeLinkGroup
+      ? `Tap the light(s) for gang ${activeLinkGroup}`
+      : 'Now tap the light(s) this switch controls';
+    notify();
+  }
+
+  /**
+   * Rename a bank; an empty name reverts to the derived description.
+   * Coalesced, because this is fed by an input's onChange: without it,
+   * typing a twelve-character name would cost twelve undo presses to
+   * take back.
+   */
+  function setBankName(switchId, group, name) {
+    doc.commit(
+      'Name lighting bank',
+      d => {
+        const f = currentFloor(d);
+        f.bankNames = f.bankNames || {};
+        const key = switchId + '::' + (group || 1);
+        const val = (name || '').trim();
+        if (val) f.bankNames[key] = val;
+        else delete f.bankNames[key];
+      },
+      { coalesce: true }
+    );
+    notify();
+  }
+
+  function toggleSwitchRuns() {
+    showSwitchRuns = !showSwitchRuns;
+    notify();
+    return showSwitchRuns;
+  }
+
   function cancelDraft() {
     draft = null;
+    if (linkPendingSwitch) {
+      linkPendingSwitch = null;
+      activeLinkGroup = null;
+      linkNotice = null;
+    }
     notify();
   }
 
@@ -364,6 +482,12 @@ export function createController({ doc, getView, setView, getViewport, onChange,
   function setTool(next) {
     tool = next;
     draft = null;
+    // Picking the link tool from the rail starts a fresh link, the same
+    // way production's setTool clears both link variables. startLinking()
+    // sets them again afterwards when a specific switch is being armed.
+    linkPendingSwitch = null;
+    activeLinkGroup = null;
+    linkNotice = null;
     if (next !== 'place') {
       activeSymbolId = null;
       ghost = null;
@@ -429,6 +553,9 @@ export function createController({ doc, getView, setView, getViewport, onChange,
     doc.commit(n > 1 ? `Delete ${n} devices` : 'Delete device', d => {
       const f = currentFloor(d);
       f.objects = f.objects.filter(o => !selectedIds.has(o.id));
+      // Links pointing at a deleted device would otherwise survive as
+      // invisible state that still counts towards a switch's gang.
+      removeLinksForObjects(f, selectedIds);
     });
     selectedIds = new Set();
     notify();
@@ -633,6 +760,50 @@ export function createController({ doc, getView, setView, getViewport, onChange,
         // it here avoids leaving invisible artefacts that still hit-test.
         if (Math.hypot(b.x - a.x, b.y - a.y) > 0.5) commitSegment(tool, a, b);
       }
+      notify();
+      return;
+    }
+
+    // Link tool — tap a switch, then tap each light it controls. Ported
+    // from production's `activeTool==='link'` branch, including the
+    // refusals: tapping a light first, or the pending switch itself, is
+    // corrected with a hint rather than silently ignored.
+    if (tool === 'link') {
+      if (!hit) {
+        linkNotice = 'Tap a switch, then tap the light(s) it controls';
+        notify();
+        return;
+      }
+      if (!linkPendingSwitch) {
+        if (isSwitchSymbol(hit.symbolId)) {
+          linkPendingSwitch = hit.id;
+          // activeLinkGroup stays as-is: null means "auto-detect the
+          // switching function from device type".
+          linkNotice = 'Now tap the light(s) this switch controls';
+        } else {
+          linkNotice = 'Tap a switch first, not a light';
+        }
+        notify();
+        return;
+      }
+      if (hit.id === linkPendingSwitch) {
+        linkNotice = 'Tap a light, not the switch itself';
+        notify();
+        return;
+      }
+      if (isSwitchSymbol(hit.symbolId)) {
+        // Tapping another switch starts that switch instead — the usual
+        // way to move on without going back to the rail.
+        linkPendingSwitch = hit.id;
+        activeLinkGroup = null;
+        linkNotice = 'Now tap the light(s) this switch controls';
+        notify();
+        return;
+      }
+      const added = linkLight(linkPendingSwitch, hit.id, activeLinkGroup);
+      linkNotice = added
+        ? 'Linked. Tap another light, or tap a new switch to start again'
+        : 'Already linked to this switch';
       notify();
       return;
     }
@@ -891,6 +1062,18 @@ export function createController({ doc, getView, setView, getViewport, onChange,
     get activeCableSize() {
       return activeCableSize;
     },
+    get linkPendingSwitch() {
+      return linkPendingSwitch;
+    },
+    get activeLinkGroup() {
+      return activeLinkGroup;
+    },
+    get linkNotice() {
+      return linkNotice;
+    },
+    get showSwitchRuns() {
+      return showSwitchRuns;
+    },
     get spaceHeld() {
       return spaceHeld;
     },
@@ -904,6 +1087,7 @@ export function createController({ doc, getView, setView, getViewport, onChange,
     lockedIds,
     visible,
     selectable,
+    isLayerHidden,
 
     // actions
     setSymbolResolver,
@@ -922,6 +1106,11 @@ export function createController({ doc, getView, setView, getViewport, onChange,
     deleteCustomSymbol,
     setSymbolSize,
     removeDuplicates,
+    linkLight,
+    unlinkLight,
+    startLinking,
+    setBankName,
+    toggleSwitchRuns,
     deleteSelectedSegment,
     selectedSegmentObject,
     select,

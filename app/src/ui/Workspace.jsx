@@ -372,6 +372,11 @@ function ModeHint({ controller }) {
     text = controller.draft
       ? 'Click the second point · Esc to cancel'
       : 'Click the first point of the dimension · Esc to exit';
+  // The link tool talks back: the controller reports what it just did,
+  // or why it refused, and that replaces the generic instruction. The
+  // feedback belongs where the user is already looking — on the plan.
+  else if (controller.tool === 'link')
+    text = controller.linkNotice || 'Tap a switch, then tap the light(s) it controls · Esc to exit';
   else if (controller.tool === 'pan') text = 'Drag to pan · V to go back to Select';
   else if (controller.spaceHeld) text = 'Pan';
   if (!text) return null;
@@ -498,6 +503,18 @@ export function Workspace({
       icon: '▬',
       isActive: () => controller.tool === 'wall',
       onClick: () => registry.run('tool.wall', ctx),
+    },
+    {
+      key: 'link',
+      label: 'Link switch',
+      shortLabel: 'Link',
+      shortcut: 'L',
+      icon: '⚯',
+      // In the mobile bar: linking is done on site, standing in the room,
+      // working out what switches what — the phone case, not the desk one.
+      primary: true,
+      isActive: () => controller.tool === 'link',
+      onClick: () => registry.run('tool.link', ctx),
     },
     {
       key: 'dimension',

@@ -17,6 +17,7 @@
 // ===================================================================
 
 import { worldToScreen, gridWorldUnits, DEVICE_R } from './geometry.js';
+import { computeLightingBanks, computeChainOrder, computeBankAttachPoints } from './switching.js';
 
 export const PAINT = {
   bg: '#0b0f14',
@@ -253,6 +254,66 @@ function drawDimensions(ctx, view, dims, scale, formatDistance, selectedId) {
  * cable/wall/dimension is being drawn. Without it the first click gives
  * no feedback and the tool feels broken until the second click lands.
  */
+// -------------------------------------------------------------------
+// Lighting banks — the physical wiring implied by the switch links.
+//
+// Derived every frame from live device positions (see switching.js), so
+// dragging a light re-routes its chain immediately with no stored order
+// to invalidate.
+//
+// Shown only for the selected device by default, exactly as production
+// does: a house with thirty switches would otherwise be unreadable. The
+// "show all switch runs" toggle overrides that.
+// -------------------------------------------------------------------
+
+function drawSwitchRuns(ctx, view, floor, opts) {
+  if (!floor.switchLinks || !floor.switchLinks.length) return;
+  const { selectedIds, showAll, lightingHidden } = opts;
+  if (lightingHidden) return;
+
+  // Production strokes these near-black over its dark canvas, which is
+  // barely legible; the geometry is the ported part, the colour is
+  // presentation. Lighting amber keeps the run readable and ties it to
+  // the layer the devices already use.
+  ctx.strokeStyle = 'rgba(242,169,59,0.85)';
+  ctx.lineWidth = 2;
+  ctx.setLineDash([4, 4]);
+
+  for (const bank of computeLightingBanks(floor)) {
+    const relevantIds = new Set([...bank.lightIds, ...bank.switches.map(s => s.switchId)]);
+    if (!showAll && ![...relevantIds].some(id => selectedIds.has(id))) continue;
+
+    const lightObjs = bank.lightIds.map(id => floor.objects.find(o => o.id === id)).filter(Boolean);
+    if (!lightObjs.length) continue;
+    const seedSwitchObj = bank.switches
+      .map(s => floor.objects.find(o => o.id === s.switchId))
+      .find(Boolean);
+    const seedPos = seedSwitchObj || lightObjs[0];
+    const order = computeChainOrder(floor, bank.lightIds, seedPos);
+
+    // One tail per switch, landing on the nearest light in the chain —
+    // not a separate feed to every light.
+    for (const { switchObj, attachTo } of computeBankAttachPoints(floor, bank, order)) {
+      const p1 = worldToScreen(view, switchObj.x, switchObj.y);
+      const p2 = worldToScreen(view, attachTo.x, attachTo.y);
+      ctx.beginPath();
+      ctx.moveTo(p1.x, p1.y);
+      ctx.lineTo(p2.x, p2.y);
+      ctx.stroke();
+    }
+    // The daisy chain itself, light → light.
+    for (let i = 0; i < order.length - 1; i++) {
+      const p1 = worldToScreen(view, order[i].x, order[i].y);
+      const p2 = worldToScreen(view, order[i + 1].x, order[i + 1].y);
+      ctx.beginPath();
+      ctx.moveTo(p1.x, p1.y);
+      ctx.lineTo(p2.x, p2.y);
+      ctx.stroke();
+    }
+  }
+  ctx.setLineDash([]);
+}
+
 function drawDraft(ctx, view, draft, cursor, cableColor) {
   if (!draft || !draft.a || !cursor) return;
   const a = worldToScreen(view, draft.a.x, draft.a.y);
@@ -528,10 +589,23 @@ export function renderScene(ctx, cssW, cssH, scene) {
   drawWalls(ctx, view, drawing.walls, seg && seg.kind === 'wall' ? seg.id : null);
   drawCables(ctx, view, drawing.cables, drawing.scale, seg && seg.kind === 'cable' ? seg.id : null);
 
+  // Switch runs sit with the cables, under the devices: they are wiring,
+  // and a dashed line crossing a device symbol makes the symbol harder to
+  // read than the run it belongs to.
+  drawSwitchRuns(ctx, view, drawing, {
+    selectedIds: scene.selectedIds,
+    showAll: scene.showSwitchRuns,
+    lightingHidden: scene.isLayerHidden('lighting'),
+  });
+
   // Viewport culling — only pay for what's visible (§27).
+  // A device on a hidden layer is skipped here rather than at hit-test
+  // time only: hiding a layer has to actually take it off the drawing,
+  // which is the whole point of the control.
   const pad = 60;
   const visible = [];
   for (const o of drawing.objects) {
+    if (!scene.isVisible(o)) continue;
     const p = worldToScreen(view, o.x, o.y);
     if (p.x < -pad || p.x > cssW + pad || p.y < -pad || p.y > cssH + pad) continue;
     visible.push({ o, p });
