@@ -115,6 +115,13 @@ tailwind.config = {
 <body class="bg-ink-100">
 <div id="root"></div>
 
+<!-- Supabase (auth, cloud sync, organisations — Phase 10). Same CDN and
+     same major version as the production app. Loaded BEFORE the module
+     loader below because core/cloud.js reads window.supabase at import
+     time; if this script fails (ad blocker, offline) that read simply
+     comes back undefined and the app runs local-storage-only, which is
+     the documented fallback rather than a crash. -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
 <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>

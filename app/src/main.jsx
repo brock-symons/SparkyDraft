@@ -77,6 +77,25 @@ import {
 import { CommandPalette } from './ui/CommandPalette.jsx';
 import { CanvasContextMenu } from './ui/ContextMenu.jsx';
 import { ProjectPicker } from './ui/ProjectPicker.jsx';
+import {
+  AuthGate,
+  ReadOnlyBanner,
+  ReportProblemDialog,
+  AccountDialog,
+  useCloud,
+} from './ui/Cloud.jsx';
+import {
+  cloudConfigured,
+  initCloudAuth,
+  getCloudState,
+  clearOrgProjectContext,
+  cloudSyncSilently,
+  loadCloudProject,
+  openOrgProject,
+  shareProjectToOrg,
+  deleteCloudCopyOf,
+} from './core/cloud.js';
+import { toCloudRecord, fromCloudRecord } from './core/cloudFormat.js';
 
 const { useState, useEffect, useRef, useMemo, useCallback } = React;
 
@@ -97,12 +116,19 @@ function civilPoints(plan) {
 
 const AUTOSAVE_MS = 1200;
 
-function WorkspaceRoot({ projectId, onExit, pushToast }) {
+function WorkspaceRoot({ projectId, initialProject, readOnly, sharedByName, onExit, pushToast }) {
   const breakpoint = useBreakpoint();
 
   // --- document ------------------------------------------------------
   const docRef = useRef(null);
-  if (!docRef.current) docRef.current = createDocument(emptyProject());
+  if (!docRef.current) {
+    docRef.current = createDocument(emptyProject());
+    // Armed at creation, not in an effect. Effects run after the first
+    // paint, which would leave a window — however brief — where a shared
+    // project this account can only view accepts commits. The load
+    // effect below re-applies it around load(), which is exempt.
+    docRef.current.setReadOnly(!!readOnly);
+  }
   const doc = docRef.current;
 
   const [, forceRender] = useState(0);
@@ -158,6 +184,8 @@ function WorkspaceRoot({ projectId, onExit, pushToast }) {
   const [priceListOpen, setPriceListOpen] = useState(false);
   const [civilMaterialsOpen, setCivilMaterialsOpen] = useState(false);
   const [elevationsOpen, setElevationsOpen] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
+  const [accountOpen, setAccountOpen] = useState(false);
   // { title, text } while a text export is on screen.
   const [exportText, setExportText] = useState(null);
 
@@ -197,6 +225,14 @@ function WorkspaceRoot({ projectId, onExit, pushToast }) {
     if (w < 1024) return { left: null, right: 'inspector' };
     return savedUI.panels || { left: null, right: 'inspector' };
   });
+  // The component library is remembered across sessions, so opening a
+  // view-only shared project could restore a docked palette of devices
+  // that cannot be placed. Swap it for Layers, which is what a viewer
+  // actually wants on a drawing they are reading.
+  useEffect(() => {
+    if (readOnly) setPanels(p => (p.left === 'library' ? { ...p, left: 'layers' } : p));
+  }, [readOnly]);
+
   const [dockWidths, setDockWidths] = useState(savedUI.dockWidths || { left: 232, right: 264 });
   const [favourites, setFavourites] = useState(savedUI.favourites || []);
   const [recent, setRecent] = useState(savedUI.recent || []);
@@ -261,6 +297,11 @@ function WorkspaceRoot({ projectId, onExit, pushToast }) {
 
   const doSave = useCallback(() => {
     clearTimeout(saveTimer.current);
+    // A viewer on a shared project saves nowhere — not locally either.
+    // Production takes the same position (its save path returns early on
+    // readOnlyMode): someone with view access should not end up with a
+    // divergent private copy of a drawing they cannot change.
+    if (readOnly) return;
     setSaveState(SaveState.SAVING);
     // A frame's delay so the "saving" state is actually observable on a
     // fast local write; without it the indicator flickers illegibly.
@@ -276,22 +317,42 @@ function WorkspaceRoot({ projectId, onExit, pushToast }) {
         setSaveState(SaveState.ERROR);
         setSaveError(res.error);
       }
+      // Piggybacks on every local save — the 💾 button and the autosave
+      // alike — so the cloud copy stays current with no separate "remember
+      // to sync" step. Silent on success and only logged on failure: the
+      // local save it rides on already succeeded, and autosave fires every
+      // few seconds while drawing, so a toast per sync would be constant
+      // noise. Writes production's record shape (see core/cloudFormat.js).
+      if (cloudConfigured && getCloudState().user) {
+        cloudSyncSilently(toCloudRecord({ ...payload, id: projectId }, allSymbols(payload)));
+      }
     });
-  }, [doc, projectId, projectName]);
+  }, [doc, projectId, projectName, readOnly]);
 
   // Load once per project.
   useEffect(() => {
-    const rec = loadProject(projectId);
-    if (rec && rec.drawing) {
-      // Records saved before the Phase 0 model change are flat drawings;
-      // migrate rather than orphan them (the redesign has been shared for
-      // testing, so such records exist in the wild).
-      doc.load(migrateLoadedProject(rec.drawing));
-      setProjectName(rec.name || rec.drawing.name || 'Untitled project');
-      setLastSavedAt(rec.updatedAt);
+    doc.setReadOnly(false); // load() must be allowed through before gating
+    if (initialProject) {
+      // Opened from the cloud or an organisation's shared list — already
+      // converted out of the stored record, so there is nothing to read
+      // from local storage.
+      doc.load(initialProject);
+      setProjectName(initialProject.name || 'Untitled project');
+      setLastSavedAt(null);
     } else {
-      doc.load(emptyProject());
+      const rec = loadProject(projectId);
+      if (rec && rec.drawing) {
+        // Records saved before the Phase 0 model change are flat drawings;
+        // migrate rather than orphan them (the redesign has been shared for
+        // testing, so such records exist in the wild).
+        doc.load(migrateLoadedProject(rec.drawing));
+        setProjectName(rec.name || rec.drawing.name || 'Untitled project');
+        setLastSavedAt(rec.updatedAt);
+      } else {
+        doc.load(emptyProject());
+      }
     }
+    doc.setReadOnly(!!readOnly);
     setSaveState(SaveState.SAVED);
     // Opening a drawing resets view ownership, so it gets auto-framed
     // again (and stays framed while the layout settles) until this user
@@ -941,6 +1002,23 @@ function WorkspaceRoot({ projectId, onExit, pushToast }) {
         run: c => c.openElevations(),
       },
       {
+        id: 'account.open',
+        title: 'Account',
+        group: 'Account',
+        icon: '◍',
+        keywords: 'account profile sign out log out email name cloud',
+        when: () => cloudConfigured,
+        run: c => c.openAccount(),
+      },
+      {
+        id: 'app.reportProblem',
+        title: 'Report a problem',
+        group: 'Account',
+        icon: '⚑',
+        keywords: 'report bug problem feedback support issue',
+        run: c => c.openReportProblem(),
+      },
+      {
         id: 'circuit.assign',
         title: 'Assign selection to a circuit',
         group: 'Circuits',
@@ -1091,6 +1169,8 @@ function WorkspaceRoot({ projectId, onExit, pushToast }) {
       openPriceList: () => setPriceListOpen(true),
       openCivilMaterials: () => setCivilMaterialsOpen(true),
       openElevations: () => setElevationsOpen(true),
+      openReportProblem: () => setReportOpen(true),
+      openAccount: () => setAccountOpen(true),
       pushToast,
     }),
     [
@@ -1278,45 +1358,51 @@ function WorkspaceRoot({ projectId, onExit, pushToast }) {
         aria-hidden="true"
         tabIndex={-1}
       />
-      <Workspace
-        doc={doc}
-        controller={controller}
-        view={viewRef.current}
-        registry={registry}
-        ctx={ctx}
-        symbolFor={symbolFor}
-        projectName={projectName}
-        onRenameProject={renameProject}
-        onExit={onExit}
-        saveState={saveState}
-        saveError={saveError}
-        lastSavedAt={lastSavedAt}
-        onSave={doSave}
-        panels={panels}
-        onTogglePanel={togglePanel}
-        dockWidths={dockWidths}
-        onDockResize={onDockResize}
-        leftPanelContent={leftPanel}
-        rightPanelContent={rightPanel}
-        leftPanelTitle={
-          panels.left === 'layers'
-            ? 'Layers'
-            : panels.left === 'circuits'
-              ? 'Circuits'
-              : panels.left === 'comms'
-                ? 'Comms racks'
-                : panels.left === 'civil'
-                  ? 'Civil palette'
-                  : panels.left === 'civilPlans'
-                    ? 'Site plans'
-                    : 'Components'
-        }
-        rightPanelTitle={inspectorTitle(controller)}
-        onFit={fit}
-        onViewportChange={onViewportChange}
-        onContextMenu={setContextMenu}
-        breakpoint={breakpoint}
-      />
+      <div className="flex h-full flex-col">
+        {readOnly && <ReadOnlyBanner sharedByName={sharedByName} />}
+        <div className="min-h-0 flex-1">
+          <Workspace
+            doc={doc}
+            controller={controller}
+            view={viewRef.current}
+            registry={registry}
+            ctx={ctx}
+            symbolFor={symbolFor}
+            projectName={projectName}
+            onRenameProject={renameProject}
+            onExit={onExit}
+            saveState={saveState}
+            saveError={saveError}
+            lastSavedAt={lastSavedAt}
+            onSave={doSave}
+            panels={panels}
+            onTogglePanel={togglePanel}
+            dockWidths={dockWidths}
+            onDockResize={onDockResize}
+            leftPanelContent={leftPanel}
+            rightPanelContent={rightPanel}
+            leftPanelTitle={
+              panels.left === 'layers'
+                ? 'Layers'
+                : panels.left === 'circuits'
+                  ? 'Circuits'
+                  : panels.left === 'comms'
+                    ? 'Comms racks'
+                    : panels.left === 'civil'
+                      ? 'Civil palette'
+                      : panels.left === 'civilPlans'
+                        ? 'Site plans'
+                        : 'Components'
+            }
+            rightPanelTitle={inspectorTitle(controller)}
+            onFit={fit}
+            onViewportChange={onViewportChange}
+            onContextMenu={setContextMenu}
+            breakpoint={breakpoint}
+            readOnly={!!readOnly}
+          />
+        </div>
+      </div>
       <CanvasContextMenu
         menu={contextMenu}
         onClose={() => setContextMenu(null)}
@@ -1397,6 +1483,17 @@ function WorkspaceRoot({ projectId, onExit, pushToast }) {
           pushToast={pushToast}
         />
       )}
+      <ReportProblemDialog
+        open={reportOpen}
+        onClose={() => setReportOpen(false)}
+        projectName={projectName}
+        pushToast={pushToast}
+      />
+      <AccountDialog
+        open={accountOpen}
+        onClose={() => setAccountOpen(false)}
+        pushToast={pushToast}
+      />
       {exportText && (
         <ExportTextDialog
           title={exportText.title}
@@ -3150,12 +3247,27 @@ class ErrorBoundary extends React.Component {
 }
 
 function App() {
-  const [projectId, setProjectId] = useState(null);
+  // `open` is the whole "what is on screen" decision, in one object so a
+  // cloud open (which also carries a pre-loaded project and a role) can
+  // never land half-applied — e.g. the id switched but the read-only flag
+  // still from the last project, which is the failure mode that would
+  // silently give a viewer edit rights.
+  const [open, setOpen] = useState(null); // { key, projectId, project?, readOnly, sharedByName }
   const [projects, setProjects] = useState(() => listProjects());
   const [storageError, setStorageError] = useState(null);
   const [toasts, pushToast] = useToasts();
+  const cloud = useCloud();
 
   const refresh = useCallback(() => setProjects(listProjects()), []);
+
+  useEffect(() => {
+    initCloudAuth();
+  }, []);
+
+  const openLocal = useCallback(id => {
+    clearOrgProjectContext();
+    setOpen({ key: 'local:' + id + ':' + Date.now(), projectId: id, readOnly: false });
+  }, []);
 
   function create() {
     const id = newProjectId();
@@ -3165,30 +3277,158 @@ function App() {
       return;
     }
     refresh();
-    setProjectId(id);
+    openLocal(id);
   }
 
-  function remove(id) {
+  /**
+   * Opening a personal cloud project writes the converted record to local
+   * storage first, then opens it like any other local project. That is
+   * what makes the two lists one list: same id in both places, autosave
+   * keeps both current, and the drawing survives losing connectivity
+   * mid-job — which for someone standing in a half-built house is the
+   * normal case, not the edge case.
+   */
+  async function openCloud(id) {
+    try {
+      const record = await loadCloudProject(id);
+      const project = fromCloudRecord(record, allSymbols(record || {}), id);
+      const res = saveProject(id, project);
+      if (!res.ok) {
+        setStorageError(res.error);
+        return;
+      }
+      refresh();
+      clearOrgProjectContext();
+      setOpen({ key: 'cloud:' + id + ':' + Date.now(), projectId: id, project, readOnly: false });
+      pushToast('Opened from cloud');
+    } catch (err) {
+      pushToast('Could not open: ' + err.message);
+    }
+  }
+
+  /**
+   * A shared organisation project. The role is resolved server-side on
+   * every open (never cached) and decides both whether edits are possible
+   * and where a save goes — back to the shared record, not a fork into
+   * personal projects.
+   *
+   * A VIEWER deliberately gets no local copy: nothing they do is saved
+   * anywhere, so there is no divergent private version of a drawing they
+   * cannot change.
+   */
+  async function openOrg(id) {
+    try {
+      const { record, role, sharedByName } = await openOrgProject(id);
+      const project = fromCloudRecord(record, allSymbols(record || {}), id);
+      if (role !== 'viewer') {
+        const res = saveProject(project.id, project);
+        if (res.ok) refresh();
+      }
+      setOpen({
+        key: 'org:' + id + ':' + Date.now(),
+        projectId: project.id,
+        project,
+        readOnly: role === 'viewer',
+        sharedByName,
+      });
+      pushToast(role === 'viewer' ? 'Opened (view only)' : 'Opened shared project');
+    } catch (err) {
+      pushToast('Could not open: ' + err.message);
+    }
+  }
+
+  async function share(p) {
+    // Share what is stored, not what is on screen — the picker is not
+    // inside a drawing, and a cloud-only project has no local copy to
+    // read from.
+    let name = p.name;
+    let record = null;
+    if (p.where === 'cloud') {
+      // Already in the stored shape — copy it across untouched rather
+      // than round-tripping it through the redesign's model, which would
+      // rewrite fields for no reason on a pure copy operation.
+      try {
+        record = await loadCloudProject(p.id);
+        name = (record && record.name) || name;
+      } catch (err) {
+        return pushToast('Could not share: ' + err.message);
+      }
+    } else {
+      const rec = loadProject(p.id);
+      if (!rec || !rec.drawing) return pushToast('Not found');
+      const project = migrateLoadedProject(rec.drawing);
+      name = rec.name || project.name || name;
+      record = toCloudRecord({ ...project, id: p.id, name }, allSymbols(project));
+    }
+    const res = await shareProjectToOrg(name, record);
+    pushToast(res.ok ? 'Shared "' + name + '" with ' + res.orgName : res.error);
+  }
+
+  function remove(id, opts) {
     deleteProject(id);
+    // The picker treats a local save and its auto-synced cloud copy as one
+    // project. Deleting only one half means the "permanently deleted"
+    // drawing reappears from the other on the next refresh.
+    if (opts && opts.alsoCloud) deleteCloudCopyOf(id);
     refresh();
   }
 
   function exit() {
-    setProjectId(null);
+    clearOrgProjectContext();
+    setOpen(null);
     refresh();
+  }
+
+  // Signing out from inside a drawing must not leave that drawing on
+  // screen behind the gate — the gate covers it, but a stale document
+  // would still be there (and still autosaving) for the next account.
+  useEffect(() => {
+    if (!cloud.user && open && cloudConfigured) exit();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cloud.user]);
+
+  // Nothing is reachable until the session is known. Rendering the picker
+  // first and swapping it for the gate a moment later flashes someone
+  // else's project list on a shared machine.
+  if (cloudConfigured && !cloud.ready) return null;
+
+  // Gated. Production overlays its gate on top of a live app, which
+  // leaves the project list underneath focusable by keyboard and
+  // readable by a screen reader — visually covered is not the same as
+  // unreachable. Nothing behind the gate is rendered at all here.
+  const gated = cloudConfigured && (!cloud.user || cloud.gateMode === 'newpassword');
+  if (gated) {
+    return (
+      <>
+        <AuthGate onSignedIn={msg => msg && pushToast(msg)} />
+        <ToastHost toasts={toasts} />
+      </>
+    );
   }
 
   return (
     <>
-      {projectId ? (
-        <WorkspaceRoot projectId={projectId} onExit={exit} pushToast={pushToast} />
+      {open ? (
+        <WorkspaceRoot
+          key={open.key}
+          projectId={open.projectId}
+          initialProject={open.project}
+          readOnly={open.readOnly}
+          sharedByName={open.sharedByName}
+          onExit={exit}
+          pushToast={pushToast}
+        />
       ) : (
         <ProjectPicker
           projects={projects}
-          onOpen={setProjectId}
+          onOpen={openLocal}
+          onOpenCloud={openCloud}
+          onOpenOrgProject={openOrg}
           onCreate={create}
           onDelete={remove}
+          onShare={share}
           storageError={storageError}
+          pushToast={pushToast}
         />
       )}
       <ToastHost toasts={toasts} />

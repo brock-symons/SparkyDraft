@@ -109,12 +109,29 @@ by the summary below, rather than relying on a chat transcript for intent.
 
 `app/` holds an in-progress React + Tailwind redesign of the drafting
 workspace. **`index.html` at the repo root is still the live product** and
-remains the source of truth for every feature. `app/` currently covers the
-core drafting experience only (project browser, canvas, place/select/move,
-layers, contextual inspector, floor-plan underlay, calibration, command
-palette, context menu, local save/load). It does NOT yet include civil
-works, comms racks, circuits, panel schedule, quoting, PDF export or
-multi-org.
+remains the source of truth for every feature.
+
+As of Phase 10 (2026-09-05) `app/` covers the drafting core (project
+browser, canvas, place/select/move, layers, inspector, underlay,
+calibration, palette, context menu, local save/load) **plus** switch
+linking, circuits, panel schedule + load/demand, comms racks, quote +
+price list, civil/underground works, elevations + legend, and the whole
+cloud half — auth, cloud project sync, organisations, members, invites,
+sharing, per-project access and viewer mode. **Still missing: print /
+PDF / export** (Phase 9, not started) and the Phase 11 integration and
+security review. `MIGRATION_INVENTORY.md` §H is the authoritative parity
+matrix; `PLAN.md` tracks the phases.
+
+- Business logic ported from `index.html` is checked mechanically, not by
+  eye: `app/test/*-parity.mjs` extract functions from the LIVE
+  `index.html` at run time and compare. Run them all before trusting a
+  change to `app/src/core/`.
+- **`app/src/core/cloudFormat.js` is load-bearing for the cutover.** The
+  Supabase `data` columns are shared with production, so the redesign
+  reads and writes PRODUCTION's record shape and converts at that one
+  boundary. Do not "simplify" it into writing the redesign's own shape —
+  that would silently rewrite existing customer projects into something
+  `index.html` renders wrong, the first time autosave fires.
 
 - `app/src/core/` is framework-free and DOM-free — catalog, geometry,
   snapping, document+history, command registry, renderer, interaction

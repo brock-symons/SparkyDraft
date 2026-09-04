@@ -12,7 +12,7 @@ versioned markdown next to the code.
 | | |
 |---|---|
 | Branch | `feature/cad-workspace-redesign` |
-| Status | Phases 0-8 complete · **stopped at the phase boundary, awaiting approval for Phase 9** |
+| Status | Phases 0-8 + 10 complete · **stopped at the phase boundary, awaiting approval for Phase 9** |
 | Merged to main | **No — and not without explicit owner review** |
 | Last updated | 2026-09-05 |
 
@@ -32,8 +32,13 @@ underground works, elevations + legend — each checked by a parity test
 against the live `index.html` (panel schedule, comms migration, quote,
 civil, and legend; 13,455 comparisons total, all matching).
 
-**Not done:** print/PDF export and the entire cloud half of the product
-(auth, Supabase sync, organisations, sharing).
+**Also done (Phase 10, out of order at the owner's direction):** auth,
+cloud project sync, organisations, members, invites, sharing, per-project
+access and viewer mode — with the cloud record format made interoperable
+with production's, so a project either app writes opens in the other.
+
+**Not done:** print/PDF export (Phase 9), the local-storage cutover
+decision (R4), and the Phase 11 integration + security review.
 
 ---
 
@@ -243,7 +248,9 @@ console errors.
 
 ### Phase 9 — Print / PDF / export
 Print view, jsPDF export, save-as-PDF dialog, civil pages toggle, JSON
-download. Last because it renders everything above.
+download. Last because it renders everything above. **Not started** —
+Phase 10 was taken first at the owner's direction; nothing in Phase 10
+depended on it.
 
 ### Phase 10 — Auth, Supabase, orgs, sharing
 Auth gate, OTP verify, password reset, session handling, account sheet,
@@ -251,6 +258,77 @@ cloud project CRUD, organisations, members/roles, invitations, project
 sharing, per-project access, read-only viewer mode, report-a-problem.
 **Largest security surface.** Deliberately late: wiring cloud sync to a
 still-moving data model would mean migrating stored records twice.
+
+### Phase 10 — Auth, Supabase, orgs, sharing ✅ complete
+
+Taken ahead of Phase 9 at the owner's direction (5 Sep 2026). Nothing in
+it depended on print/PDF, and the data model it needed was already final.
+
+- [x] **Every Supabase call ported call-for-call** (`core/cloud.js`) —
+      same tables, columns, filters, order of operations and RPCs as
+      production. No DDL, no policy change, no new table. R3 says the
+      permission model is not to be redesigned, and a query rewritten to
+      look nicer is a query the RLS policies were never reviewed for.
+- [x] **Auth gate** — sign in, sign up, the two 6-digit OTP flows
+      (signup confirmation and password recovery), forgotten-password,
+      set-new-password. The typed code rather than a clickable link is
+      kept deliberately: inbox link scanners burn one-time tokens.
+- [x] **Account, organisations, members, invites** — multi-org with an
+      active-org switch, admin rename, add-member-by-email through
+      `find_user_by_email`, and the accept/decline invite flow via
+      `get_my_pending_invites`.
+- [x] **Sharing + per-project access + viewer mode** — share a project to
+      an org (snapshot, upsert on `org_id,name`), resolve the opener's
+      role fresh on every open, and grant/revoke editor access per member.
+- [x] **Cloud record interop** (`core/cloudFormat.js`) — the shared
+      `data` column keeps PRODUCTION's shape, converted at the boundary.
+      This is the difference between a clean cutover and silently
+      rewriting every customer's existing job the first time autosave
+      fires in the new app.
+- [x] **Report a problem** — same `report-problem` edge function.
+- [x] **Parity check** — `app/test/cloud-format-parity.mjs`, 6,210
+      comparisons: 200 records built by production's own
+      `buildProjectData()`, opened and saved by the redesign, compared
+      field by field, plus 100 redesign round trips and the edge cases
+      (missing `nextId`, out-of-range indices, unedited price lists,
+      unknown future fields).
+
+**Security work, beyond parity:**
+
+- [x] **RLS verified against the LIVE project**, not the policy files —
+      `app/test/rls-probe.mjs`. Holding the publishable key as an
+      anonymous visitor: `projects` returns `[]`, the five org tables and
+      all five RPCs return 42501, and an INSERT is refused by policy.
+      Closes R14.
+- [x] **The XSS pattern the audit found is not reproduced.** Production
+      builds its members, invites, org and shared-project screens with
+      template literals into `innerHTML`, unescaped — a display name of
+      `<img src=x onerror=…>` runs in every colleague's browser. JSX
+      escapes by construction; verified in the browser with live
+      `<script>` and `<img onerror>` payloads in an org name, an
+      inviter's name, a member's name and a sharer's name. All rendered
+      as literal text, nothing executed.
+- [x] **Viewer mode enforced at the document** (`doc.commit`/`undo`/
+      `redo`/`jumpTo`), not by an overlay — one choke point every
+      mutation already passes through, so no control, shortcut or palette
+      entry can miss it, and pan/zoom keep working. Covered by
+      `app/test/readonly-guard.mjs`. Closes R6.
+- [x] **Nothing renders behind the gate.** Production overlays its gate on
+      a live app, leaving the project list focusable and screen-readable
+      underneath. Here the gated branch renders the gate and nothing else.
+
+**Verified in the browser:** the gate's six modes and their validation;
+a real `Invalid login credentials` round trip against live Supabase;
+cloud and organisation tabs; opening a cloud project (local copy written,
+autosave syncing back a production-shaped record); opening a shared
+project as a viewer (banner, view-only toast, no local copy written, no
+edits accepted, no cloud write); the org sheet's members/invites tabs;
+and a regression pass over Phases 1–8 with no console errors.
+
+**Not verified, and it needs the owner:** the signed-in paths were driven
+against an in-memory Supabase double, because typing the owner's password
+into a login field and creating an account are both off-limits. See
+MIGRATION_INVENTORY.md §I item 10.
 
 ### Phase 11 — Integration, security, regression
 Full workflow end-to-end (Project → Drawings → Components → Circuits →
@@ -317,7 +395,7 @@ Two deliberate exclusions, in `.prettierignore` with reasons:
 
 ## Running the parity tests
 
-All five compare the ported core against the LIVE `index.html`,
+All six compare the ported core against the LIVE `index.html`,
 extracting its functions by name at run time so they survive edits to
 that file:
 
@@ -327,6 +405,15 @@ node app/test/comms-migration-parity.mjs
 node app/test/quote-parity.mjs
 node app/test/civil-parity.mjs
 node app/test/legend-parity.mjs
+node app/test/cloud-format-parity.mjs
+```
+
+Two more checks that are not parity comparisons — one is a security
+invariant, the other talks to the live Supabase project:
+
+```bash
+node app/test/readonly-guard.mjs   # viewers cannot mutate the document
+node app/test/rls-probe.mjs        # anonymous access refused, live project
 ```
 
 If any fails, the port has drifted from the product — fix the port,

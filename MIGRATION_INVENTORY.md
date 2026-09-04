@@ -164,31 +164,37 @@ Status key: **✅ complete** · **◐ partial** · **✗ missing** · **⚙ need
 
 | Feature | Current | New | Status | Notes |
 |---|---|---|---|---|
-| Project picker | L7881+ | `ProjectPicker.jsx` | ◐ | New is local-only; no cloud/org tabs |
-| Local save/load | `storageAPI` L7208 | `core/persistence.js` | ◐ | **Different key namespace and schema** — not interoperable |
+| Project picker | L7881+ | `ProjectPicker.jsx` | ✅ | Cloud + organisation tabs added Phase 10 |
+| Local save/load | `storageAPI` L7208 | `core/persistence.js` | ◐ | Different LOCAL key namespace (deliberate, so exercising the redesign cannot corrupt a real `project:` record). The CLOUD record format IS interoperable as of Phase 10 — see `core/cloudFormat.js` |
 | Autosave + save status | L7670+ | main.jsx autosave | ✅ | Both real-state driven |
 | Session recovery banner | `recoveryBanner` | — | ✗ |
 | Project rename / identity | `state.currentProjectId` | ◐ | New has id but no cloud identity |
 | Save options sheet (local/cloud/download) | `sheetSaveOptions` | — | ✗ |
 
-### A9. Cloud / collaboration — **entirely absent from new app**
+### A9. Cloud / collaboration — ported in Phase 10
+
+Every Supabase call is ported call-for-call (risk R3): same tables, same
+columns, same filters, same order of operations, same RPCs. No DDL, no
+policy change, no new table — the schema is whatever the repo's `.sql`
+files already applied to the live project.
 
 | Feature | Current | New | Status |
 |---|---|---|---|
-| Supabase client + config | L8286+ | — | ✗ |
-| Auth gate (login/signup) | `renderAuthGate()` L8335 | — | ✗ |
-| Email verification (OTP) | `verifyOtp` type `signup` | — | ✗ |
-| Password reset (OTP + update) | L8445–8500 | — | ✗ |
-| Session handling | `onAuthStateChange` L8313 | — | ✗ |
-| Account sheet | `renderAccountSheet()` L8604 | — | ✗ |
-| Cloud project list/load/save/delete | L7991–8261 | — | ✗ |
-| Organizations (multi-org) | L8757+ | — | ✗ |
-| Org members + roles | `organization_members` | — | ✗ |
-| Invitations (send/accept/decline) | L8838–8920 | — | ✗ |
-| Project sharing to org | `organization_projects` | — | ✗ |
-| Per-project access roles | `organization_project_access` | — | ✗ |
-| Read-only mode for viewers | `readOnlyMode`, `readOnlyBanner` | — | ✗ |
-| Report a problem (Edge Function) | L4052 | — | ✗ |
+| Supabase client + config | L8286+ | `core/cloud.js` | ✅ |
+| Auth gate (login/signup) | `renderAuthGate()` L8335 | `ui/Cloud.jsx` `AuthGate` | ✅ |
+| Email verification (OTP) | `verifyOtp` type `signup` | `verifyCode('signup')` | ✅ |
+| Password reset (OTP + update) | L8445–8500 | `sendPasswordReset`/`verifyCode('recovery')`/`setNewPassword` | ✅ |
+| Session handling | `onAuthStateChange` L8313 | `initCloudAuth` + snapshot store | ✅ |
+| Account sheet | `renderAccountSheet()` L8604 | `AccountDialog` | ✅ |
+| Cloud project list/load/save/delete | L7991–8261 | `core/cloud.js` project fns | ✅ |
+| Organizations (multi-org) | L8757+ | `loadMyOrgs`/`setActiveOrg`, `OrgDialog` | ✅ |
+| Org members + roles | `organization_members` | `loadOrgMembers`, `OrgsTab` | ✅ |
+| Invitations (send/accept/decline) | L8838–8920 | `inviteToOrg`, `InviteBanner`, invites tab | ✅ |
+| Project sharing to org | `organization_projects` | `shareProjectToOrg` + picker tab | ✅ |
+| Per-project access roles | `organization_project_access` | `ProjectAccessDialog` | ✅ |
+| Read-only mode for viewers | `readOnlyMode`, `readOnlyBanner` | Document-level gate + banner | ✅ (better — see §I item 9) |
+| Report a problem (Edge Function) | L4052 | `ReportProblemDialog` | ✅ |
+| Cloud record interop | `buildProjectData()` shape | `core/cloudFormat.js` | ✅ (parity-tested) |
 
 ### A10. Present in new app, not in current app (net-new UX)
 
@@ -372,7 +378,7 @@ Everything → Print/PDF (renders whatever exists)
 | 7 | Civil plans subsystem + civil materials + civil quote | Self-contained; safe to do after core is stable |
 | 8 | Elevations + legend | Report-style dialog, not a plan type — no drafting deps at all |
 | 9 | Print / PDF / export | Renders everything above |
-| 10 | Auth → Supabase → orgs → members/invites → sharing → access/read-only → cloud sync | Largest security surface; done once data model is final |
+| 10 | Auth → Supabase → orgs → members/invites → sharing → access/read-only → cloud sync | Largest security surface; done once data model is final. **Done out of order, ahead of Phase 9, at the owner's direction (5 Sep 2026)** — nothing in it depends on print/PDF |
 | 11 | Full integration pass + security review + regression | §23 |
 
 Auth (§7 Phase 8) stays late deliberately: wiring cloud sync to a data model
@@ -386,10 +392,10 @@ still in flux would mean migrating stored cloud records twice.
 |---|---|---|---|---|
 | R1 | New document model can't hold current data (floors, circuits, civil, elevations) | Architecture | **Critical** | Phase 0 before any subsystem work |
 | R2 | Load/demand + quote formulas silently altered during port | Business logic | **Critical** | Extract verbatim into pure modules; unit-check against current output |
-| R3 | RLS/permission behaviour weakened when rebuilding auth/org | Security | **Critical** | Do not redesign the permission model; port call-for-call. Security review before completion (§16/§23) |
-| R4 | Storage schema mismatch → user data loss on cutover | Data integrity | **Critical** | Write a conversion path; never overwrite `project:` keys from the new app until proven |
+| R3 | RLS/permission behaviour weakened when rebuilding auth/org — ADDRESSED Phase 10 | Security | **Critical** | Ported call-for-call: same tables, columns, filters and RPCs, no DDL and no policy change. Still needs the §23 review and a signed-in end-to-end pass (see §I item 10) |
+| R4 | Storage schema mismatch → user data loss on cutover — ADDRESSED Phase 10 for the CLOUD half | Data integrity | **Critical** | `core/cloudFormat.js` converts both ways and the cloud column keeps PRODUCTION's shape, so a record either app writes opens in the other. Proven by `app/test/cloud-format-parity.mjs`: 200 records built by production's own `buildProjectData()`, opened and saved by the redesign, compared field by field — 6,210 comparisons, no drift. The LOCAL `project:` keys are still deliberately untouched by the redesign |
 | R5 | `migrateLegacyCommsData()` not carried over → old saves corrupt on load | Data integrity | **High** | Port migration before comms UI |
-| R6 | Read-only/viewer mode omitted → viewers can edit shared projects | Security | **High** | Port `readOnlyMode` with the sharing phase |
+| R6 | Read-only/viewer mode omitted → viewers can edit shared projects — RESOLVED Phase 10 | Security | **High** | Enforced at `doc.commit`/`undo`/`redo`/`jumpTo` — one choke point every mutation already passes through, so no control, shortcut or palette entry can miss it. Covered by `app/test/readonly-guard.mjs` and verified in the browser (a viewer's clicks changed nothing and wrote nothing) |
 | R7 | Derived patch-panel logic dropped → quotes under-count | Business logic | **High** | Port with comms phase; verify against current totals |
 | R8 | Circuit branching simplified to a chain | Business logic | **High** | Port `computeChainEdges`/`computeGpoChains` as-is |
 | R9 | No build step; in-browser Babel loader ships to users | Performance/tech debt | **High** | Introduce Vite before any production cutover (needs Node) |
@@ -397,7 +403,7 @@ still in flux would mean migrating stored cloud records twice.
 | R11 | Touch regressions as tools multiply | Responsive | Medium | Re-run touch tests per phase (§17) |
 | R12 | Elevations' correct home in new architecture — RESOLVED Phase 8 | Architecture | Medium | Confirmed by reading production: #elevCanvas has no pointer handlers at all, items are added only through a number-entry form. Not a plan type; built as a report-style dialog. |
 | R13 | Print/PDF depends on every subsystem's render | Output | Medium | Do last |
-| R14 | Anon key + URL in client source | Security | Medium | Normal *if* RLS is sound — **verify RLS policies during Phase 10** |
+| R14 | Anon key + URL in client source — VERIFIED Phase 10 | Security | Medium | Checked against the LIVE project, not the policy files: `app/test/rls-probe.mjs` holds the publishable key as an anonymous visitor and every table and RPC the app uses refuses it (`projects` returns `[]`; the five org tables and all five RPCs return 42501; an INSERT is refused by policy). Re-runnable |
 | R15 | Dual apps coexisting invites drift on `main` | Process | Medium | Keep `index.html` untouched; re-sync inventory if `main` moves |
 
 ---
@@ -422,17 +428,17 @@ still in flux would mean migrating stored cloud records twice.
 | Elevations | Complete | Complete | None | Medium | Done | ✅ (parity-tested) |
 | Print / PDF / export | Complete | Missing | Significant | Medium | Medium | Pending |
 | Version history | Complete | Complete | None | Low | Done | ✅ |
-| Local persistence | Complete | Partial (own schema) | Significant | **Critical** | High | Pending |
-| Auth | Complete | Missing | Fundamental | **Critical** | **Critical** | Pending |
-| Supabase sync | Complete | Missing | Fundamental | **Critical** | **Critical** | Pending |
-| Organizations / members / invites | Complete | Missing | Fundamental | **Critical** | **Critical** | Pending |
-| Sharing / access / read-only | Complete | Missing | Fundamental | **Critical** | **Critical** | Pending |
+| Local persistence | Complete | Partial (own local namespace) | Local keys deliberately separate; cloud format now interoperable | **Critical** | High | Pending (local cutover, R4) |
+| Auth | Complete | Complete | None | **Critical** | Done | ✅ (signed-in pass outstanding, §I item 10) |
+| Supabase sync | Complete | Complete | None | **Critical** | Done | ✅ (parity-tested) |
+| Organizations / members / invites | Complete | Complete | None | **Critical** | Done | ✅ (signed-in pass outstanding) |
+| Sharing / access / read-only | Complete | Complete | None | **Critical** | Done | ✅ (read-only guard tested) |
 | Command palette / context menu | Basic | Complete (better) | None | Low | Done | ✅ |
 | Responsive (3 models) | Partial | Complete | None | Low | Done | ✅ |
 
-**Scale of remaining work:** 4 of 23 areas complete. The new app currently
-implements roughly the drafting substrate; the electrical, commercial,
-output and cloud halves of the product are entirely unported.
+**Scale of remaining work:** 21 of 23 areas complete. What is left is
+print/PDF/export (Phase 9) and the local-storage cutover decision (R4),
+plus the §23 integration and security review in Phase 11.
 
 ---
 
@@ -477,7 +483,43 @@ Per §8/§20 — these change product behaviour and are **not** mine to decide:
    figures disagree. Ported verbatim because correcting it raised
    whole-job civil totals by 10–50% on randomised jobs, and that is a
    money change, not a bug fix I can make unilaterally.
-8. **Cable-run estimate for switched lighting.** The estimate covers
+8. **Cloud login gates access to LOCAL drawings too.** Ported as
+   production behaves: if the Supabase library fails to load (ad
+   blocker, no signal, CDN blocked) the gate stays shut and says
+   "Couldn't reach the login service" — locking someone out of drawings
+   already saved on their own device. For an electrician standing in a
+   half-built house with no reception that is a real problem, but
+   changing who can open the app is a product decision, not a porting
+   one. Flagging rather than quietly improving.
+9. **Read-only enforcement moved from an overlay to the document.**
+   Production covers the canvas and toolbars with a click-eating overlay,
+   which also blocks pan and zoom — a viewer cannot look around the
+   drawing they were given access to read. The redesign refuses edits at
+   `doc.commit` instead, so navigation keeps working and nothing that
+   mutates can slip past. Strictly better and it closes R6 more tightly,
+   but it IS a behaviour change to what a viewer can do, so it is on this
+   list. One rough edge left: the inspector's "Import floor plan…" and
+   "Calibrate from a known length…" buttons are still shown to a viewer
+   and do nothing when clicked. Inert, not unsafe — worth tidying in the
+   §35 audit pass rather than auditing 1,450 lines of inspector now.
+10. **Signed-in end-to-end verification still outstanding.** Everything
+   reachable without an account was verified live: the gate's six modes,
+   real Supabase error handling, and RLS against the live project. The
+   signed-in half (cloud list/save, orgs, members, invites, sharing,
+   per-project access, viewer mode) was verified against an in-memory
+   Supabase double, because I am not permitted to type the owner's
+   password into a login field or to create an account. That leaves one
+   gap only a signed-in session can close, and it should be closed before
+   cutover: sign in, and I can drive the same checks against the real
+   project in a few minutes.
+11. **Rate fields narrow from string to number in the cloud record.**
+   Production writes the four money/rate fields as the DOM input's string
+   ("95"); the redesign writes the number. Harmless in practice —
+   production assigns them straight back into an `<input>.value`, which
+   stringifies — and it is the only format difference the adapter
+   knowingly introduces. Listed because it is a change to bytes already
+   in customers' cloud records.
+12. **Cable-run estimate for switched lighting.** The estimate covers
    hard-active runs only. Production's source carries the owner's own
    instruction (30 Aug 2026) that extending it needs a redesign around a
    switch's view of what it feeds, and that it must not be built

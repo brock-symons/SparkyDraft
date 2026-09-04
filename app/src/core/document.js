@@ -39,6 +39,19 @@ export function createDocument(initial) {
   const listeners = new Set();
   let dirty = false;
 
+  // Viewer access to a shared organisation project (Phase 10). Enforced
+  // HERE rather than by disabling controls, because every mutation in
+  // the app already funnels through commit() — so this cannot miss a
+  // control the way a hand-maintained list of disabled buttons can, and
+  // it cannot be bypassed by a keyboard shortcut or the command palette.
+  //
+  // Production instead lays a click-eating overlay over the canvas and
+  // toolbars, which also blocks pan and zoom — a viewer cannot look
+  // around the drawing they were given access to read. Gating the
+  // document leaves navigation working and still permits nothing to
+  // change.
+  let readOnly = false;
+
   function current() {
     return timeline[cursor].state;
   }
@@ -58,6 +71,7 @@ export function createDocument(initial) {
    *                is one undo, not sixty.
    */
   function commit(label, mutator, opts = {}) {
+    if (readOnly) return false;
     const draft = clone(current());
     const result = mutator(draft);
     // A mutator may bail out by returning false — e.g. "nothing was
@@ -90,6 +104,7 @@ export function createDocument(initial) {
   }
 
   function undo() {
+    if (readOnly) return false;
     if (cursor === 0) return false;
     cursor--;
     dirty = true;
@@ -98,6 +113,7 @@ export function createDocument(initial) {
   }
 
   function redo() {
+    if (readOnly) return false;
     if (cursor >= timeline.length - 1) return false;
     cursor++;
     dirty = true;
@@ -113,6 +129,7 @@ export function createDocument(initial) {
    * same as undo-then-edit always has.
    */
   function jumpTo(index) {
+    if (readOnly) return false;
     if (index < 0 || index >= timeline.length || index === cursor) return false;
     cursor = index;
     dirty = true;
@@ -155,6 +172,17 @@ export function createDocument(initial) {
     },
     get isDirty() {
       return dirty;
+    },
+    get readOnly() {
+      return readOnly;
+    },
+    /**
+     * Set before load() when opening a shared project as a viewer.
+     * load() itself is exempt — it replaces the document rather than
+     * editing it, which is how a read-only project gets on screen at all.
+     */
+    setReadOnly(v) {
+      readOnly = !!v;
     },
     markSaved() {
       dirty = false;

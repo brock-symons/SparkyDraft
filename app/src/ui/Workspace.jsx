@@ -226,7 +226,7 @@ function contentSummary(controller, plan) {
 
 // --- tool rail --------------------------------------------------------
 
-function ToolRail({ tools, controller, registry, ctx, panels, onTogglePanel }) {
+function ToolRail({ tools, controller, registry, ctx, panels, onTogglePanel, readOnly }) {
   return (
     <div className="hidden w-11 shrink-0 flex-col items-center gap-0.5 border-r border-ink-200 bg-white py-2 sm:flex">
       {tools.map(t =>
@@ -258,7 +258,12 @@ function ToolRail({ tools, controller, registry, ctx, panels, onTogglePanel }) {
             { slot: 'comms', label: 'Comms racks', icon: '⌸' },
             { slot: 'circuits', label: 'Circuits', icon: '◎', shortcut: 'Shift+C' },
             { slot: 'layers', label: 'Layers', icon: '▤', shortcut: 'L' },
-            { slot: 'library', label: 'Components', icon: '⊞', shortcut: 'P' },
+            // Nothing to place on a project you can only view, so the
+            // component library is not offered. Layers, circuits and
+            // comms stay — they are how a viewer reads the drawing.
+            ...(readOnly
+              ? []
+              : [{ slot: 'library', label: 'Components', icon: '⊞', shortcut: 'P' }]),
           ]
       ).map(b => (
         <IconButton
@@ -462,7 +467,22 @@ function HintBubble({ children }) {
  * plan is the thing the user just added and wants to look at, and a card
  * sitting on top of it is in the way.
  */
-function EmptyCanvasHint({ onOpenLibrary, hasPlan }) {
+function EmptyCanvasHint({ onOpenLibrary, hasPlan, readOnly }) {
+  // On a view-only shared project there is nothing to invite: prompting
+  // someone to add devices they are not allowed to add is worse than
+  // saying plainly that the drawing is empty.
+  if (readOnly) {
+    return (
+      <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center">
+        <div className="max-w-[300px] rounded-xl border border-white/10 bg-ink-900/70 px-5 py-4 text-center backdrop-blur">
+          <div className="text-sm font-medium text-white/90">Nothing drawn yet</div>
+          <div className="mt-1 text-2xs leading-relaxed text-white/50">
+            This shared drawing has no devices on it.
+          </div>
+        </div>
+      </div>
+    );
+  }
   if (hasPlan) {
     return (
       <div className="pointer-events-auto absolute bottom-3 left-1/2 z-10 -translate-x-1/2 animate-fade-in">
@@ -518,6 +538,7 @@ export function Workspace({
   onViewportChange,
   onContextMenu,
   breakpoint,
+  readOnly,
 }) {
   // Civil mode replaces the drafting tools entirely — a cable route or a
   // switch link means nothing on a site plan, and a pit means nothing on
@@ -683,11 +704,20 @@ export function Workspace({
   // In civil mode the drafting half of the rail is swapped for the civil
   // tools; the view tools (select/pan/measure/calibrate) and the panel
   // buttons stay put, so the rail does not reshuffle under the user.
-  const activeTools = controller.isCivilMode
-    ? tools
-        .filter(t => ['select', 'pan', 'measure', 'calibrate'].includes(t.key))
-        .concat([{ key: 'sep-civil', divider: true }], civilTools)
-    : tools;
+  // View-only access to a shared project (Phase 10). The document
+  // refuses every edit regardless (see core/document.js), so this is
+  // about honesty rather than enforcement: an armed placement tool that
+  // silently swallows each click is worse than not offering it. The
+  // navigation tools stay — a viewer is meant to be able to look around.
+  const VIEW_ONLY_TOOLS = ['select', 'pan', 'measure'];
+
+  const activeTools = readOnly
+    ? tools.filter(t => VIEW_ONLY_TOOLS.includes(t.key))
+    : controller.isCivilMode
+      ? tools
+          .filter(t => ['select', 'pan', 'measure', 'calibrate'].includes(t.key))
+          .concat([{ key: 'sep-civil', divider: true }], civilTools)
+      : tools;
 
   const showLeftDock = breakpoint.name === 'desktop' && panels.left;
   const showRightDock = breakpoint.width >= 768 && panels.right;
@@ -799,6 +829,7 @@ export function Workspace({
           ctx={ctx}
           panels={panels}
           onTogglePanel={onTogglePanel}
+          readOnly={readOnly}
         />
 
         {showLeftDock && (
@@ -829,6 +860,7 @@ export function Workspace({
             <EmptyCanvasHint
               onOpenLibrary={() => onTogglePanel('left', 'library')}
               hasPlan={!!currentFloor(doc.state).planImage}
+              readOnly={readOnly}
             />
           )}
         </main>
