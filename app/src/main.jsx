@@ -22,10 +22,13 @@ import { createController } from './core/controller.js';
 import { createCommandRegistry, matchesShortcut, isTypingTarget } from './core/commands.js';
 import { boundsOf, viewForBounds, gridWorldUnits } from './core/geometry.js';
 import { SYMBOL_LIBRARY, LAYER_DEFS, CABLE_SIZES, PROTECTION_LIBRARY } from './core/catalog.js';
+import { makeSymbolResolver, allSymbols } from './core/symbols.js';
+import { computeQuote, quoteLines, quoteText, quoteSettings, formatMoney } from './core/quote.js';
 import { findBoardObjects } from './core/circuits.js';
 import {
   buildPanelScheduleData,
   panelScheduleText,
+  resolveSwitchboardLabel,
   DIVERSITY_TYPE_LABELS,
   MAINS_VOLTAGE,
 } from './core/panelSchedule.js';
@@ -48,7 +51,9 @@ import {
   Button,
   TextInput,
   Select,
+  FieldLabel,
   cx,
+  focusRing,
 } from './ui/primitives.jsx';
 import { Workspace } from './ui/Workspace.jsx';
 import { Inspector, inspectorTitle } from './ui/Inspector.jsx';
@@ -59,18 +64,6 @@ import { ProjectPicker } from './ui/ProjectPicker.jsx';
 
 const { useState, useEffect, useRef, useMemo, useCallback } = React;
 
-/**
- * Resolving a symbol has to consider the project's own custom fittings,
- * not just the shipped catalog — otherwise a device placed from a custom
- * fitting renders as an unknown '?' and prices at zero. Built per project
- * rather than module-level for that reason.
- */
-function makeSymbolResolver(getProject) {
-  return id => {
-    const custom = (getProject().customSymbols || []).find(s => s.id === id);
-    return custom || SYMBOL_LIBRARY.find(s => s.id === id);
-  };
-}
 const AUTOSAVE_MS = 1200;
 
 function WorkspaceRoot({ projectId, onExit, pushToast }) {
@@ -130,6 +123,8 @@ function WorkspaceRoot({ projectId, onExit, pushToast }) {
   const [circuitDialog, setCircuitDialog] = useState(null);
   const [assignCircuitOpen, setAssignCircuitOpen] = useState(false);
   const [panelScheduleOpen, setPanelScheduleOpen] = useState(false);
+  const [quoteOpen, setQuoteOpen] = useState(false);
+  const [priceListOpen, setPriceListOpen] = useState(false);
   // { title, text } while a text export is on screen.
   const [exportText, setExportText] = useState(null);
 
@@ -813,6 +808,22 @@ function WorkspaceRoot({ projectId, onExit, pushToast }) {
         run: c => c.openCircuitDialog(null),
       },
       {
+        id: 'report.quote',
+        title: 'Quote',
+        group: 'Reports',
+        icon: '$',
+        keywords: 'quote price total materials labour margin gst estimate',
+        run: c => c.openQuote(),
+      },
+      {
+        id: 'report.priceList',
+        title: 'Price list',
+        group: 'Reports',
+        icon: '☰',
+        keywords: 'price list device library cost labour watts rates',
+        run: c => c.openPriceList(),
+      },
+      {
         id: 'report.panelSchedule',
         title: 'Panel schedule',
         group: 'Reports',
@@ -967,6 +978,8 @@ function WorkspaceRoot({ projectId, onExit, pushToast }) {
       openCircuitDialog: id => setCircuitDialog({ id: id || null }),
       openAssignCircuit: () => setAssignCircuitOpen(true),
       openPanelSchedule: () => setPanelScheduleOpen(true),
+      openQuote: () => setQuoteOpen(true),
+      openPriceList: () => setPriceListOpen(true),
       pushToast,
     }),
     [
@@ -1080,12 +1093,12 @@ function WorkspaceRoot({ projectId, onExit, pushToast }) {
       <LayersPanel doc={doc} counts={layerCounts} />
     ) : panels.left === 'library' ? (
       <LibraryPanel
+        project={doc.state}
         controller={controller}
         favourites={favourites}
         recent={recent}
         onToggleFavourite={toggleFavourite}
         autoFocus={breakpoint.name === 'desktop'}
-        customSymbols={doc.state.customSymbols || []}
         onAddFitting={() => setFittingDialogOpen(true)}
       />
     ) : panels.left === 'comms' ? (
@@ -1185,6 +1198,30 @@ function WorkspaceRoot({ projectId, onExit, pushToast }) {
         }}
         onApply={applyCalibration}
       />
+      {quoteOpen && (
+        <QuoteDialog
+          doc={doc}
+          controller={controller}
+          symbolFor={symbolFor}
+          onClose={() => setQuoteOpen(false)}
+          onOpenPriceList={() => setPriceListOpen(true)}
+          onExport={itemized =>
+            setExportText({
+              title: 'Quote summary — select and copy',
+              text: quoteText(doc.state, symbolFor, itemized, c =>
+                resolveSwitchboardLabel(doc.state, c)
+              ),
+            })
+          }
+        />
+      )}
+      {priceListOpen && (
+        <PriceListDialog
+          doc={doc}
+          controller={controller}
+          onClose={() => setPriceListOpen(false)}
+        />
+      )}
       {panelScheduleOpen && (
         <PanelScheduleDialog
           doc={doc}
@@ -1527,6 +1564,221 @@ function cxRow(i) {
  * of the output, not decoration: they must travel with the numbers
  * wherever the numbers go.
  */
+/**
+ * Quote. Rates and one-off costs at the top because they change the
+ * whole number below them, then the schedule, then the totals.
+ *
+ * The itemised/summary toggle is production's: a summary grouped by
+ * device type is what you send a client, and the itemised view is what
+ * you check when a line looks wrong. Switch gang and floor are part of
+ * the grouping key, so a 1-gang and a 4-gang plate never merge into one
+ * line — they are different hardware at different prices.
+ *
+ * Every figure comes from core/quote.js, ported verbatim and checked
+ * against the current app by app/test/quote-parity.mjs.
+ */
+function QuoteDialog({ doc, controller, symbolFor, onClose, onExport, onOpenPriceList }) {
+  const project = doc.state;
+  const itemized = !!project.quoteItemized;
+  const totals = useMemo(() => computeQuote(project, symbolFor), [project, symbolFor]);
+  const lines = useMemo(
+    () => quoteLines(project, symbolFor, itemized),
+    [project, symbolFor, itemized]
+  );
+  const settings = quoteSettings(project);
+
+  const rateField = (key, label, step) => (
+    <label className="flex flex-col gap-1">
+      <span className="text-2xs font-medium uppercase tracking-wide text-ink-400">{label}</span>
+      <input
+        type="number"
+        step={step}
+        defaultValue={settings[key]}
+        aria-label={label}
+        onChange={e => controller.setQuoteSetting(key, e.target.value)}
+        className="w-24 rounded-md border border-ink-200 px-2 py-1 text-sm tnum"
+      />
+    </label>
+  );
+
+  const totalRow = (label, value, opts = {}) => (
+    <div
+      className={cx(
+        'flex items-baseline justify-between py-1',
+        opts.strong && 'border-t border-ink-200 pt-2 text-base font-semibold text-ink-900'
+      )}
+    >
+      <span className={cx('text-ink-500', opts.strong && 'text-ink-900')}>{label}</span>
+      <span className="tnum text-ink-800">{formatMoney(value)}</span>
+    </div>
+  );
+
+  return (
+    <Dialog
+      open
+      onClose={onClose}
+      title="Quote"
+      width="max-w-3xl"
+      footer={
+        <>
+          <Button onClick={onOpenPriceList}>Price list…</Button>
+          <Button onClick={() => onExport(itemized)}>Export as text…</Button>
+          <div className="flex-1" />
+          <Button variant="primary" onClick={onClose}>
+            Done
+          </Button>
+        </>
+      }
+    >
+      <div className="max-h-[65vh] overflow-y-auto pr-1">
+        <div className="mb-3 flex flex-wrap items-end gap-3">
+          {rateField('rateLabour', 'Labour $/hr', 1)}
+          {rateField('rateMargin', 'Margin %', 1)}
+          {rateField('costEquipment', 'Equipment $', 1)}
+          {rateField('costTravel', 'Travel $', 1)}
+        </div>
+
+        <div className="mb-1.5 flex items-center gap-2">
+          <FieldLabel>Device schedule</FieldLabel>
+          <div className="flex-1" />
+          <button
+            onClick={() => controller.toggleQuoteItemized()}
+            className={cx('text-2xs text-accent-600 hover:underline', focusRing)}
+          >
+            {itemized ? 'Show quantity summary' : 'Show every device'}
+          </button>
+        </div>
+
+        {lines.length === 0 ? (
+          <p className="py-2 text-sm text-ink-500">Nothing placed yet.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse text-2xs">
+              <thead>
+                <tr className="text-left text-ink-400">
+                  <th className="py-1 pr-2 font-medium">ID</th>
+                  <th className="py-1 pr-2 font-medium">Item</th>
+                  <th className="py-1 pr-2 font-medium">Floor</th>
+                  <th className="py-1 pr-2 font-medium">Qty</th>
+                  <th className="py-1 font-medium">Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {lines.map((l, i) => (
+                  <tr key={i} className="border-t border-ink-100">
+                    <td className="py-1 pr-2 tnum text-ink-500">{l.id == null ? '—' : l.id}</td>
+                    <td className="py-1 pr-2 text-ink-700">{l.label}</td>
+                    <td className="py-1 pr-2 text-ink-500">{l.floorName}</td>
+                    <td className="py-1 pr-2 tnum text-ink-600">{l.qty}</td>
+                    <td className="py-1 tnum text-ink-800">{formatMoney(l.total)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        <div className="mt-4 max-w-sm text-sm">
+          {totalRow('Materials', totals.materials)}
+          {totalRow('Labour', totals.labourCost)}
+          {totalRow('Protection devices', totals.protection)}
+          {totalRow('Equipment', totals.equipment)}
+          {totalRow('Travel', totals.travel)}
+          {totalRow('Subtotal', totals.subtotal)}
+          {totalRow('Margin', totals.margin)}
+          {totalRow('GST', totals.gst)}
+          {totalRow('Total', totals.total, { strong: true })}
+        </div>
+
+        <p className="mt-3 text-2xs leading-relaxed text-ink-400">
+          A <span className="font-medium">*</span> next to an item means that device has a price
+          override of its own. Patch panels are counted from each rack&rsquo;s port count, not
+          placed.
+        </p>
+      </div>
+    </Dialog>
+  );
+}
+
+/**
+ * Device library prices. Editing here changes what every device of that
+ * type costs on THIS job — the edits are saved with the project, not
+ * with the app, so pricing one job aggressively cannot quietly reprice
+ * another. (The current app edits a global list and loses the edits on
+ * reload; see core/symbols.js.)
+ */
+function PriceListDialog({ doc, controller, onClose }) {
+  const [query, setQuery] = useState('');
+  const project = doc.state;
+  const syms = useMemo(() => allSymbols(project), [project]);
+  const q = query.trim().toLowerCase();
+  const shown = q
+    ? syms.filter(s => s.label.toLowerCase().includes(q) || s.abbr.toLowerCase().includes(q))
+    : syms;
+  const overrides = project.priceList || {};
+
+  const field = (sym, key, step, width) => (
+    <input
+      type="number"
+      step={step}
+      defaultValue={sym.defaultProps[key] == null ? '' : sym.defaultProps[key]}
+      aria-label={sym.label + ' ' + key}
+      onChange={e => controller.setPriceListField(sym.id, key, e.target.value)}
+      className={cx('rounded-md border border-ink-200 px-1.5 py-1 text-2xs tnum', width)}
+    />
+  );
+
+  return (
+    <Dialog
+      open
+      onClose={onClose}
+      title="Price list"
+      width="max-w-3xl"
+      footer={
+        <>
+          <div className="flex-1" />
+          <Button variant="primary" onClick={onClose}>
+            Done
+          </Button>
+        </>
+      }
+    >
+      <TextInput
+        value={query}
+        onChange={e => setQuery(e.target.value)}
+        placeholder="Search devices…"
+        aria-label="Search the price list"
+      />
+      <div className="mt-2 max-h-[60vh] overflow-y-auto pr-1">
+        <div className="flex items-center gap-2 border-b border-ink-100 pb-1 text-2xs text-ink-400">
+          <span className="flex-1">Device</span>
+          <span className="w-20 text-center">Price $</span>
+          <span className="w-16 text-center">Labour hrs</span>
+          <span className="w-16 text-center">Watts</span>
+        </div>
+        {shown.map(sym => (
+          <div key={sym.id} className="flex items-center gap-2 border-b border-ink-50 py-1">
+            <span
+              className="min-w-0 flex-1 truncate text-2xs font-medium"
+              style={{ color: sym.color }}
+            >
+              {sym.label}
+              {overrides[sym.id] && <span className="ml-1 text-ink-400">(edited)</span>}
+            </span>
+            {field(sym, 'material_cost', 0.01, 'w-20')}
+            {field(sym, 'labour_hours', 0.05, 'w-16')}
+            {field(sym, 'watts', 1, 'w-16')}
+          </div>
+        ))}
+      </div>
+      <p className="mt-2 text-2xs leading-relaxed text-ink-400">
+        These prices apply to this job only and are saved with it. Clear a field to go back to the
+        shipped default.
+      </p>
+    </Dialog>
+  );
+}
+
 function PanelScheduleDialog({ doc, controller, symbolFor, onClose, onExport }) {
   const [ceilingMm, setCeilingMm] = useState(3000);
   const [slackPct, setSlackPct] = useState(0);
@@ -2098,6 +2350,54 @@ function CalibrateDialog({ length, onCancel, onApply }) {
   );
 }
 
+/**
+ * Last line of defence. Without one of these, a single render error
+ * unmounts the whole tree and the user is left staring at a white page
+ * with their drawing apparently gone — which happened twice while
+ * building the reports, both times from a missing import.
+ *
+ * The drawing itself is safe (it is in localStorage, saved on a debounce
+ * before the crash), so the most useful thing this can do is say so and
+ * offer a reload, rather than let a blank page imply lost work.
+ *
+ * A class component because that is the only way to catch render errors
+ * in React 18 — there is no hook equivalent.
+ */
+class ErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { error: null };
+  }
+  static getDerivedStateFromError(error) {
+    return { error };
+  }
+  componentDidCatch(error, info) {
+    console.error('SparkyDraft crashed while rendering:', error, info);
+  }
+  render() {
+    if (!this.state.error) return this.props.children;
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-ink-50 p-6">
+        <div className="max-w-md rounded-xl bg-white p-5 shadow-pop">
+          <h1 className="text-base font-semibold text-ink-900">Something broke on screen</h1>
+          <p className="mt-2 text-sm leading-relaxed text-ink-600">
+            Your drawing is saved — this is a display problem, not lost work. Reloading usually
+            fixes it.
+          </p>
+          <pre className="mt-3 max-h-32 overflow-auto rounded-md bg-ink-50 p-2 font-mono text-2xs text-ink-500">
+            {String(this.state.error && this.state.error.message)}
+          </pre>
+          <div className="mt-4 flex justify-end">
+            <Button variant="primary" onClick={() => window.location.reload()}>
+              Reload
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+}
+
 function App() {
   const [projectId, setProjectId] = useState(null);
   const [projects, setProjects] = useState(() => listProjects());
@@ -2145,4 +2445,8 @@ function App() {
   );
 }
 
-ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+ReactDOM.createRoot(document.getElementById('root')).render(
+  <ErrorBoundary>
+    <App />
+  </ErrorBoundary>
+);

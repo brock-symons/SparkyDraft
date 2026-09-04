@@ -34,12 +34,8 @@ import {
   focusRing,
 } from './primitives.jsx';
 import { currentFloor } from '../core/document.js';
-import {
-  SYMBOL_LIBRARY,
-  CABLE_SIZES,
-  PROTECTION_LIBRARY,
-  CATEGORY_LABELS,
-} from '../core/catalog.js';
+import { CABLE_SIZES, PROTECTION_LIBRARY, CATEGORY_LABELS } from '../core/catalog.js';
+import { resolveSymbol } from '../core/symbols.js';
 import { formatDistance } from '../core/geometry.js';
 import { isCommsRack, patchPanelUnitsForRack, commsPortOptions } from '../core/comms.js';
 import {
@@ -51,18 +47,6 @@ import {
 } from '../core/switching.js';
 
 const { useState, useMemo } = React;
-
-/**
- * Resolves against the project's custom fittings first, then the shipped
- * catalog. Module-level (rather than a prop threaded through every
- * sub-component) but project-aware via the argument, so a device placed
- * from a custom fitting shows its real label/colour/costs instead of
- * rendering as an unknown.
- */
-function resolveSymbol(project, id) {
-  const custom = ((project && project.customSymbols) || []).find(s => s.id === id);
-  return custom || SYMBOL_LIBRARY.find(s => s.id === id);
-}
 
 function SymbolChip({ sym, size = 'md' }) {
   if (!sym) return null;

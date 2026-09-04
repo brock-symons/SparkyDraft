@@ -255,6 +255,21 @@ export function emptyProject() {
     // with the job that uses it, matching production.
     customSymbols: [],
 
+    // Quote settings, persisted with the job. Production keeps these in
+    // DOM inputs and saves them alongside the drawing; same values, same
+    // defaults.
+    rateLabour: 95,
+    rateMargin: 20,
+    costEquipment: 0,
+    costTravel: 0,
+    // false = quantity summary grouped by type, true = one row per device
+    quoteItemized: false,
+
+    // Per-project price-list edits, keyed by symbol id. Production edits
+    // its global catalog and loses the edits on reload; here they belong
+    // to the job and persist with it (see core/symbols.js).
+    priceList: {},
+
     // Drawn radius of a device symbol, in screen px at zoom 1.
     // Production's values are 12 / 16 / 22 (Small / Medium / Large).
     symbolSize: 16,

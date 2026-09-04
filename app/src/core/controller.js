@@ -610,6 +610,50 @@ export function createController({ doc, getView, setView, getViewport, onChange,
     notify();
   }
 
+  // --- quote + price list (Phase 6) -----------------------------------
+
+  /** One of rateLabour / rateMargin / costEquipment / costTravel. */
+  function setQuoteSetting(key, value) {
+    doc.commit(
+      'Quote settings',
+      d => {
+        const n = parseFloat(value);
+        d[key] = Number.isFinite(n) ? n : 0;
+      },
+      { coalesce: true }
+    );
+    notify();
+  }
+
+  function toggleQuoteItemized() {
+    doc.commit('Quote view', d => {
+      d.quoteItemized = !d.quoteItemized;
+    });
+    notify();
+    return project().quoteItemized;
+  }
+
+  /**
+   * Price-list edit for one symbol. Stored per project rather than
+   * mutating the catalog — see core/symbols.js for why. Clearing a field
+   * (empty string) removes the override so the catalog value shows
+   * through again, rather than pinning it at zero.
+   */
+  function setPriceListField(symbolId, field, value) {
+    doc.commit(
+      'Edit price list',
+      d => {
+        d.priceList = d.priceList || {};
+        const entry = d.priceList[symbolId] || (d.priceList[symbolId] = {});
+        if (value === '' || value == null) delete entry[field];
+        else entry[field] = field === 'label' ? String(value) : parseFloat(value) || 0;
+        if (!Object.keys(entry).length) delete d.priceList[symbolId];
+      },
+      { coalesce: true }
+    );
+    notify();
+  }
+
   function cancelDraft() {
     draft = null;
     if (linkPendingSwitch) {
@@ -1304,6 +1348,9 @@ export function createController({ doc, getView, setView, getViewport, onChange,
     addCommsPort,
     setCommsPortFields,
     placeLegacyPort,
+    setQuoteSetting,
+    toggleQuoteItemized,
+    setPriceListField,
     deleteSelectedSegment,
     selectedSegmentObject,
     select,

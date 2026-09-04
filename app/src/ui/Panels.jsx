@@ -13,9 +13,15 @@ import {
   cx,
   focusRing,
 } from './primitives.jsx';
-import { SYMBOL_LIBRARY, CATEGORY_LABELS, CATEGORY_ORDER, LAYER_DEFS } from '../core/catalog.js';
+import { CATEGORY_LABELS, CATEGORY_ORDER, LAYER_DEFS } from '../core/catalog.js';
+import { allSymbols, resolveSymbol } from '../core/symbols.js';
 import { currentFloor } from '../core/document.js';
 import { allCommsRacks, patchPanelUnitsForRack } from '../core/comms.js';
+
+/** Custom fittings carry a `custom_` id prefix (see addCustomSymbol). */
+function isCustomId(id) {
+  return typeof id === 'string' && id.startsWith('custom_');
+}
 
 const { useState, useMemo, useRef, useEffect } = React;
 
@@ -81,12 +87,12 @@ function SymbolTile({ sym, active, favourite, onPick, onToggleFavourite }) {
 }
 
 export function LibraryPanel({
+  project,
   controller,
   favourites,
   recent,
   onToggleFavourite,
   autoFocus,
-  customSymbols = [],
   onAddFitting,
 }) {
   const [query, setQuery] = useState('');
@@ -97,29 +103,39 @@ export function LibraryPanel({
     if (autoFocus && inputRef.current) inputRef.current.focus();
   }, [autoFocus]);
 
-  // Custom fittings are searched and browsed alongside catalog devices —
-  // a user who added "Oven outlet" expects to find it by typing "oven",
-  // not to remember it lives in a separate list.
+  // Custom fittings are SEARCHED alongside catalog devices — someone who
+  // added "Oven outlet" expects to find it by typing "oven", not to
+  // remember it lives in a separate list — but they are BROWSED in their
+  // own section, so they don't appear twice.
+  //
   // patch_panel is deliberately not placeable: a rack needs one per 24
   // ports, so it is derived from the rack's port count rather than being
   // a device you position and then have to keep in sync. It stays in the
   // catalog so its price is still editable and quotes still resolve it —
   // production hides it from its placement grid for exactly this reason.
-  const placeable = useMemo(() => SYMBOL_LIBRARY.filter(s => s.id !== 'patch_panel'), []);
-  const allSymbols = useMemo(() => placeable.concat(customSymbols), [placeable, customSymbols]);
+  // Resolved through the project so a price-list rename shows here too,
+  // not just in the quote.
+  const placeable = useMemo(
+    () => allSymbols(project).filter(s => s.id !== 'patch_panel'),
+    [project]
+  );
+  // Search spans everything; the browsable sections keep catalog and
+  // custom apart, so a job-specific fitting doesn't appear twice.
+  const catalogSyms = useMemo(() => placeable.filter(s => !isCustomId(s.id)), [placeable]);
+  const customSyms = useMemo(() => placeable.filter(s => isCustomId(s.id)), [placeable]);
   const q = query.trim().toLowerCase();
   const matches = useMemo(() => {
     if (!q) return null;
-    return allSymbols.filter(
+    return placeable.filter(
       s =>
         s.label.toLowerCase().includes(q) ||
         s.abbr.toLowerCase().includes(q) ||
         (CATEGORY_LABELS[s.category] || '').toLowerCase().includes(q)
     );
-  }, [q, allSymbols]);
+  }, [q, placeable]);
 
-  const favSyms = favourites.map(id => allSymbols.find(s => s.id === id)).filter(Boolean);
-  const recentSyms = recent.map(id => allSymbols.find(s => s.id === id)).filter(Boolean);
+  const favSyms = favourites.map(id => placeable.find(s => s.id === id)).filter(Boolean);
+  const recentSyms = recent.map(id => placeable.find(s => s.id === id)).filter(Boolean);
 
   function pick(sym) {
     controller.setActiveSymbol(sym.id);
@@ -202,7 +218,7 @@ export function LibraryPanel({
               </Section>
             )}
             {CATEGORY_ORDER.map(cat => {
-              const items = placeable.filter(s => s.category === cat);
+              const items = catalogSyms.filter(s => s.category === cat);
               if (!items.length) return null;
               return (
                 <Section
@@ -228,9 +244,9 @@ export function LibraryPanel({
               open={!collapsed.custom}
               onToggle={() => setCollapsed(c => ({ ...c, custom: !c.custom }))}
             >
-              {customSymbols.length > 0 && (
+              {customSyms.length > 0 && (
                 <div className="mb-2 grid grid-cols-3 gap-1 px-2">
-                  {customSymbols.map(sym => (
+                  {customSyms.map(sym => (
                     <SymbolTile key={sym.id} {...tileProps(sym)} />
                   ))}
                 </div>
@@ -602,7 +618,6 @@ function findDeviceAnywhere(project, id) {
 
 function deviceLabel(project, obj) {
   if (obj.props && obj.props.customName) return obj.props.customName;
-  const custom = (project.customSymbols || []).find(s => s.id === obj.symbolId);
-  const sym = custom || SYMBOL_LIBRARY.find(s => s.id === obj.symbolId);
+  const sym = resolveSymbol(project, obj.symbolId);
   return (sym ? sym.label : obj.symbolId) + ' (' + obj.id + ')';
 }
