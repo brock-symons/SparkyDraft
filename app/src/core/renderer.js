@@ -57,7 +57,7 @@ export function getPlanImage(src, onReady) {
   return null;
 }
 
-function drawPlanImage(ctx, view, plan, img) {
+export function drawPlanImage(ctx, view, plan, img) {
   if (!img || !plan) return;
   const s = plan.scale || 1;
   const tl = worldToScreen(view, plan.x || 0, plan.y || 0);
@@ -77,7 +77,7 @@ function gridStepsFor(spacing, zoom) {
   return { minor: step, major: step * 5 };
 }
 
-function drawGrid(ctx, view, w, h, drawing) {
+export function drawGrid(ctx, view, w, h, drawing) {
   const spacing = gridWorldUnits(drawing);
   if (spacing <= 0) return;
   const { minor, major } = gridStepsFor(spacing, view.zoom);
@@ -115,7 +115,7 @@ function drawGrid(ctx, view, w, h, drawing) {
   lines(major, PAINT.gridMajor, 1);
 }
 
-function drawOrigin(ctx, view, w, h, drawing) {
+export function drawOrigin(ctx, view, w, h, drawing) {
   const o = worldToScreen(view, drawing.gridOriginX || 0, drawing.gridOriginY || 0);
   if (o.x >= -50 && o.x <= w + 50) {
     ctx.beginPath();
@@ -211,7 +211,7 @@ function drawCables(ctx, view, cables, scale, selectedId) {
 }
 
 /** Persistent dimension annotations, with end ticks and a length label. */
-function drawDimensions(ctx, view, dims, scale, formatDistance, selectedId) {
+export function drawDimensions(ctx, view, dims, scale, formatDistance, selectedId) {
   if (!dims || !dims.length) return;
   for (const d of dims) {
     const a = worldToScreen(view, d.x1, d.y1);
@@ -528,7 +528,7 @@ function drawDevice(ctx, view, obj, sym, opts) {
  * magenta = locked to another device, green = on a wall, faint white =
  * grid. Directive §7: never rely on invisible logic.
  */
-function drawSnapGuides(ctx, view, guides, w, h) {
+export function drawSnapGuides(ctx, view, guides, w, h) {
   if (!guides || !guides.length) return;
   for (const g of guides) {
     ctx.beginPath();
@@ -557,7 +557,7 @@ function drawSnapGuides(ctx, view, guides, w, h) {
   ctx.setLineDash([]);
 }
 
-function drawSnapTarget(ctx, view, target) {
+export function drawSnapTarget(ctx, view, target) {
   if (!target) return;
   const p = worldToScreen(view, target.x, target.y);
   const s = 5;
@@ -621,7 +621,7 @@ function drawSelectionBounds(ctx, view, bounds, symbolSize) {
   ctx.stroke();
 }
 
-function drawMeasure(ctx, view, measure, scale, formatDistance) {
+export function drawMeasure(ctx, view, measure, scale, formatDistance) {
   if (!measure || !measure.b) return;
   const a = worldToScreen(view, measure.a.x, measure.a.y);
   const b = worldToScreen(view, measure.b.x, measure.b.y);

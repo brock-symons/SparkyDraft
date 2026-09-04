@@ -26,6 +26,13 @@ import { makeSymbolResolver, allSymbols } from './core/symbols.js';
 import { computeQuote, quoteLines, quoteText, quoteSettings, formatMoney } from './core/quote.js';
 import { findBoardObjects } from './core/circuits.js';
 import {
+  currentCivilPlan,
+  currentPlan,
+  buildCivilSchedule,
+  computeCivilLegendEntries,
+  computeAllCivilTotals,
+} from './core/civil.js';
+import {
   buildPanelScheduleData,
   panelScheduleText,
   resolveSwitchboardLabel,
@@ -57,12 +64,34 @@ import {
 } from './ui/primitives.jsx';
 import { Workspace } from './ui/Workspace.jsx';
 import { Inspector, inspectorTitle } from './ui/Inspector.jsx';
-import { LibraryPanel, LayersPanel, CircuitsPanel, CommsPanel } from './ui/Panels.jsx';
+import {
+  LibraryPanel,
+  LayersPanel,
+  CircuitsPanel,
+  CommsPanel,
+  CivilPalette,
+  CivilPlansPanel,
+} from './ui/Panels.jsx';
 import { CommandPalette } from './ui/CommandPalette.jsx';
 import { CanvasContextMenu } from './ui/ContextMenu.jsx';
 import { ProjectPicker } from './ui/ProjectPicker.jsx';
 
 const { useState, useEffect, useRef, useMemo, useCallback } = React;
+
+/**
+ * Every point on a civil plan, for framing the view. A run contributes
+ * all of its vertices, not just its ends, so a long dog-legged conduit
+ * frames correctly rather than being clipped at a bend.
+ */
+function civilPoints(plan) {
+  const pts = []
+    .concat(plan.pits || [], plan.poles || [], plan.buildingEntries || [])
+    .map(o => ({ x: o.x, y: o.y }));
+  for (const run of (plan.conduits || []).concat(plan.overheadRuns || [])) {
+    for (const p of run.points || []) pts.push({ x: p.x, y: p.y });
+  }
+  return pts;
+}
 
 const AUTOSAVE_MS = 1200;
 
@@ -125,6 +154,7 @@ function WorkspaceRoot({ projectId, onExit, pushToast }) {
   const [panelScheduleOpen, setPanelScheduleOpen] = useState(false);
   const [quoteOpen, setQuoteOpen] = useState(false);
   const [priceListOpen, setPriceListOpen] = useState(false);
+  const [civilMaterialsOpen, setCivilMaterialsOpen] = useState(false);
   // { title, text } while a text export is on screen.
   const [exportText, setExportText] = useState(null);
 
@@ -317,8 +347,10 @@ function WorkspaceRoot({ projectId, onExit, pushToast }) {
     const vp = viewportRef.current;
     if (!vp.width || !vp.height) return;
     const d = doc.state;
-    const fl = currentFloor(d);
-    let b = boundsOf(fl.objects);
+    const fl = currentPlan(d);
+    // A civil plan has no devices to frame — its content is pits, poles,
+    // entries and the vertices of its runs.
+    let b = boundsOf(d.activePlanType === 'civil' ? civilPoints(fl) : fl.objects);
     if (fl.planImage) {
       const s = fl.planImage.scale || 1;
       const px1 = fl.planImage.x,
@@ -422,7 +454,7 @@ function WorkspaceRoot({ projectId, onExit, pushToast }) {
           doc.commit('Import floor plan', d => {
             // Centre the plan on the origin so it lands somewhere sensible
             // rather than off in a corner the user has to hunt for.
-            currentFloor(d).planImage = {
+            currentPlan(d).planImage = {
               src,
               width: probe.width,
               height: probe.height,
@@ -454,7 +486,10 @@ function WorkspaceRoot({ projectId, onExit, pushToast }) {
       if (!calibrateLength || !(realMm > 0)) return;
       doc.commit('Set scale', d => {
         // Production semantics: world units per METRE (see geometry.js).
-        currentFloor(d).scale = calibrateLength / (realMm / 1000);
+        // Calibrates whichever plan is on screen — a site plan has its own
+        // scale, and calibrating it must not touch the floor plan's.
+        const target = d.activePlanType === 'civil' ? currentCivilPlan(d) : currentFloor(d);
+        target.scale = calibrateLength / (realMm / 1000);
       });
       setCalibrateLength(null);
       controller.clearMeasure();
@@ -493,6 +528,12 @@ function WorkspaceRoot({ projectId, onExit, pushToast }) {
     // Device-only: align/distribute operate on device positions and have
     // no meaning for a segment, so these stay strictly device selection.
     const hasMulti = c => c.controller.selectedIds.size > 1;
+    // Civil selection is a single object of one of five kinds, held in
+    // its own state rather than the electrical selection set.
+    const hasCivilSel = c => {
+      const s = c.controller.civilSelection || {};
+      return !!(s.pitId || s.buildingEntryId || s.poleId || s.conduitId || s.overheadRunId);
+    };
 
     r.registerAll([
       // Tools
@@ -603,10 +644,10 @@ function WorkspaceRoot({ projectId, onExit, pushToast }) {
         icon: '⌫',
         danger: true,
         keywords: 'delete background underlay',
-        when: c => !!currentFloor(c.doc.state).planImage,
+        when: c => !!currentPlan(c.doc.state).planImage,
         run: c =>
           c.doc.commit('Remove plan', d => {
-            currentFloor(d).planImage = null;
+            currentPlan(d).planImage = null;
           }),
       },
 
@@ -652,8 +693,14 @@ function WorkspaceRoot({ projectId, onExit, pushToast }) {
         icon: '⌫',
         keywords: 'remove erase',
         danger: true,
-        when: hasSel,
-        run: c => c.controller.deleteSelected(),
+        // In civil mode this deletes whatever civil object is selected;
+        // the key and the command stay the same because the user does not
+        // think of them as two different deletes.
+        when: c => (c.controller.isCivilMode ? hasCivilSel(c) : hasSel(c)),
+        run: c =>
+          c.controller.isCivilMode
+            ? c.controller.deleteCivilSelection()
+            : c.controller.deleteSelected(),
       },
       {
         id: 'edit.selectAll',
@@ -767,7 +814,7 @@ function WorkspaceRoot({ projectId, onExit, pushToast }) {
         keywords: 'grid align magnet',
         run: c =>
           c.doc.commit('Toggle snapping', d => {
-            const f = currentFloor(d);
+            const f = currentPlan(d);
             f.snapEnabled = f.snapEnabled === false;
           }),
       },
@@ -806,6 +853,57 @@ function WorkspaceRoot({ projectId, onExit, pushToast }) {
         icon: '＋',
         keywords: 'circuit add create board protection',
         run: c => c.openCircuitDialog(null),
+      },
+      {
+        id: 'plan.toggleCivil',
+        title: 'Switch between electrical and civil',
+        group: 'Plans',
+        shortcut: 'Shift+U',
+        icon: '⛏',
+        keywords: 'civil underground site plan mode electrical switch toggle',
+        run: c => {
+          const toCivil = !c.controller.isCivilMode;
+          c.controller.setPlanType(toCivil ? 'civil' : 'floor');
+          c.pushToast(toCivil ? 'Civil / underground plan' : 'Electrical plan');
+        },
+      },
+      {
+        id: 'panel.civil',
+        title: 'Toggle civil palette',
+        group: 'Panels',
+        icon: '⛏',
+        keywords: 'civil palette pit conduit pole overhead entry',
+        when: c => c.controller.isCivilMode,
+        run: c => c.togglePanel('left', 'civil'),
+      },
+      {
+        id: 'panel.civilPlans',
+        title: 'Toggle site plans panel',
+        group: 'Panels',
+        icon: '▤',
+        keywords: 'civil site plans multiple lot street staged',
+        when: c => c.controller.isCivilMode,
+        run: c => c.togglePanel('left', 'civilPlans'),
+      },
+      {
+        id: 'civil.addPlan',
+        title: 'New site plan',
+        group: 'Plans',
+        icon: '＋',
+        keywords: 'civil site plan add new underground',
+        run: c => {
+          c.controller.setPlanType('civil');
+          c.controller.addCivilPlan();
+          c.pushToast('Site plan added');
+        },
+      },
+      {
+        id: 'report.civilMaterials',
+        title: 'Civil materials takeoff',
+        group: 'Reports',
+        icon: '⛏',
+        keywords: 'civil materials takeoff pit conduit pole overhead legend',
+        run: c => c.openCivilMaterials(),
       },
       {
         id: 'report.quote',
@@ -980,6 +1078,7 @@ function WorkspaceRoot({ projectId, onExit, pushToast }) {
       openPanelSchedule: () => setPanelScheduleOpen(true),
       openQuote: () => setQuoteOpen(true),
       openPriceList: () => setPriceListOpen(true),
+      openCivilMaterials: () => setCivilMaterialsOpen(true),
       pushToast,
     }),
     [
@@ -1017,7 +1116,19 @@ function WorkspaceRoot({ projectId, onExit, pushToast }) {
 
       // Escape backs out of the current mode before clearing selection —
       // one predictable "get me out of here" key (§10).
+      // Enter finishes a multi-point run that is not landing on anything —
+      // a polyline has no natural end, so it needs an explicit one.
+      if (e.key === 'Enter' && (controller.conduitDraft || controller.overheadDraft)) {
+        controller.finishRunDraft();
+        e.preventDefault();
+        return;
+      }
+
       if (e.key === 'Escape') {
+        // A half-drawn civil run is the same kind of "I started something"
+        // state as a half-drawn cable, and unwinds first for the same
+        // reason: a mis-clicked start point should not also cost the tool.
+        if (controller.cancelRunDraft()) return;
         // Escape unwinds one step at a time rather than dumping the user
         // straight back to Select: cancel the half-drawn segment first,
         // so a mis-clicked start point doesn't also cost you the tool.
@@ -1039,12 +1150,13 @@ function WorkspaceRoot({ projectId, onExit, pushToast }) {
           controller.clearSegmentSelection();
           return;
         }
+        if (controller.isCivilMode) controller.clearCivilSelection();
         return;
       }
 
       // Arrow-key nudging: 1 grid step, or 1 unit with Alt for fine work.
       if (e.key.startsWith('Arrow') && controller.selectedIds.size) {
-        const step = e.altKey ? 1 : gridWorldUnits(currentFloor(doc.state));
+        const step = e.altKey ? 1 : gridWorldUnits(currentPlan(doc.state));
         const d = {
           ArrowLeft: [-step, 0],
           ArrowRight: [step, 0],
@@ -1101,6 +1213,17 @@ function WorkspaceRoot({ projectId, onExit, pushToast }) {
         autoFocus={breakpoint.name === 'desktop'}
         onAddFitting={() => setFittingDialogOpen(true)}
       />
+    ) : panels.left === 'civil' ? (
+      <CivilPalette
+        controller={controller}
+        onArmed={() => {
+          // 1024 is where the left panel stops being an overlay (see
+          // showLeftDock in Workspace).
+          if (window.innerWidth < 1024) setPanels(p => ({ ...p, left: null }));
+        }}
+      />
+    ) : panels.left === 'civilPlans' ? (
+      <CivilPlansPanel doc={doc} controller={controller} />
     ) : panels.left === 'comms' ? (
       <CommsPanel
         doc={doc}
@@ -1170,7 +1293,11 @@ function WorkspaceRoot({ projectId, onExit, pushToast }) {
               ? 'Circuits'
               : panels.left === 'comms'
                 ? 'Comms racks'
-                : 'Components'
+                : panels.left === 'civil'
+                  ? 'Civil palette'
+                  : panels.left === 'civilPlans'
+                    ? 'Site plans'
+                    : 'Components'
         }
         rightPanelTitle={inspectorTitle(controller)}
         onFit={fit}
@@ -1198,6 +1325,19 @@ function WorkspaceRoot({ projectId, onExit, pushToast }) {
         }}
         onApply={applyCalibration}
       />
+      {civilMaterialsOpen && (
+        <CivilMaterialsDialog
+          doc={doc}
+          symbolFor={symbolFor}
+          onClose={() => setCivilMaterialsOpen(false)}
+          onExport={(plan, schedule, legend) =>
+            setExportText({
+              title: 'Civil materials — select and copy',
+              text: civilMaterialsText(doc.state, plan, schedule, legend),
+            })
+          }
+        />
+      )}
       {quoteOpen && (
         <QuoteDialog
           doc={doc}
@@ -1577,6 +1717,270 @@ function cxRow(i) {
  * Every figure comes from core/quote.js, ported verbatim and checked
  * against the current app by app/test/quote-parity.mjs.
  */
+/**
+ * Civil materials takeoff for the ACTIVE site plan, plus that plan's
+ * legend. Scoped to one plan on purpose — the same choice the panel
+ * schedule makes — because a takeoff is what you hand to a supplier for
+ * the dig you are about to do, not a sum across every plan in the job.
+ *
+ * Electrical and comms conduit are separate sections feeding one total,
+ * so "how much comms conduit is on this site" does not require filtering
+ * the electrical metreage out by hand.
+ *
+ * Every figure comes from core/civil.js, ported verbatim and checked
+ * against the current app by app/test/civil-parity.mjs.
+ */
+function CivilMaterialsDialog({ doc, symbolFor, onClose, onExport }) {
+  const project = doc.state;
+  const plan = currentCivilPlan(project);
+  const { rateLabour } = quoteSettings(project);
+  const schedule = useMemo(
+    () => (plan ? buildCivilSchedule(plan, rateLabour) : null),
+    [plan, rateLabour]
+  );
+  const legend = useMemo(() => (plan ? computeCivilLegendEntries(plan) : []), [plan]);
+
+  if (!plan) {
+    return (
+      <Dialog
+        open
+        onClose={onClose}
+        title="Civil materials"
+        footer={
+          <>
+            <div className="flex-1" />
+            <Button variant="primary" onClick={onClose}>
+              Done
+            </Button>
+          </>
+        }
+      >
+        <p className="py-2 text-sm text-ink-500">No site plan yet.</p>
+      </Dialog>
+    );
+  }
+
+  const countTable = (title, rows, empty) => (
+    <div className="mb-3">
+      <FieldLabel className="mb-1">{title}</FieldLabel>
+      {rows.length === 0 ? (
+        <p className="text-2xs text-ink-400">{empty}</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full border-collapse text-2xs">
+            <thead>
+              <tr className="text-left text-ink-400">
+                <th className="py-1 pr-2 font-medium">Type</th>
+                <th className="py-1 pr-2 font-medium">Qty</th>
+                <th className="py-1 pr-2 font-medium">Each</th>
+                <th className="py-1 font-medium">Cost</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r, i) => (
+                <tr key={i} className="border-t border-ink-100">
+                  <td className="py-1 pr-2 text-ink-700">{r.label}</td>
+                  <td className="py-1 pr-2 tnum text-ink-600">{r.count}</td>
+                  <td className="py-1 pr-2 tnum text-ink-600">{formatMoney(r.each)}</td>
+                  <td className="py-1 tnum text-ink-800">{formatMoney(r.cost)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+
+  const lengthTable = (title, rows, empty) => (
+    <div className="mb-3">
+      <FieldLabel className="mb-1">{title}</FieldLabel>
+      {rows.length === 0 ? (
+        <p className="text-2xs text-ink-400">{empty}</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full border-collapse text-2xs">
+            <thead>
+              <tr className="text-left text-ink-400">
+                <th className="py-1 pr-2 font-medium">Size</th>
+                <th className="py-1 pr-2 font-medium">Metres</th>
+                <th className="py-1 pr-2 font-medium">$/m</th>
+                <th className="py-1 font-medium">Cost</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r, i) => (
+                <tr key={i} className="border-t border-ink-100">
+                  <td className="py-1 pr-2 text-ink-700">{r.label}</td>
+                  <td className="py-1 pr-2 tnum text-ink-600">{r.metres.toFixed(1)}</td>
+                  <td className="py-1 pr-2 tnum text-ink-600">
+                    {r.perM == null ? '—' : '$' + r.perM.toFixed(2)}
+                  </td>
+                  <td className="py-1 tnum text-ink-800">{formatMoney(r.cost)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+
+  return (
+    <Dialog
+      open
+      onClose={onClose}
+      title={'Civil materials — ' + plan.name}
+      width="max-w-3xl"
+      footer={
+        <>
+          <Button onClick={() => onExport(plan, schedule, legend)}>Export as text…</Button>
+          <div className="flex-1" />
+          <Button variant="primary" onClick={onClose}>
+            Done
+          </Button>
+        </>
+      }
+    >
+      <div className="max-h-[65vh] overflow-y-auto pr-1">
+        {!schedule.calibrated && (
+          <p className="mb-3 rounded-md bg-amber-50 px-2 py-1.5 text-2xs leading-relaxed text-amber-700">
+            This site plan is not calibrated — conduit and overhead metreage (and their cost) read
+            as zero until you calibrate it.
+          </p>
+        )}
+
+        {countTable('Pits', schedule.pitRows, 'No pits placed yet')}
+        {lengthTable(
+          'Underground conduit — electrical',
+          schedule.electricalConduit,
+          'No electrical conduit runs yet'
+        )}
+        {lengthTable(
+          'Underground conduit — comms',
+          schedule.commsConduit,
+          'No comms conduit runs yet'
+        )}
+        {countTable('Poles', schedule.poleRows, 'No poles placed yet')}
+        {lengthTable('Overhead conductor', schedule.overheadRows, 'No overhead runs yet')}
+
+        <div className="mb-3 flex flex-wrap gap-4 text-2xs">
+          <div>
+            <div className="text-ink-400">Building entries</div>
+            <div className="tnum text-sm text-ink-800">{schedule.buildingEntryCount}</div>
+          </div>
+          <div>
+            <div className="text-ink-400">Transitions</div>
+            <div className="tnum text-sm text-ink-800">
+              {schedule.transitions.total} ({schedule.transitions.ugoh} UGOH,{' '}
+              {schedule.transitions.ohug} OHUG)
+            </div>
+          </div>
+        </div>
+
+        <div className="max-w-sm border-t border-ink-200 pt-2 text-sm">
+          <div className="flex justify-between py-1">
+            <span className="text-ink-500">Materials</span>
+            <span className="tnum text-ink-800">{formatMoney(schedule.materials)}</span>
+          </div>
+          <div className="flex justify-between py-1">
+            <span className="text-ink-500">Labour</span>
+            <span className="tnum text-ink-800">{formatMoney(schedule.labourCost)}</span>
+          </div>
+          <div className="flex justify-between border-t border-ink-200 pt-2 text-base font-semibold">
+            <span className="text-ink-900">Total</span>
+            <span className="tnum text-ink-900">{formatMoney(schedule.total)}</span>
+          </div>
+        </div>
+
+        <FieldLabel className="mb-1 mt-4">Legend</FieldLabel>
+        {legend.length === 0 ? (
+          <p className="text-2xs text-ink-400">Nothing drawn on this plan yet.</p>
+        ) : (
+          <div className="flex flex-col gap-1">
+            {legend.map((e, i) => (
+              <div key={i} className="flex items-center gap-2 text-2xs">
+                <span
+                  className="flex h-5 w-8 shrink-0 items-center justify-center rounded text-[9px] font-bold"
+                  style={{
+                    background: e.color + '22',
+                    color: e.color,
+                    border: '1px solid ' + e.color + '55',
+                  }}
+                >
+                  {e.abbr}
+                </span>
+                <span className="min-w-0 flex-1 truncate text-ink-700">{e.label}</span>
+                <span className="tnum text-ink-500">
+                  ×{e.count}
+                  {e.lengthM != null ? ' · ' + e.lengthM.toFixed(1) + 'm' : ''}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </Dialog>
+  );
+}
+
+/** Copyable civil takeoff, in the same shape as the other text exports. */
+function civilMaterialsText(project, plan, schedule, legend) {
+  const lines = [];
+  lines.push((project.name || 'Untitled project') + ' — Civil materials — ' + plan.name);
+  lines.push('Generated ' + new Date().toLocaleDateString('en-AU'));
+  if (!schedule.calibrated) {
+    lines.push('NOT CALIBRATED — conduit and overhead metreage reads as zero.');
+  }
+  const countSection = (title, rows) => {
+    lines.push('', title.toUpperCase());
+    if (!rows.length) lines.push('  (none)');
+    rows.forEach(r =>
+      lines.push(`  ${r.label}  x${r.count}  @ ${formatMoney(r.each)}  =  ${formatMoney(r.cost)}`)
+    );
+  };
+  const lengthSection = (title, rows) => {
+    lines.push('', title.toUpperCase());
+    if (!rows.length) lines.push('  (none)');
+    rows.forEach(r =>
+      lines.push(
+        `  ${r.label}  ${r.metres.toFixed(1)}m  @ ${
+          r.perM == null ? '-' : '$' + r.perM.toFixed(2) + '/m'
+        }  =  ${formatMoney(r.cost)}`
+      )
+    );
+  };
+  countSection('Pits', schedule.pitRows);
+  lengthSection('Underground conduit — electrical', schedule.electricalConduit);
+  lengthSection('Underground conduit — comms', schedule.commsConduit);
+  countSection('Poles', schedule.poleRows);
+  lengthSection('Overhead conductor', schedule.overheadRows);
+  lines.push('', 'BUILDING ENTRIES: ' + schedule.buildingEntryCount);
+  lines.push(
+    'TRANSITIONS: ' +
+      schedule.transitions.total +
+      ' (' +
+      schedule.transitions.ugoh +
+      ' UGOH, ' +
+      schedule.transitions.ohug +
+      ' OHUG)'
+  );
+  lines.push('', 'LEGEND');
+  if (!legend.length) lines.push('  (nothing drawn)');
+  legend.forEach(e =>
+    lines.push(
+      `  ${e.abbr}  ${e.label}  x${e.count}${
+        e.lengthM != null ? '  ' + e.lengthM.toFixed(1) + 'm' : ''
+      }`
+    )
+  );
+  lines.push('', 'TOTALS');
+  lines.push('Materials: ' + formatMoney(schedule.materials));
+  lines.push('Labour: ' + formatMoney(schedule.labourCost));
+  lines.push('TOTAL: ' + formatMoney(schedule.total));
+  return lines.join('\n');
+}
+
 function QuoteDialog({ doc, controller, symbolFor, onClose, onExport, onOpenPriceList }) {
   const project = doc.state;
   const itemized = !!project.quoteItemized;
@@ -1586,6 +1990,10 @@ function QuoteDialog({ doc, controller, symbolFor, onClose, onExport, onOpenPric
     [project, symbolFor, itemized]
   );
   const settings = quoteSettings(project);
+  const civilTotal = useMemo(
+    () => computeAllCivilTotals(project, settings.rateLabour),
+    [project, settings.rateLabour]
+  );
 
   const rateField = (key, label, step) => (
     <label className="flex flex-col gap-1">
@@ -1689,6 +2097,23 @@ function QuoteDialog({ doc, controller, symbolFor, onClose, onExport, onOpenPric
           {totalRow('GST', totals.gst)}
           {totalRow('Total', totals.total, { strong: true })}
         </div>
+
+        {/* Civil work is quoted on its own sheet per site plan; this is
+            the whole-job visibility line, so a job with a dig in it does
+            not look cheaper than it is from the electrical quote alone.
+            It is shown separately rather than folded into the total
+            because production keeps the two quotes apart. */}
+        {civilTotal.total > 0 && (
+          <div className="mt-3 max-w-sm rounded-md bg-ink-50 px-2.5 py-2 text-2xs">
+            <div className="flex justify-between">
+              <span className="text-ink-500">Civil / underground (all site plans)</span>
+              <span className="tnum font-medium text-ink-800">{formatMoney(civilTotal.total)}</span>
+            </div>
+            <p className="mt-1 leading-relaxed text-ink-400">
+              Not included in the total above — civil work is quoted on its own sheet.
+            </p>
+          </div>
+        )}
 
         <p className="mt-3 text-2xs leading-relaxed text-ink-400">
           A <span className="font-medium">*</span> next to an item means that device has a price

@@ -10,6 +10,7 @@ import {
   EmptyState,
   FieldLabel,
   Select,
+  Button,
   cx,
   focusRing,
 } from './primitives.jsx';
@@ -17,6 +18,14 @@ import { CATEGORY_LABELS, CATEGORY_ORDER, LAYER_DEFS } from '../core/catalog.js'
 import { allSymbols, resolveSymbol } from '../core/symbols.js';
 import { currentFloor } from '../core/document.js';
 import { allCommsRacks, patchPanelUnitsForRack } from '../core/comms.js';
+import {
+  PIT_LIBRARY,
+  CONDUIT_SIZES,
+  COMMS_CONDUIT_SIZES,
+  POLE_LIBRARY,
+  OVERHEAD_CONDUCTOR_SIZES,
+  BUILDING_ENTRY_SERVICE_TYPES,
+} from '../core/civilCatalog.js';
 
 /** Custom fittings carry a `custom_` id prefix (see addCustomSymbol). */
 function isCustomId(id) {
@@ -620,4 +629,339 @@ function deviceLabel(project, obj) {
   if (obj.props && obj.props.customName) return obj.props.customName;
   const sym = resolveSymbol(project, obj.symbolId);
   return (sym ? sym.label : obj.symbolId) + ' (' + obj.id + ')';
+}
+
+// ===================================================================
+// CIVIL PALETTE  (migration Phase 7)
+//
+// The civil equivalent of the component library, and deliberately not
+// the same panel: a civil plan has no device catalog to search — it has
+// five small fixed libraries, and choosing from one of them IS arming a
+// tool. So each section picks a type and switches to the matching tool
+// in a single tap, rather than making the user select a tool and then a
+// type.
+//
+// Conduit keeps electrical and comms as separate rows of sizes because
+// the two tables genuinely differ (NBN's 40/50/63 mm do not line up with
+// the electrical sizes) and because keeping the colour families apart on
+// the plan is the whole point.
+// ===================================================================
+
+function CivilTypeTile({ label, abbr, color, active, onClick, hollow }) {
+  return (
+    <button
+      onClick={onClick}
+      aria-pressed={active}
+      className={cx(
+        'flex w-full flex-col items-center gap-1.5 rounded-lg border px-1 py-2 transition-colors duration-100',
+        active
+          ? 'border-accent-300 bg-accent-50'
+          : 'border-transparent hover:border-ink-200 hover:bg-ink-50',
+        focusRing
+      )}
+    >
+      <span
+        className="flex h-8 w-8 items-center justify-center rounded-full text-2xs font-bold"
+        style={
+          hollow
+            ? { background: 'transparent', color, border: '1px dashed ' + color }
+            : { background: color + '22', color, border: '1px solid ' + color + '55' }
+        }
+      >
+        {abbr}
+      </span>
+      <span className="line-clamp-2 text-center text-2xs leading-tight text-ink-600">{label}</span>
+    </button>
+  );
+}
+
+function SizeChip({ label, color, active, onClick }) {
+  return (
+    <button
+      onClick={onClick}
+      aria-pressed={active}
+      className={cx(
+        'rounded-md border px-2 py-1 text-2xs font-medium transition-colors',
+        active ? 'border-transparent text-white' : 'border-ink-200 text-ink-600 hover:bg-ink-50',
+        focusRing
+      )}
+      style={active ? { background: color } : { color }}
+    >
+      {label}
+    </button>
+  );
+}
+
+export function CivilPalette({ controller, onArmed }) {
+  // Choosing a type here ARMS A TOOL — the next thing the user must do is
+  // click the plan. Where this panel is an overlay it therefore has to
+  // get out of the way, exactly as the inspector does when it arms the
+  // link tool. On a desktop dock it costs no canvas and stays put.
+  const arm = (tool, opts) => {
+    controller.setCivilTool(tool, opts);
+    onArmed && onArmed();
+  };
+  const [collapsed, setCollapsed] = useState({});
+  const section = (key, title, children) => (
+    <Section
+      key={key}
+      title={title}
+      open={!collapsed[key]}
+      onToggle={() => setCollapsed(c => ({ ...c, [key]: !c[key] }))}
+    >
+      {children}
+    </Section>
+  );
+  const tool = controller.tool;
+
+  return (
+    <div className="min-h-0 flex-1 overflow-y-auto">
+      {section(
+        'pits',
+        'Pits',
+        <div className="grid grid-cols-3 gap-1 px-2">
+          {PIT_LIBRARY.map(t => (
+            <CivilTypeTile
+              key={t.id}
+              label={t.label}
+              abbr={t.abbr}
+              color={t.color}
+              active={tool === 'civil.pit' && controller.activePitTypeId === t.id}
+              onClick={() => arm('civil.pit', { pitTypeId: t.id })}
+            />
+          ))}
+        </div>
+      )}
+
+      {section(
+        'conduit',
+        'Conduit',
+        <div className="px-2">
+          <div className="mb-1.5 flex gap-1">
+            {['electrical', 'comms'].map(cat => (
+              <button
+                key={cat}
+                onClick={() => controller.setCivilTool('civil.conduit', { conduitCategory: cat })}
+                aria-pressed={controller.activeConduitCategory === cat}
+                className={cx(
+                  'flex-1 rounded-md border px-2 py-1 text-2xs font-medium transition-colors',
+                  controller.activeConduitCategory === cat
+                    ? 'border-accent-300 bg-accent-50 text-accent-700'
+                    : 'border-ink-200 text-ink-600 hover:bg-ink-50',
+                  focusRing
+                )}
+              >
+                {cat === 'electrical' ? 'Electrical' : 'Comms'}
+              </button>
+            ))}
+          </div>
+          <div className="flex flex-wrap gap-1">
+            {(controller.activeConduitCategory === 'comms'
+              ? COMMS_CONDUIT_SIZES
+              : CONDUIT_SIZES
+            ).map(s => (
+              <SizeChip
+                key={s.id}
+                label={s.size}
+                color={s.color}
+                active={tool === 'civil.conduit' && controller.activeConduitSizeId === s.id}
+                onClick={() => arm('civil.conduit', { conduitSizeId: s.id })}
+              />
+            ))}
+          </div>
+          <p className="mt-1.5 text-2xs leading-relaxed text-ink-400">
+            Click to start, click again for each bend, and click a pit, entry or pole to finish
+            there.
+          </p>
+        </div>
+      )}
+
+      {section(
+        'poles',
+        'Poles',
+        <div className="px-2">
+          <div className="mb-1.5 flex gap-1">
+            {[
+              { id: 'private', label: 'Private' },
+              { id: 'network', label: 'Network' },
+            ].map(o => (
+              <button
+                key={o.id}
+                onClick={() => controller.setCivilTool('civil.pole', { poleOwnership: o.id })}
+                aria-pressed={controller.activePoleOwnership === o.id}
+                className={cx(
+                  'flex-1 rounded-md border px-2 py-1 text-2xs font-medium transition-colors',
+                  controller.activePoleOwnership === o.id
+                    ? 'border-accent-300 bg-accent-50 text-accent-700'
+                    : 'border-ink-200 text-ink-600 hover:bg-ink-50',
+                  focusRing
+                )}
+              >
+                {o.label}
+              </button>
+            ))}
+          </div>
+          {controller.activePoleOwnership === 'private' ? (
+            <div className="grid grid-cols-3 gap-1">
+              {POLE_LIBRARY.map(t => (
+                <CivilTypeTile
+                  key={t.id}
+                  label={t.label}
+                  abbr={t.abbr}
+                  color={t.color}
+                  active={tool === 'civil.pole' && controller.activePoleTypeId === t.id}
+                  onClick={() => arm('civil.pole', { poleTypeId: t.id })}
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="flex items-center gap-2">
+              <CivilTypeTile
+                label="Network pole"
+                abbr="NP"
+                color="#94a3b8"
+                hollow
+                active={tool === 'civil.pole'}
+                onClick={() => arm('civil.pole', { poleOwnership: 'network' })}
+              />
+              <p className="flex-1 text-2xs leading-relaxed text-ink-400">
+                An attachment point the network owns — placed, but not costed.
+              </p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {section(
+        'overhead',
+        'Overhead',
+        <div className="px-2">
+          <div className="flex flex-wrap gap-1">
+            {OVERHEAD_CONDUCTOR_SIZES.map(s => (
+              <SizeChip
+                key={s.id}
+                label={s.label}
+                color={s.color}
+                active={tool === 'civil.overhead' && controller.activeOverheadSizeId === s.id}
+                onClick={() => arm('civil.overhead', { overheadSizeId: s.id })}
+              />
+            ))}
+          </div>
+          <p className="mt-1.5 text-2xs leading-relaxed text-ink-400">
+            Spans finish on a pole or a building entry — a conductor cannot land in a pit.
+          </p>
+        </div>
+      )}
+
+      {section(
+        'entries',
+        'Building entry',
+        <div className="px-2">
+          <div className="mb-1.5 flex flex-wrap gap-1">
+            {BUILDING_ENTRY_SERVICE_TYPES.map(s => {
+              const on = controller.activeBuildingEntryServiceTypes.includes(s.id);
+              return (
+                <SizeChip
+                  key={s.id}
+                  label={s.label}
+                  color={s.color}
+                  active={on}
+                  onClick={() => {
+                    const cur = controller.activeBuildingEntryServiceTypes;
+                    controller.setCivilTool(controller.tool, {
+                      serviceTypes: on ? cur.filter(x => x !== s.id) : cur.concat(s.id),
+                    });
+                  }}
+                />
+              );
+            })}
+          </div>
+          <Button size="sm" className="w-full" onClick={() => arm('civil.buildingEntry')}>
+            Place building entry
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ===================================================================
+// CIVIL PLANS
+//
+// A job can have several site plans (a lot plan, a street plan, a
+// staged dig), and they are project-level like floors. Kept as its own
+// small panel rather than a dropdown so renaming and deleting are
+// reachable without a modal.
+// ===================================================================
+
+export function CivilPlansPanel({ doc, controller }) {
+  const project = doc.state;
+  const plans = project.civilPlans || [];
+  const activeIndex = project.activeCivilPlanIndex || 0;
+
+  return (
+    <div className="flex h-full flex-col">
+      <div className="min-h-0 flex-1 overflow-y-auto py-1">
+        {plans.length === 0 ? (
+          <EmptyState
+            title="No site plans"
+            hint="Add one to start drawing pits, conduit and overhead runs."
+          />
+        ) : (
+          plans.map((plan, i) => {
+            const active = i === activeIndex;
+            const counts = [
+              (plan.pits || []).length && (plan.pits || []).length + ' pits',
+              (plan.conduits || []).length && (plan.conduits || []).length + ' conduit',
+              (plan.poles || []).length && (plan.poles || []).length + ' poles',
+              (plan.overheadRuns || []).length && (plan.overheadRuns || []).length + ' OH',
+            ].filter(Boolean);
+            return (
+              <div
+                key={plan.id}
+                className={cx(
+                  'flex items-center gap-2 px-3 py-1.5 transition-colors hover:bg-ink-50',
+                  active && 'bg-accent-50'
+                )}
+              >
+                <button
+                  onClick={() => controller.selectCivilPlan(i)}
+                  className={cx('min-w-0 flex-1 text-left', focusRing)}
+                >
+                  <span className="block truncate text-sm font-medium text-ink-800">
+                    {plan.name}
+                  </span>
+                  <span className="block truncate text-2xs text-ink-400">
+                    {counts.length ? counts.join(' · ') : 'Empty'}
+                    {plan.scale ? '' : ' · not calibrated'}
+                  </span>
+                </button>
+                <IconButton
+                  label={`Delete ${plan.name}`}
+                  size="sm"
+                  tooltipSide="left"
+                  onClick={() => controller.deleteCivilPlan(i)}
+                >
+                  🗑
+                </IconButton>
+              </div>
+            );
+          })
+        )}
+      </div>
+      <div className="shrink-0 border-t border-ink-100 p-2">
+        <button
+          onClick={() => controller.addCivilPlan()}
+          className={cx(
+            'flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed',
+            'border-ink-300 py-2 text-2xs font-medium text-ink-500',
+            'transition-colors hover:border-accent-400 hover:bg-accent-50 hover:text-accent-700',
+            focusRing
+          )}
+        >
+          <span className="text-sm leading-none">＋</span> Add site plan
+        </button>
+      </div>
+    </div>
+  );
 }

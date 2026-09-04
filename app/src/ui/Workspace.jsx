@@ -164,7 +164,10 @@ function Sheet({ open, title, onClose, children }) {
 // the user having to ask.
 
 function StatusBar({ controller, doc, view }) {
-  const d = currentFloor(doc.state);
+  // Reads whichever plan is on screen: a site plan has its own scale and
+  // snap setting, and showing the floor plan's while drawing civil would
+  // be worse than showing nothing.
+  const d = controller.activePlan();
   const sel = controller.selectedIds.size;
   const cur = controller.cursorWorld;
   const snapOn = d.snapEnabled !== false;
@@ -198,11 +201,27 @@ function StatusBar({ controller, doc, view }) {
       )}
       <div className="flex-1" />
       {sel > 0 && <span className="tnum">{sel} selected</span>}
-      <span className="tnum hidden sm:inline">
-        {d.objects.length} {d.objects.length === 1 ? 'device' : 'devices'}
-      </span>
+      {/* A civil plan has no devices — it has pits, conduit, poles and
+          overhead runs, so the count says what is actually on it. */}
+      <span className="tnum hidden sm:inline">{contentSummary(controller, d)}</span>
     </div>
   );
+}
+
+function contentSummary(controller, plan) {
+  if (!controller.isCivilMode) {
+    const n = (plan.objects || []).length;
+    return `${n} ${n === 1 ? 'device' : 'devices'}`;
+  }
+  const parts = [
+    [(plan.pits || []).length, 'pit', 'pits'],
+    [(plan.conduits || []).length, 'conduit', 'conduit'],
+    [(plan.poles || []).length, 'pole', 'poles'],
+    [(plan.overheadRuns || []).length, 'OH run', 'OH runs'],
+  ]
+    .filter(([n]) => n > 0)
+    .map(([n, one, many]) => `${n} ${n === 1 ? one : many}`);
+  return parts.length ? parts.join(' · ') : 'Empty plan';
 }
 
 // --- tool rail --------------------------------------------------------
@@ -227,48 +246,39 @@ function ToolRail({ tools, controller, registry, ctx, panels, onTogglePanel }) {
         )
       )}
       <div className="flex-1" />
-      <IconButton
-        label="Comms racks"
-        tooltipSide="right"
-        active={panels.left === 'comms'}
-        onClick={() => onTogglePanel('left', 'comms')}
-      >
-        ⌸
-      </IconButton>
-      <IconButton
-        label="Circuits"
-        shortcut="Shift+C"
-        tooltipSide="right"
-        active={panels.left === 'circuits'}
-        onClick={() => onTogglePanel('left', 'circuits')}
-      >
-        ◎
-      </IconButton>
-      <IconButton
-        label="Layers"
-        shortcut="L"
-        tooltipSide="right"
-        active={panels.left === 'layers'}
-        onClick={() => onTogglePanel('left', 'layers')}
-      >
-        ▤
-      </IconButton>
-      <IconButton
-        label="Components"
-        shortcut="P"
-        tooltipSide="right"
-        active={panels.left === 'library'}
-        onClick={() => onTogglePanel('left', 'library')}
-      >
-        ⊞
-      </IconButton>
+      {/* The panel buttons follow the mode for the same reason the tools
+          do: circuits and layers mean nothing on a site plan, and the
+          civil palette means nothing on a floor. */}
+      {(controller.isCivilMode
+        ? [
+            { slot: 'civil', label: 'Civil palette', icon: '⛏' },
+            { slot: 'civilPlans', label: 'Site plans', icon: '▤' },
+          ]
+        : [
+            { slot: 'comms', label: 'Comms racks', icon: '⌸' },
+            { slot: 'circuits', label: 'Circuits', icon: '◎', shortcut: 'Shift+C' },
+            { slot: 'layers', label: 'Layers', icon: '▤', shortcut: 'L' },
+            { slot: 'library', label: 'Components', icon: '⊞', shortcut: 'P' },
+          ]
+      ).map(b => (
+        <IconButton
+          key={b.slot}
+          label={b.label}
+          shortcut={b.shortcut}
+          tooltipSide="right"
+          active={panels.left === b.slot}
+          onClick={() => onTogglePanel('left', b.slot)}
+        >
+          {b.icon}
+        </IconButton>
+      ))}
     </div>
   );
 }
 
 // --- mobile action bar ------------------------------------------------
 
-function MobileBar({ tools, panels, onTogglePanel }) {
+function MobileBar({ tools, panels, onTogglePanel, civil }) {
   return (
     <div
       className="flex h-14 shrink-0 items-center justify-around border-t border-ink-200 bg-white sm:hidden"
@@ -294,34 +304,34 @@ function MobileBar({ tools, panels, onTogglePanel }) {
             <span className="text-[9px] leading-none">{t.shortLabel || t.label}</span>
           </button>
         ))}
-      <button
-        onClick={() => onTogglePanel('left', 'library')}
-        aria-label="Components"
-        className={cx(
-          'flex h-11 w-14 flex-col items-center justify-center gap-0.5 rounded-lg transition-colors',
-          panels.left === 'library'
-            ? 'bg-accent-50 text-accent-700'
-            : 'text-ink-500 active:bg-ink-100',
-          focusRing
-        )}
-      >
-        <span className="text-[17px] leading-none">⊞</span>
-        <span className="text-[9px] leading-none">Place</span>
-      </button>
-      <button
-        onClick={() => onTogglePanel('left', 'layers')}
-        aria-label="Layers"
-        className={cx(
-          'flex h-11 w-14 flex-col items-center justify-center gap-0.5 rounded-lg transition-colors',
-          panels.left === 'layers'
-            ? 'bg-accent-50 text-accent-700'
-            : 'text-ink-500 active:bg-ink-100',
-          focusRing
-        )}
-      >
-        <span className="text-[17px] leading-none">▤</span>
-        <span className="text-[9px] leading-none">Layers</span>
-      </button>
+      {/* The two panel buttons follow the mode: Layers means nothing on a
+          site plan, and the civil palette means nothing on a floor. */}
+      {(civil
+        ? [
+            { slot: 'civil', icon: '⛏', label: 'Civil', aria: 'Civil palette' },
+            { slot: 'civilPlans', icon: '▤', label: 'Plans', aria: 'Site plans' },
+          ]
+        : [
+            { slot: 'library', icon: '⊞', label: 'Place', aria: 'Components' },
+            { slot: 'layers', icon: '▤', label: 'Layers', aria: 'Layers' },
+          ]
+      ).map(b => (
+        <button
+          key={b.slot}
+          onClick={() => onTogglePanel('left', b.slot)}
+          aria-label={b.aria}
+          className={cx(
+            'flex h-11 w-14 flex-col items-center justify-center gap-0.5 rounded-lg transition-colors',
+            panels.left === b.slot
+              ? 'bg-accent-50 text-accent-700'
+              : 'text-ink-500 active:bg-ink-100',
+            focusRing
+          )}
+        >
+          <span className="text-[17px] leading-none">{b.icon}</span>
+          <span className="text-[9px] leading-none">{b.label}</span>
+        </button>
+      ))}
     </div>
   );
 }
@@ -370,6 +380,44 @@ function ZoomCluster({ controller, onFit }) {
  */
 function ModeHint({ controller }) {
   let text = null;
+  // Civil tools speak for themselves, but the multi-point run tools need
+  // to say how to FINISH — a polyline has no natural end the way a
+  // two-click line does, and that is the one thing a new user gets stuck
+  // on.
+  if (controller.isCivilMode) {
+    const drafting = controller.conduitDraft || controller.overheadDraft;
+    if (controller.tool === 'civil.conduit')
+      return (
+        <HintBubble>
+          {drafting
+            ? 'Click for each bend · click a pit, entry or pole to finish there · Enter finishes unlinked · Esc cancels'
+            : 'Click where the conduit run starts · Esc to exit'}
+        </HintBubble>
+      );
+    if (controller.tool === 'civil.overhead')
+      return (
+        <HintBubble>
+          {drafting
+            ? 'Click for each span point · click a pole or entry to finish there · Enter finishes unlinked · Esc cancels'
+            : 'Click where the overhead run starts · Esc to exit'}
+        </HintBubble>
+      );
+    if (controller.tool === 'civil.pit')
+      return <HintBubble>Click to place a pit · Shift-click for several · Esc to stop</HintBubble>;
+    if (controller.tool === 'civil.pole')
+      return <HintBubble>Click to place a pole · Shift-click for several · Esc to stop</HintBubble>;
+    if (controller.tool === 'civil.buildingEntry')
+      return (
+        <HintBubble>
+          Click to place a building entry · Shift-click for several · Esc to stop
+        </HintBubble>
+      );
+    if (controller.tool === 'calibrate')
+      return <HintBubble>Click both ends of a length you know · Esc to exit</HintBubble>;
+    if (controller.tool === 'measure')
+      return <HintBubble>Click two points to measure · Esc to exit</HintBubble>;
+    return null;
+  }
   if (controller.tool === 'place' && controller.activeSymbolId)
     text = 'Click to place · Shift-click for several · Esc to stop';
   else if (controller.tool === 'calibrate')
@@ -397,9 +445,13 @@ function ModeHint({ controller }) {
   else if (controller.tool === 'pan') text = 'Drag to pan · V to go back to Select';
   else if (controller.spaceHeld) text = 'Pan';
   if (!text) return null;
+  return <HintBubble>{text}</HintBubble>;
+}
+
+function HintBubble({ children }) {
   return (
-    <div className="pointer-events-none absolute left-1/2 top-3 z-10 -translate-x-1/2 animate-fade-in rounded-full border border-white/10 bg-ink-900/85 px-3 py-1.5 text-2xs font-medium text-white/90 backdrop-blur">
-      {text}
+    <div className="pointer-events-none absolute left-1/2 top-3 z-10 max-w-[92%] -translate-x-1/2 animate-fade-in rounded-full border border-white/10 bg-ink-900/85 px-3 py-1.5 text-center text-2xs font-medium text-white/90 backdrop-blur">
+      {children}
     </div>
   );
 }
@@ -467,6 +519,55 @@ export function Workspace({
   onContextMenu,
   breakpoint,
 }) {
+  // Civil mode replaces the drafting tools entirely — a cable route or a
+  // switch link means nothing on a site plan, and a pit means nothing on
+  // a floor. Select, Pan, Measure and Calibrate are shared because they
+  // are about the view and the page, not about what is being drawn.
+  const civilTools = [
+    {
+      key: 'civil-pit',
+      label: 'Pit',
+      shortLabel: 'Pit',
+      icon: '◍',
+      primary: true,
+      isActive: () => controller.tool === 'civil.pit',
+      onClick: () => controller.setCivilTool('civil.pit'),
+    },
+    {
+      key: 'civil-conduit',
+      label: 'Conduit run',
+      shortLabel: 'Conduit',
+      icon: '⌇',
+      primary: true,
+      isActive: () => controller.tool === 'civil.conduit',
+      onClick: () => controller.setCivilTool('civil.conduit'),
+    },
+    {
+      key: 'civil-pole',
+      label: 'Pole',
+      shortLabel: 'Pole',
+      icon: '⊤',
+      isActive: () => controller.tool === 'civil.pole',
+      onClick: () => controller.setCivilTool('civil.pole'),
+    },
+    {
+      key: 'civil-overhead',
+      label: 'Overhead run',
+      shortLabel: 'OH',
+      icon: '⌁',
+      isActive: () => controller.tool === 'civil.overhead',
+      onClick: () => controller.setCivilTool('civil.overhead'),
+    },
+    {
+      key: 'civil-entry',
+      label: 'Building entry',
+      shortLabel: 'Entry',
+      icon: '◈',
+      isActive: () => controller.tool === 'civil.buildingEntry',
+      onClick: () => controller.setCivilTool('civil.buildingEntry'),
+    },
+  ];
+
   const tools = [
     {
       key: 'select',
@@ -579,6 +680,15 @@ export function Workspace({
   // worth docking from tablet-portrait up: at 800px a docked 264px panel
   // leaves ~490px of drawing, whereas the same panel as a bottom sheet
   // covers two thirds of the screen.
+  // In civil mode the drafting half of the rail is swapped for the civil
+  // tools; the view tools (select/pan/measure/calibrate) and the panel
+  // buttons stay put, so the rail does not reshuffle under the user.
+  const activeTools = controller.isCivilMode
+    ? tools
+        .filter(t => ['select', 'pan', 'measure', 'calibrate'].includes(t.key))
+        .concat([{ key: 'sep-civil', divider: true }], civilTools)
+    : tools;
+
   const showLeftDock = breakpoint.name === 'desktop' && panels.left;
   const showRightDock = breakpoint.width >= 768 && panels.right;
   const overlayLeft = !showLeftDock && panels.left;
@@ -609,6 +719,36 @@ export function Workspace({
         />
 
         <div className="flex-1" />
+
+        {/* Electrical ↔ civil. A segmented control rather than a menu
+            item: which plan type you are on changes every tool and
+            everything on the canvas, so it has to be visible at all
+            times — being in the wrong mode without noticing is the
+            failure this prevents. */}
+        <div className="mr-1 flex shrink-0 rounded-lg bg-ink-100 p-0.5">
+          {[
+            { id: 'floor', label: 'Electrical', short: 'Elec' },
+            { id: 'civil', label: 'Civil', short: 'Civil' },
+          ].map(m => {
+            const on = (controller.isCivilMode ? 'civil' : 'floor') === m.id;
+            return (
+              <button
+                key={m.id}
+                onClick={() => controller.setPlanType(m.id)}
+                aria-pressed={on}
+                title={m.label + ' plan'}
+                className={cx(
+                  'rounded-md px-2 py-1 text-2xs font-medium transition-colors',
+                  on ? 'bg-white text-ink-800 shadow-sm' : 'text-ink-500 hover:text-ink-700',
+                  focusRing
+                )}
+              >
+                <span className="hidden sm:inline">{m.label}</span>
+                <span className="sm:hidden">{m.short}</span>
+              </button>
+            );
+          })}
+        </div>
 
         <IconButton
           label="Undo"
@@ -653,7 +793,7 @@ export function Workspace({
 
       <div className="flex min-h-0 flex-1">
         <ToolRail
-          tools={tools}
+          tools={activeTools}
           controller={controller}
           registry={registry}
           ctx={ctx}
@@ -707,7 +847,12 @@ export function Workspace({
       </div>
 
       <StatusBar controller={controller} doc={doc} view={view} />
-      <MobileBar tools={tools} panels={panels} onTogglePanel={onTogglePanel} />
+      <MobileBar
+        tools={activeTools}
+        panels={panels}
+        onTogglePanel={onTogglePanel}
+        civil={controller.isCivilMode}
+      />
 
       {/* Whatever didn't earn a dock at this width overlays as a sheet. */}
       <Sheet

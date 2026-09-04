@@ -136,12 +136,12 @@ Status key: **✅ complete** · **◐ partial** · **✗ missing** · **⚙ need
 
 | Feature | Current | New | Status |
 |---|---|---|---|
-| Civil plans (parallel plan type) | `state.civilPlans[]`, `makeCivilPlan()` | — | ✗ ⚙ |
-| Pits, conduits, building entries, poles, overhead runs | `PIT_LIBRARY` etc. L1494+ | — | ✗ |
-| Civil render/interaction pipeline | `renderCivil()` L2360, `pointerdownCivil()` L3445 | — | ✗ |
-| Civil materials schedule | `sheetCivilMaterials` | — | ✗ |
-| Civil quote totals | `computeAllCivilTotals()` L6769, `updateCivilQuote()` L6788 | — | ✗ |
-| Civil mode toggle | `civilModeToggle` | — | ✗ |
+| Civil plans (parallel plan type) | `state.civilPlans[]`, `makeCivilPlan()` | `core/civil.js` + Site plans panel | ✅ |
+| Pits, conduits, building entries, poles, overhead runs | `PIT_LIBRARY` etc. L1494+ | `core/civilCatalog.js` (verbatim) + civil palette | ✅ |
+| Civil render/interaction pipeline | `renderCivil()` L2360, `pointerdownCivil()` L3445 | `core/civilRenderer.js` + controller civil branch | ✅ |
+| Civil materials schedule | `sheetCivilMaterials` | Civil materials dialog + legend + text export | ✅ |
+| Civil quote totals | `computeAllCivilTotals()` L6769, `updateCivilQuote()` L6788 | `core/civil.js` | ✅ (parity-tested) |
+| Civil mode toggle | `civilModeToggle` | Segmented control in the toolbar | ✅ |
 
 ### A6. Other drawing systems
 
@@ -418,7 +418,7 @@ still in flux would mean migrating stored cloud records twice.
 | Panel schedule + load estimate | Complete | Complete | None | **Critical** | Done | ✅ (parity-tested) |
 | Quote + price list | Complete | Complete | Price edits persist (deviation, §I) | **Critical** | Done | ✅ (parity-tested) |
 | Comms racks | Complete | Complete | None | High | Done | ✅ (parity-tested) |
-| Civil / underground | Complete | Missing | Significant | High | High | Pending |
+| Civil / underground | Complete | Complete | Print/PDF pages land with Phase 10 | High | Done | ✅ (parity-tested) |
 | Elevations | Complete | Missing | Significant | Medium | Medium | Pending |
 | Print / PDF / export | Complete | Missing | Significant | Medium | Medium | Pending |
 | Version history | Complete | Complete | None | Low | Done | ✅ |
@@ -459,7 +459,16 @@ Per §8/§20 — these change product behaviour and are **not** mine to decide:
    stored per project and saved with it. Strictly better, but it IS a
    behaviour change to how a job is priced, so it is on this list rather
    than buried in a commit.
-7. **Cable-run estimate for switched lighting.** The estimate covers
+7. **Whole-job civil total omits comms conduit, poles and overhead.**
+   `computeAllCivilTotals()` — the civil line shown on the main quote —
+   counts pits and ELECTRICAL conduit only. Comms conduit is looked up in
+   `CONDUIT_SIZES`, where an `nbn*` size id never matches, so it silently
+   contributes nothing; poles and overhead runs are not iterated at all.
+   The per-plan civil takeoff prices all of them correctly, so the two
+   figures disagree. Ported verbatim because correcting it raised
+   whole-job civil totals by 10–50% on randomised jobs, and that is a
+   money change, not a bug fix I can make unilaterally.
+8. **Cable-run estimate for switched lighting.** The estimate covers
    hard-active runs only. Production's source carries the owner's own
    instruction (30 Aug 2026) that extending it needs a redesign around a
    switch's view of what it feeds, and that it must not be built

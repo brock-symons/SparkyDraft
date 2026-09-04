@@ -12,7 +12,7 @@ versioned markdown next to the code.
 | | |
 |---|---|
 | Branch | `feature/cad-workspace-redesign` |
-| Status | Phases 0-6 complete · **stopped at the phase boundary, awaiting approval for Phase 7** |
+| Status | Phases 0-7 complete · **stopped at the phase boundary, awaiting approval for Phase 8** |
 | Merged to main | **No — and not without explicit owner review** |
 | Last updated | 2026-09-04 |
 
@@ -155,17 +155,31 @@ live on the project and persist with it.
 Also landed here: the error boundary from the follow-up list, after a
 missing import blanked the page twice in one session.
 
-### Phase 7 — Civil / underground ⏸ NOT STARTED — awaiting approval
+### Phase 7 — Civil / underground ✅ complete
 
-**Two inert files exist as groundwork only** (`app/src/core/civilCatalog.js`,
-`app/src/core/civil.js`). Nothing imports them; the running app is
-unchanged and sits at Phase 6. They were written immediately before the
-phase-gate rule was introduced and are kept rather than discarded, but
-Phase 7 has not begun.
-
-Civil plans as a parallel plan type, pits/conduits/building entries/poles/
-overhead runs, civil materials schedule, civil quote, mode toggle.
-Self-contained — safe here once the core is stable.
+- [x] **Civil catalog** — five libraries extracted verbatim into
+      `core/civilCatalog.js` and .prettierignore'd, same rule as
+      `catalog.js`.
+- [x] **Plan model + multi-plan management** — `civilPlans[]`, add/
+      switch/rename/delete, per-plan view, scale, grid and content.
+- [x] **Five entity types** — pits, conduit (electrical + comms), poles
+      (private + network), overhead runs, building entries.
+- [x] **Multi-point polyline drawing** — click to start, click per bend,
+      click a pit/entry/pole to finish and link, Enter finishes
+      unlinked, Esc cancels; degenerate runs discarded.
+- [x] **Civil snapping** — pit/entry/pole centre → conduit vertex →
+      grid, reported in the status bar like the electrical snapper.
+- [x] **Civil rendering** — separate pass; three conduit colour families,
+      dashed overhead, hollow network poles, rotated-square entries,
+      vertex handles, drafts, ghosts.
+- [x] **Selection, dragging and vertex editing** — endpoint drags
+      re-link or unlink; interior bends carry no link.
+- [x] **Civil materials takeoff + legend + text export**
+- [x] **Civil quote integration** — whole-job line on the main quote.
+- [x] **Mode switching** — segmented control; tools, panels, inspector,
+      status bar and canvas all follow the mode.
+- [x] **Parity check** — `app/test/civil-parity.mjs`, 4,955 comparisons
+      against the live `index.html`, all matching.
 
 ### Phase 8 — Elevations + legend
 **Blocked on an owner decision** — see open decisions below.
@@ -250,6 +264,8 @@ its functions by name at run time so they survive edits to that file:
 ```bash
 node app/test/panel-schedule-parity.mjs
 node app/test/comms-migration-parity.mjs
+node app/test/quote-parity.mjs
+node app/test/civil-parity.mjs
 ```
 
 If either fails, the port has drifted from the product — fix the port,

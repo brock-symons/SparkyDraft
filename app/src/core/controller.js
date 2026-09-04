@@ -39,6 +39,30 @@ import { currentFloor } from './document.js';
 import { CABLE_SIZES } from './catalog.js';
 import { makeCircuit } from './circuits.js';
 import {
+  PIT_LIBRARY,
+  POLE_LIBRARY,
+  CONDUIT_SIZES,
+  OVERHEAD_CONDUCTOR_SIZES,
+} from './civilCatalog.js';
+import {
+  makeCivilPlan,
+  currentCivilPlan,
+  makePit,
+  makeBuildingEntry,
+  makePole,
+  makeConduit,
+  makeOverheadRun,
+  conduitLength,
+  conduitSizeTable,
+  snapPointCivil,
+  hitTestPit,
+  hitTestBuildingEntry,
+  hitTestPole,
+  hitTestConduitSegment,
+  hitTestOverheadRunSegment,
+  hitTestVertex,
+} from './civil.js';
+import {
   isCommsRack,
   defaultCommsPorts,
   makeCommsPort,
@@ -654,6 +678,702 @@ export function createController({ doc, getView, setView, getViewport, onChange,
     notify();
   }
 
+  // =================================================================
+  // CIVIL MODE  (Phase 7)
+  //
+  // Kept in its own state variables rather than reusing the electrical
+  // ones, matching production. The two modes are mutually exclusive via
+  // activePlanType, so they can never both be mid-gesture — but sharing
+  // the variables would mean one mode's cleanup could clear state the
+  // other still needed, and that class of bug is invisible until it
+  // isn't.
+  // =================================================================
+
+  let civilSelection = {
+    pitId: null,
+    buildingEntryId: null,
+    poleId: null,
+    conduitId: null,
+    overheadRunId: null,
+  };
+  // In-progress multi-click runs. `points` are committed vertices;
+  // draftHover is the cursor, so the un-placed final segment previews.
+  let conduitDraft = null;
+  let overheadDraft = null;
+  let draftHover = null;
+  // Palette selections — what the next placed thing will be.
+  let activePitTypeId = PIT_LIBRARY[0].id;
+  let activePoleTypeId = POLE_LIBRARY[0].id;
+  let activePoleOwnership = 'private';
+  let activeConduitCategory = 'electrical';
+  let activeConduitSizeId = CONDUIT_SIZES[2].id;
+  let activeOverheadSizeId = OVERHEAD_CONDUCTOR_SIZES[1].id;
+  let activeBuildingEntryServiceTypes = ['power'];
+  // { kind:'pit'|'buildingEntry'|'pole'|'vertex', id, runKind, vertexIndex }
+  let civilDrag = null;
+  let civilPendingTap = null;
+
+  function isCivil() {
+    return project().activePlanType === 'civil';
+  }
+  function civilPlan() {
+    return currentCivilPlan(project());
+  }
+  /** The plan being drafted, whichever mode is active. */
+  function activePlan() {
+    return isCivil() ? civilPlan() : floor();
+  }
+
+  function clearCivilSelection() {
+    civilSelection = {
+      pitId: null,
+      buildingEntryId: null,
+      poleId: null,
+      conduitId: null,
+      overheadRunId: null,
+    };
+  }
+
+  function computeCivilSnap(exclude) {
+    const plan = civilPlan();
+    return world =>
+      snapPointCivil(world, {
+        plan,
+        gridStep: gridWorldUnits(plan),
+        zoom: getView().zoom,
+        enabled: plan.snapEnabled !== false,
+        exclude: exclude || {},
+      });
+  }
+
+  function activeConduitSize() {
+    const table = conduitSizeTable(activeConduitCategory);
+    return table.find(s => s.id === activeConduitSizeId) || table[0];
+  }
+  function activeOverheadSizeObj() {
+    return (
+      OVERHEAD_CONDUCTOR_SIZES.find(s => s.id === activeOverheadSizeId) ||
+      OVERHEAD_CONDUCTOR_SIZES[0]
+    );
+  }
+
+  /** Colour of whatever run is currently being drafted, for the preview. */
+  function draftColor() {
+    if (conduitDraft) return activeConduitSize().color;
+    if (overheadDraft) return activeOverheadSizeObj().color;
+    return null;
+  }
+
+  // --- placement ----------------------------------------------------
+
+  function placePit(world) {
+    doc.commit('Place pit', d => {
+      const plan = currentCivilPlan(d);
+      const type = PIT_LIBRARY.find(t => t.id === activePitTypeId) || PIT_LIBRARY[0];
+      const pit = makePit(d.nextId++, type, world.x, world.y);
+      plan.pits.push(pit);
+      civilSelection = { ...civilSelection, pitId: pit.id };
+    });
+    notify();
+  }
+
+  function placeBuildingEntry(world) {
+    doc.commit('Place building entry', d => {
+      const plan = currentCivilPlan(d);
+      const be = makeBuildingEntry(d.nextId++, world.x, world.y, activeBuildingEntryServiceTypes);
+      plan.buildingEntries.push(be);
+      civilSelection = { ...civilSelection, buildingEntryId: be.id };
+    });
+    notify();
+  }
+
+  function placePole(world) {
+    doc.commit('Place pole', d => {
+      const plan = currentCivilPlan(d);
+      const type = POLE_LIBRARY.find(t => t.id === activePoleTypeId) || POLE_LIBRARY[0];
+      const pole = makePole(d.nextId++, activePoleOwnership, type, world.x, world.y);
+      plan.poles.push(pole);
+      civilSelection = { ...civilSelection, poleId: pole.id };
+    });
+    notify();
+  }
+
+  // --- multi-point run drafting -------------------------------------
+
+  /**
+   * Commits the in-progress conduit. A degenerate result — two clicks in
+   * effectively the same spot — is discarded rather than saved as a
+   * zero-length run that still hit-tests. Ported guard, including the
+   * 2-world-unit threshold.
+   */
+  function finishConduitDraft() {
+    const draft = conduitDraft;
+    conduitDraft = null;
+    draftHover = null;
+    if (!draft) return;
+    if (draft.points.length < 2 || conduitLength(draft) < 2) {
+      notify();
+      return;
+    }
+    doc.commit('Draw conduit', d => {
+      const plan = currentCivilPlan(d);
+      const cd = makeConduit(d.nextId++, draft.points, draft.category, draft.sizeId);
+      cd.fromPitId = draft.fromPitId || null;
+      cd.fromBuildingEntryId = draft.fromBuildingEntryId || null;
+      cd.fromPoleId = draft.fromPoleId || null;
+      cd.toPitId = draft.toPitId || null;
+      cd.toBuildingEntryId = draft.toBuildingEntryId || null;
+      cd.toPoleId = draft.toPoleId || null;
+      plan.conduits.push(cd);
+      clearCivilSelection();
+      civilSelection = { ...civilSelection, conduitId: cd.id };
+    });
+    notify();
+  }
+
+  function finishOverheadDraft() {
+    const draft = overheadDraft;
+    overheadDraft = null;
+    draftHover = null;
+    if (!draft) return;
+    if (draft.points.length < 2 || conduitLength(draft) < 2) {
+      notify();
+      return;
+    }
+    doc.commit('Draw overhead run', d => {
+      const plan = currentCivilPlan(d);
+      const run = makeOverheadRun(d.nextId++, draft.points, draft.sizeId);
+      run.fromPoleId = draft.fromPoleId || null;
+      run.fromBuildingEntryId = draft.fromBuildingEntryId || null;
+      run.toPoleId = draft.toPoleId || null;
+      run.toBuildingEntryId = draft.toBuildingEntryId || null;
+      plan.overheadRuns.push(run);
+      clearCivilSelection();
+      civilSelection = { ...civilSelection, overheadRunId: run.id };
+    });
+    notify();
+  }
+
+  /** Enter finishes an unlinked run; Escape throws the draft away. */
+  function finishRunDraft() {
+    if (conduitDraft) return finishConduitDraft();
+    if (overheadDraft) return finishOverheadDraft();
+    return false;
+  }
+  function cancelRunDraft() {
+    if (!conduitDraft && !overheadDraft) return false;
+    conduitDraft = null;
+    overheadDraft = null;
+    draftHover = null;
+    notify();
+    return true;
+  }
+
+  // --- civil pointer handling ---------------------------------------
+
+  function onPointerDownCivil(world, e) {
+    const snapFn = computeCivilSnap();
+    const zoom = getView().zoom;
+    const plan = civilPlan();
+    const r = symbolRadius();
+
+    if (tool === 'civil.pit') {
+      const s = snapFn(world);
+      snap = s;
+      placePit(s.point);
+      if (!e.shiftKey) tool = 'select';
+      notify();
+      return;
+    }
+    if (tool === 'civil.buildingEntry') {
+      const s = snapFn(world);
+      snap = s;
+      placeBuildingEntry(s.point);
+      if (!e.shiftKey) tool = 'select';
+      notify();
+      return;
+    }
+    if (tool === 'civil.pole') {
+      const s = snapFn(world);
+      snap = s;
+      placePole(s.point);
+      if (!e.shiftKey) tool = 'select';
+      notify();
+      return;
+    }
+
+    // Multi-point runs. First click opens the draft and records what the
+    // start is attached to; each later click adds a vertex, and clicking
+    // an attachable thing both records the link and finishes the run.
+    if (tool === 'civil.conduit') {
+      const s = snapFn(world);
+      if (!conduitDraft) {
+        const size = activeConduitSize();
+        conduitDraft = {
+          points: [{ x: s.point.x, y: s.point.y }],
+          sizeId: size.id,
+          category: activeConduitCategory,
+          fromPitId: s.hit && s.hit.kind === 'pit' ? s.hit.id : null,
+          fromBuildingEntryId: s.hit && s.hit.kind === 'buildingEntry' ? s.hit.id : null,
+          fromPoleId: s.hit && s.hit.kind === 'pole' ? s.hit.id : null,
+        };
+        draftHover = null;
+        snap = null;
+        notify();
+        return;
+      }
+      conduitDraft.points.push({ x: s.point.x, y: s.point.y });
+      if (s.hit) {
+        if (s.hit.kind === 'pit') conduitDraft.toPitId = s.hit.id;
+        else if (s.hit.kind === 'buildingEntry') conduitDraft.toBuildingEntryId = s.hit.id;
+        else conduitDraft.toPoleId = s.hit.id;
+        finishConduitDraft();
+      } else {
+        snap = null;
+        notify();
+      }
+      return;
+    }
+    if (tool === 'civil.overhead') {
+      const s = snapFn(world);
+      if (!overheadDraft) {
+        overheadDraft = {
+          points: [{ x: s.point.x, y: s.point.y }],
+          sizeId: activeOverheadSizeObj().id,
+          fromPoleId: s.hit && s.hit.kind === 'pole' ? s.hit.id : null,
+          fromBuildingEntryId: s.hit && s.hit.kind === 'buildingEntry' ? s.hit.id : null,
+        };
+        draftHover = null;
+        snap = null;
+        notify();
+        return;
+      }
+      overheadDraft.points.push({ x: s.point.x, y: s.point.y });
+      // An overhead span can only terminate on a pole or a building
+      // entry — a pit is underground and cannot hold a conductor.
+      if (s.hit && (s.hit.kind === 'pole' || s.hit.kind === 'buildingEntry')) {
+        if (s.hit.kind === 'pole') overheadDraft.toPoleId = s.hit.id;
+        else overheadDraft.toBuildingEntryId = s.hit.id;
+        finishOverheadDraft();
+      } else {
+        snap = null;
+        notify();
+      }
+      return;
+    }
+
+    // Select tool. A vertex handle on the already-selected run wins over
+    // everything else — it is drawn on top and is the more specific
+    // target — then pits, building entries, poles, conduit segments,
+    // overhead segments. Nothing hit falls back to pan, same as the
+    // electrical select tool.
+    const selConduit = civilSelection.conduitId
+      ? (plan.conduits || []).find(c => c.id === civilSelection.conduitId)
+      : null;
+    const selRun = civilSelection.overheadRunId
+      ? (plan.overheadRuns || []).find(x => x.id === civilSelection.overheadRunId)
+      : null;
+    const vIdx = hitTestVertex(selConduit, world, zoom);
+    const rvIdx = vIdx === null ? hitTestVertex(selRun, world, zoom) : null;
+    const hitPit = vIdx === null && rvIdx === null ? hitTestPit(plan, world, r, zoom) : null;
+    const hitBE =
+      vIdx === null && rvIdx === null && !hitPit
+        ? hitTestBuildingEntry(plan, world, r, zoom)
+        : null;
+    const hitPole =
+      vIdx === null && rvIdx === null && !hitPit && !hitBE
+        ? hitTestPole(plan, world, r, zoom)
+        : null;
+    const hitCD =
+      vIdx === null && rvIdx === null && !hitPit && !hitBE && !hitPole
+        ? hitTestConduitSegment(plan, world, zoom)
+        : null;
+    const hitOH =
+      vIdx === null && rvIdx === null && !hitPit && !hitBE && !hitPole && !hitCD
+        ? hitTestOverheadRunSegment(plan, world, zoom)
+        : null;
+
+    civilPendingTap = {
+      startX: e.clientX,
+      startY: e.clientY,
+      world,
+      pitId: hitPit ? hitPit.id : null,
+      buildingEntryId: hitBE ? hitBE.id : null,
+      poleId: hitPole ? hitPole.id : null,
+      conduitId: hitCD ? hitCD.run.id : null,
+      overheadRunId: hitOH ? hitOH.run.id : null,
+      vertex:
+        vIdx !== null
+          ? { runKind: 'conduit', id: selConduit.id, vertexIndex: vIdx }
+          : rvIdx !== null
+            ? { runKind: 'overhead', id: selRun.id, vertexIndex: rvIdx }
+            : null,
+    };
+    civilDrag = null;
+    gesture = {
+      type: 'civilTap',
+      startX: e.clientX,
+      startY: e.clientY,
+      startView: { ...getView() },
+    };
+  }
+
+  function onPointerMoveCivil(e, rect) {
+    const world = toWorld(e.clientX, e.clientY, rect);
+    cursorWorld = world;
+
+    // Live preview while drafting a run, and a live snap readout so the
+    // user can see what the next vertex will land on.
+    if (conduitDraft || overheadDraft) {
+      const s = computeCivilSnap()(world);
+      draftHover = s.point;
+      snap = s.target || s.guides.length ? s : null;
+      notify();
+      return;
+    }
+
+    if (tool === 'civil.pit' || tool === 'civil.buildingEntry' || tool === 'civil.pole') {
+      const s = computeCivilSnap()(world);
+      ghost = s.point;
+      snap = s;
+      notify();
+      return;
+    }
+
+    if (civilPendingTap && !civilDrag && (!gesture || gesture.type === 'civilTap')) {
+      const moved = Math.hypot(
+        e.clientX - civilPendingTap.startX,
+        e.clientY - civilPendingTap.startY
+      );
+      if (moved > DRAG_THRESHOLD_PX * 2) {
+        const t = civilPendingTap;
+        if (t.vertex) {
+          civilDrag = { kind: 'vertex', ...t.vertex };
+        } else if (t.pitId) {
+          civilDrag = { kind: 'pit', id: t.pitId };
+          clearCivilSelection();
+          civilSelection = { ...civilSelection, pitId: t.pitId };
+        } else if (t.buildingEntryId) {
+          civilDrag = { kind: 'buildingEntry', id: t.buildingEntryId };
+          clearCivilSelection();
+          civilSelection = { ...civilSelection, buildingEntryId: t.buildingEntryId };
+        } else if (t.poleId) {
+          civilDrag = { kind: 'pole', id: t.poleId };
+          clearCivilSelection();
+          civilSelection = { ...civilSelection, poleId: t.poleId };
+        } else {
+          gesture = {
+            type: 'pan',
+            startX: t.startX,
+            startY: t.startY,
+            startView: { ...getView() },
+          };
+        }
+        civilPendingTap = null;
+        // Apply the move that promoted the drag, rather than waiting for
+        // the next one. A fast drag can deliver very few pointermove
+        // events, and returning here left the object promoted but never
+        // repositioned — the drag silently did nothing.
+        if (civilDrag) dragCivilTo(world);
+        else notify();
+      }
+      return;
+    }
+
+    if (civilDrag) {
+      dragCivilTo(world);
+      return;
+    }
+  }
+
+  /**
+   * Live drag of a civil object or run vertex. Coalesced into one undo
+   * step per drag, same as an electrical device move.
+   *
+   * Dragging an END vertex onto a pit/entry/pole re-links that end;
+   * dragging it off one unlinks it. An interior vertex is a bend and
+   * carries no link either way — ported behaviour.
+   */
+  function dragCivilTo(world) {
+    const d = civilDrag;
+    if (!d) return;
+    const exclude =
+      d.kind === 'pit'
+        ? { pitId: d.id }
+        : d.kind === 'buildingEntry'
+          ? { buildingEntryId: d.id }
+          : d.kind === 'pole'
+            ? { poleId: d.id }
+            : { vertex: { runId: d.id, vertexIndex: d.vertexIndex } };
+    const s = computeCivilSnap(exclude)(world);
+    snap = s;
+
+    const label =
+      d.kind === 'vertex'
+        ? 'Move vertex'
+        : d.kind === 'buildingEntry'
+          ? 'Move building entry'
+          : d.kind === 'pole'
+            ? 'Move pole'
+            : 'Move pit';
+
+    doc.commit(
+      label,
+      dd => {
+        const plan = currentCivilPlan(dd);
+        if (d.kind === 'pit') {
+          const o = plan.pits.find(x => x.id === d.id);
+          if (!o) return false;
+          o.x = s.point.x;
+          o.y = s.point.y;
+        } else if (d.kind === 'buildingEntry') {
+          const o = plan.buildingEntries.find(x => x.id === d.id);
+          if (!o) return false;
+          o.x = s.point.x;
+          o.y = s.point.y;
+        } else if (d.kind === 'pole') {
+          const o = plan.poles.find(x => x.id === d.id);
+          if (!o) return false;
+          o.x = s.point.x;
+          o.y = s.point.y;
+        } else {
+          const list = d.runKind === 'conduit' ? plan.conduits : plan.overheadRuns;
+          const run = list.find(x => x.id === d.id);
+          if (!run) return false;
+          run.points[d.vertexIndex] = { x: s.point.x, y: s.point.y };
+          const isFirst = d.vertexIndex === 0;
+          const isLast = d.vertexIndex === run.points.length - 1;
+          if (isFirst || isLast) {
+            const hit = s.hit;
+            const prefix = isFirst ? 'from' : 'to';
+            if (d.runKind === 'conduit') {
+              run[prefix + 'PitId'] = hit && hit.kind === 'pit' ? hit.id : null;
+            }
+            run[prefix + 'BuildingEntryId'] = hit && hit.kind === 'buildingEntry' ? hit.id : null;
+            run[prefix + 'PoleId'] = hit && hit.kind === 'pole' ? hit.id : null;
+          }
+        }
+      },
+      { coalesce: true }
+    );
+    notify();
+  }
+
+  function onPointerUpCivil() {
+    if (civilPendingTap) {
+      // A tap that never became a drag selects whatever was under it.
+      const t = civilPendingTap;
+      clearCivilSelection();
+      civilSelection = {
+        pitId: t.pitId,
+        buildingEntryId: t.buildingEntryId,
+        poleId: t.poleId,
+        conduitId: t.conduitId,
+        overheadRunId: t.overheadRunId,
+      };
+      civilPendingTap = null;
+    }
+    if (civilDrag) {
+      doc.endCoalesce();
+      civilDrag = null;
+    }
+    snap = null;
+    notify();
+  }
+
+  // --- civil edits from the inspector --------------------------------
+
+  function setCivilObjectFields(kind, id, patch) {
+    const collection =
+      kind === 'pit'
+        ? 'pits'
+        : kind === 'buildingEntry'
+          ? 'buildingEntries'
+          : kind === 'pole'
+            ? 'poles'
+            : kind === 'conduit'
+              ? 'conduits'
+              : 'overheadRuns';
+    doc.commit(
+      'Edit ' + kind,
+      d => {
+        const plan = currentCivilPlan(d);
+        const o = (plan[collection] || []).find(x => x.id === id);
+        if (!o) return false;
+        Object.assign(o, patch);
+      },
+      { coalesce: true }
+    );
+    notify();
+  }
+
+  /** Per-object cost override, the same idea as a device price override. */
+  function setCivilObjectCost(kind, id, field, value) {
+    const collection = kind === 'pit' ? 'pits' : 'poles';
+    doc.commit(
+      'Edit ' + kind + ' cost',
+      d => {
+        const plan = currentCivilPlan(d);
+        const o = (plan[collection] || []).find(x => x.id === id);
+        if (!o) return false;
+        o.props = o.props || {};
+        o.props[field] = parseFloat(value) || 0;
+      },
+      { coalesce: true }
+    );
+    notify();
+  }
+
+  function deleteCivilSelection() {
+    const sel = civilSelection;
+    const target = sel.pitId
+      ? { collection: 'pits', id: sel.pitId, label: 'Delete pit' }
+      : sel.buildingEntryId
+        ? { collection: 'buildingEntries', id: sel.buildingEntryId, label: 'Delete building entry' }
+        : sel.poleId
+          ? { collection: 'poles', id: sel.poleId, label: 'Delete pole' }
+          : sel.conduitId
+            ? { collection: 'conduits', id: sel.conduitId, label: 'Delete conduit' }
+            : sel.overheadRunId
+              ? { collection: 'overheadRuns', id: sel.overheadRunId, label: 'Delete overhead run' }
+              : null;
+    if (!target) return false;
+    doc.commit(target.label, d => {
+      const plan = currentCivilPlan(d);
+      plan[target.collection] = (plan[target.collection] || []).filter(x => x.id !== target.id);
+      // A run that pointed at a deleted pit/entry/pole keeps its geometry
+      // but loses the link — the cable is still in the ground, the thing
+      // it terminated on is not.
+      if (target.collection !== 'conduits' && target.collection !== 'overheadRuns') {
+        const key =
+          target.collection === 'pits'
+            ? 'PitId'
+            : target.collection === 'poles'
+              ? 'PoleId'
+              : 'BuildingEntryId';
+        for (const run of (plan.conduits || []).concat(plan.overheadRuns || [])) {
+          if (run['from' + key] === target.id) run['from' + key] = null;
+          if (run['to' + key] === target.id) run['to' + key] = null;
+        }
+      }
+    });
+    clearCivilSelection();
+    notify();
+    return true;
+  }
+
+  /** Insert a bend into an existing run, at the clicked segment. */
+  function insertVertex(runKind, id, segmentIndex, world) {
+    doc.commit('Add bend', d => {
+      const plan = currentCivilPlan(d);
+      const list = runKind === 'conduit' ? plan.conduits : plan.overheadRuns;
+      const run = list.find(x => x.id === id);
+      if (!run) return false;
+      run.points.splice(segmentIndex + 1, 0, { x: world.x, y: world.y });
+    });
+    notify();
+  }
+
+  // --- plan management ----------------------------------------------
+
+  function setPlanType(type) {
+    if (project().activePlanType === type) return;
+    // Switching modes abandons any half-drawn run and any selection —
+    // neither means anything on the other plan.
+    conduitDraft = null;
+    overheadDraft = null;
+    draftHover = null;
+    clearCivilSelection();
+    selectedIds = new Set();
+    selectedSegment = null;
+    tool = 'select';
+    doc.commit('Switch plan type', d => {
+      d.activePlanType = type;
+      // A project can reach civil mode before it has a civil plan.
+      if (type === 'civil' && !(d.civilPlans || []).length) {
+        d.civilPlans = [makeCivilPlan('Site plan')];
+        d.activeCivilPlanIndex = 0;
+      }
+    });
+    notify();
+  }
+
+  function addCivilPlan(name) {
+    doc.commit('Add civil plan', d => {
+      d.civilPlans = d.civilPlans || [];
+      d.civilPlans.push(makeCivilPlan(name || 'Site plan ' + (d.civilPlans.length + 1)));
+      d.activeCivilPlanIndex = d.civilPlans.length - 1;
+    });
+    clearCivilSelection();
+    notify();
+  }
+
+  function selectCivilPlan(index) {
+    doc.commit('Switch civil plan', d => {
+      if (index < 0 || index >= (d.civilPlans || []).length) return false;
+      d.activeCivilPlanIndex = index;
+    });
+    clearCivilSelection();
+    conduitDraft = null;
+    overheadDraft = null;
+    notify();
+  }
+
+  function renameCivilPlan(index, name) {
+    doc.commit(
+      'Rename civil plan',
+      d => {
+        const plan = (d.civilPlans || [])[index];
+        if (!plan) return false;
+        plan.name = name;
+      },
+      { coalesce: true }
+    );
+    notify();
+  }
+
+  function deleteCivilPlan(index) {
+    doc.commit('Delete civil plan', d => {
+      if (!(d.civilPlans || [])[index]) return false;
+      d.civilPlans.splice(index, 1);
+      if (d.activeCivilPlanIndex >= d.civilPlans.length) {
+        d.activeCivilPlanIndex = Math.max(0, d.civilPlans.length - 1);
+      }
+      // Deleting the last civil plan drops back to the electrical side
+      // rather than leaving civil mode with nothing to draw on.
+      if (!d.civilPlans.length) d.activePlanType = 'floor';
+    });
+    clearCivilSelection();
+    notify();
+  }
+
+  // --- civil palette selections --------------------------------------
+
+  function setCivilTool(next, opts = {}) {
+    tool = next;
+    conduitDraft = null;
+    overheadDraft = null;
+    draftHover = null;
+    ghost = null;
+    if (opts.pitTypeId) activePitTypeId = opts.pitTypeId;
+    if (opts.poleTypeId) activePoleTypeId = opts.poleTypeId;
+    if (opts.poleOwnership) activePoleOwnership = opts.poleOwnership;
+    if (opts.conduitCategory) {
+      activeConduitCategory = opts.conduitCategory;
+      // Size ids do not carry across tables, so moving between
+      // electrical and comms picks that table's own default rather than
+      // leaving a size id that resolves to nothing.
+      const table = conduitSizeTable(activeConduitCategory);
+      if (!table.some(s => s.id === activeConduitSizeId)) {
+        activeConduitSizeId = table[Math.min(2, table.length - 1)].id;
+      }
+    }
+    if (opts.conduitSizeId) activeConduitSizeId = opts.conduitSizeId;
+    if (opts.overheadSizeId) activeOverheadSizeId = opts.overheadSizeId;
+    if (opts.serviceTypes) activeBuildingEntryServiceTypes = opts.serviceTypes;
+    notify();
+  }
+
   function cancelDraft() {
     draft = null;
     if (linkPendingSwitch) {
@@ -915,6 +1635,39 @@ export function createController({ doc, getView, setView, getViewport, onChange,
 
     const isTouch = e.pointerType === 'touch';
     const world = toWorld(e.clientX, e.clientY, rect);
+
+    // Civil mode has its own entity types, snapping and selection, so it
+    // dispatches to its own handler here rather than threading civil
+    // branches through the electrical one — the same split production
+    // makes between pointerdown() and pointerdownCivil().
+    if (isCivil()) {
+      if (spaceHeld || e.button === 1 || tool === 'pan') {
+        gesture = {
+          type: 'pan',
+          startX: e.clientX,
+          startY: e.clientY,
+          startView: { ...getView() },
+        };
+        return;
+      }
+      if (tool === 'measure' || tool === 'calibrate') {
+        const s = computeCivilSnap()(world);
+        if (!measure || measure.b) {
+          measure = { a: s.point, b: null };
+        } else {
+          measure = { a: measure.a, b: s.point };
+          if (tool === 'calibrate' && onCalibrate) {
+            const len = Math.hypot(measure.b.x - measure.a.x, measure.b.y - measure.a.y);
+            if (len > 0.5) onCalibrate(len);
+          }
+        }
+        notify();
+        return;
+      }
+      onPointerDownCivil(world, e);
+      return;
+    }
+
     // Tolerance tracks the DRAWN symbol size, so what you can click always
     // matches what you can see (§8) — a Large symbol still hit-tested at
     // the default radius would feel dead near its edge.
@@ -1102,6 +1855,13 @@ export function createController({ doc, getView, setView, getViewport, onChange,
       return;
     }
 
+    // Pan works identically in both modes; everything else in civil mode
+    // has its own handler.
+    if (isCivil() && (!gesture || gesture.type !== 'pan')) {
+      onPointerMoveCivil(e, rect);
+      return;
+    }
+
     const world = toWorld(e.clientX, e.clientY, rect);
     cursorWorld = world;
 
@@ -1199,6 +1959,16 @@ export function createController({ doc, getView, setView, getViewport, onChange,
     if (pointers.size < 2 && gesture && gesture.type === 'pinch') {
       gesture = null;
       notify();
+      return;
+    }
+    if (isCivil()) {
+      const wasPan = gesture && gesture.type === 'pan';
+      gesture = null;
+      if (!wasPan) onPointerUpCivil();
+      else {
+        snap = null;
+        notify();
+      }
       return;
     }
     if (gesture && gesture.type === 'move') doc.endCoalesce();
@@ -1300,6 +2070,48 @@ export function createController({ doc, getView, setView, getViewport, onChange,
     get showCircuitLabels() {
       return showCircuitLabels;
     },
+
+    // --- civil (Phase 7) ---
+    get isCivilMode() {
+      return isCivil();
+    },
+    get civilSelection() {
+      return civilSelection;
+    },
+    get conduitDraft() {
+      return conduitDraft;
+    },
+    get overheadDraft() {
+      return overheadDraft;
+    },
+    get draftHover() {
+      return draftHover;
+    },
+    get draftColor() {
+      return draftColor();
+    },
+    get activePitTypeId() {
+      return activePitTypeId;
+    },
+    get activePoleTypeId() {
+      return activePoleTypeId;
+    },
+    get activePoleOwnership() {
+      return activePoleOwnership;
+    },
+    get activeConduitCategory() {
+      return activeConduitCategory;
+    },
+    get activeConduitSizeId() {
+      return activeConduitSizeId;
+    },
+    get activeOverheadSizeId() {
+      return activeOverheadSizeId;
+    },
+    get activeBuildingEntryServiceTypes() {
+      return activeBuildingEntryServiceTypes;
+    },
+    activePlan,
     get spaceHeld() {
       return spaceHeld;
     },
@@ -1351,6 +2163,19 @@ export function createController({ doc, getView, setView, getViewport, onChange,
     setQuoteSetting,
     toggleQuoteItemized,
     setPriceListField,
+    setCivilTool,
+    setPlanType,
+    addCivilPlan,
+    selectCivilPlan,
+    renameCivilPlan,
+    deleteCivilPlan,
+    setCivilObjectFields,
+    setCivilObjectCost,
+    deleteCivilSelection,
+    clearCivilSelection,
+    insertVertex,
+    finishRunDraft,
+    cancelRunDraft,
     deleteSelectedSegment,
     selectedSegmentObject,
     select,

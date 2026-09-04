@@ -38,6 +38,13 @@ import { CABLE_SIZES, PROTECTION_LIBRARY, CATEGORY_LABELS } from '../core/catalo
 import { resolveSymbol } from '../core/symbols.js';
 import { formatDistance } from '../core/geometry.js';
 import { isCommsRack, patchPanelUnitsForRack, commsPortOptions } from '../core/comms.js';
+import { currentCivilPlan, conduitLength, conduitSizeTable } from '../core/civil.js';
+import {
+  PIT_LIBRARY,
+  POLE_LIBRARY,
+  OVERHEAD_CONDUCTOR_SIZES,
+  BUILDING_ENTRY_SERVICE_TYPES,
+} from '../core/civilCatalog.js';
 import {
   isSwitchSymbol,
   isLightSymbol,
@@ -820,6 +827,392 @@ function MultiProperties({ objects, controller, sections, toggleSection, project
   );
 }
 
+// --- civil selection (Phase 7) ----------------------------------------
+//
+// One panel for five entity kinds. They share very little — a pit has a
+// cost, a conduit has a size and two ends, a pole has ownership — so the
+// panel branches rather than pretending they are one thing with optional
+// fields.
+
+const CIVIL_TITLE = {
+  pit: 'Pit',
+  buildingEntry: 'Building entry',
+  pole: 'Pole',
+  conduit: 'Conduit run',
+  overheadRun: 'Overhead run',
+};
+
+/** Which of the five kinds is selected, and the object itself. */
+function civilSelected(plan, selection) {
+  if (!plan || !selection) return null;
+  const s = selection;
+  if (s.pitId) {
+    const o = (plan.pits || []).find(x => x.id === s.pitId);
+    if (o) return { kind: 'pit', obj: o };
+  }
+  if (s.buildingEntryId) {
+    const o = (plan.buildingEntries || []).find(x => x.id === s.buildingEntryId);
+    if (o) return { kind: 'buildingEntry', obj: o };
+  }
+  if (s.poleId) {
+    const o = (plan.poles || []).find(x => x.id === s.poleId);
+    if (o) return { kind: 'pole', obj: o };
+  }
+  if (s.conduitId) {
+    const o = (plan.conduits || []).find(x => x.id === s.conduitId);
+    if (o) return { kind: 'conduit', obj: o };
+  }
+  if (s.overheadRunId) {
+    const o = (plan.overheadRuns || []).find(x => x.id === s.overheadRunId);
+    if (o) return { kind: 'overheadRun', obj: o };
+  }
+  return null;
+}
+
+/** "PIT-003 → BE-001" style summary of what a run connects. */
+function runEnds(run, isConduit) {
+  const end = prefix =>
+    run[prefix + 'PitId'] || run[prefix + 'PoleId'] || run[prefix + 'BuildingEntryId'] || null;
+  const from = end('from');
+  const to = end('to');
+  if (!from && !to) return 'Not linked at either end';
+  return (from || 'unlinked') + ' → ' + (to || 'unlinked');
+}
+
+function CivilProperties({ doc, controller, sections, toggleSection }) {
+  const plan = currentCivilPlan(doc.state);
+  const sel = civilSelected(plan, controller.civilSelection);
+
+  if (!sel) {
+    return (
+      <>
+        <Section
+          title="Site plan"
+          open={sections.drawing}
+          onToggle={() => toggleSection('drawing')}
+        >
+          <Row label="Name">
+            <TextInput
+              value={plan ? plan.name : ''}
+              onChange={e =>
+                controller.renameCivilPlan(doc.state.activeCivilPlanIndex || 0, e.target.value)
+              }
+              aria-label="Site plan name"
+            />
+          </Row>
+          <Row label="Scale">
+            <div className="text-sm tnum text-ink-700">
+              {plan && plan.scale ? plan.scale.toFixed(1) + ' units/m' : 'Not calibrated'}
+            </div>
+          </Row>
+          <div className="px-3 pb-1 pt-1 text-2xs leading-relaxed text-ink-400">
+            Conduit and overhead metreage — and their cost — read as zero until this plan is
+            calibrated.
+          </div>
+        </Section>
+
+        <Section title="Contents" open={sections.rooms} onToggle={() => toggleSection('rooms')}>
+          {[
+            ['Pits', (plan && plan.pits) || []],
+            ['Conduit runs', (plan && plan.conduits) || []],
+            ['Poles', (plan && plan.poles) || []],
+            ['Overhead runs', (plan && plan.overheadRuns) || []],
+            ['Building entries', (plan && plan.buildingEntries) || []],
+          ].map(([label, list]) => (
+            <Row key={label} label={label}>
+              <div className="text-sm tnum text-ink-700">{list.length}</div>
+            </Row>
+          ))}
+        </Section>
+      </>
+    );
+  }
+
+  const { kind, obj } = sel;
+  const set = patch => controller.setCivilObjectFields(kind, obj.id, patch);
+  const setCost = (field, v) => controller.setCivilObjectCost(kind, obj.id, field, v);
+  const isRun = kind === 'conduit' || kind === 'overheadRun';
+
+  return (
+    <>
+      <div className="flex items-center gap-2.5 px-3 py-3">
+        <div className="min-w-0">
+          <div className="truncate text-sm font-semibold text-ink-800">
+            {obj.label || CIVIL_TITLE[kind]}
+          </div>
+          <div className="text-2xs text-ink-400">{obj.id}</div>
+        </div>
+      </div>
+      <Divider />
+
+      <Section title="General" open={sections.general} onToggle={() => toggleSection('general')}>
+        <Row label="Label">
+          <TextInput
+            value={obj.label || ''}
+            placeholder={CIVIL_TITLE[kind]}
+            onChange={e => set({ label: e.target.value })}
+          />
+        </Row>
+        {!isRun && (
+          <Row label="Position">
+            <div className="flex gap-1.5">
+              <NumberInput value={obj.x} onCommit={v => set({ x: v })} />
+              <NumberInput value={obj.y} onCommit={v => set({ y: v })} />
+            </div>
+          </Row>
+        )}
+        {kind !== 'buildingEntry' && (
+          <Row label="Notes">
+            <TextInput
+              value={obj.notes || ''}
+              placeholder="—"
+              onChange={e => set({ notes: e.target.value })}
+            />
+          </Row>
+        )}
+      </Section>
+
+      {kind === 'pit' && (
+        <Section
+          title="Pit"
+          open={sections.electrical}
+          onToggle={() => toggleSection('electrical')}
+        >
+          <Row label="Type">
+            <Select value={obj.typeId} onChange={e => set({ typeId: e.target.value })}>
+              {PIT_LIBRARY.map(t => (
+                <option key={t.id} value={t.id}>
+                  {t.label}
+                </option>
+              ))}
+            </Select>
+          </Row>
+        </Section>
+      )}
+
+      {kind === 'pole' && (
+        <Section
+          title="Pole"
+          open={sections.electrical}
+          onToggle={() => toggleSection('electrical')}
+        >
+          <Row label="Ownership">
+            <div className="text-sm text-ink-700">
+              {obj.ownership === 'network' ? 'Network-owned' : 'Private'}
+            </div>
+          </Row>
+          {obj.ownership === 'private' ? (
+            <>
+              <Row label="Type">
+                <Select value={obj.typeId || ''} onChange={e => set({ typeId: e.target.value })}>
+                  {POLE_LIBRARY.map(t => (
+                    <option key={t.id} value={t.id}>
+                      {t.label}
+                    </option>
+                  ))}
+                </Select>
+              </Row>
+              <Row label="Height">
+                <NumberInput
+                  value={obj.height == null ? 8 : obj.height}
+                  step={0.5}
+                  suffix="m"
+                  onCommit={v => set({ height: v })}
+                />
+              </Row>
+              <Row label="Stay wire">
+                <Toggle
+                  label="Stay wire"
+                  checked={!!obj.stayWire}
+                  onChange={() => set({ stayWire: !obj.stayWire })}
+                />
+              </Row>
+              <Row label="Stay rod">
+                <Toggle
+                  label="Stay rod"
+                  checked={!!obj.stayRod}
+                  onChange={() => set({ stayRod: !obj.stayRod })}
+                />
+              </Row>
+            </>
+          ) : (
+            <div className="px-3 pb-1 text-2xs leading-relaxed text-ink-400">
+              A network pole is an attachment point the network owns — it is placed so runs can
+              terminate on it, and deliberately carries no cost.
+            </div>
+          )}
+        </Section>
+      )}
+
+      {kind === 'buildingEntry' && (
+        <Section
+          title="Services"
+          open={sections.electrical}
+          onToggle={() => toggleSection('electrical')}
+        >
+          <div className="flex flex-wrap gap-1 px-3 pb-1">
+            {BUILDING_ENTRY_SERVICE_TYPES.map(s => {
+              const on = (obj.serviceTypes || []).includes(s.id);
+              return (
+                <button
+                  key={s.id}
+                  onClick={() =>
+                    set({
+                      serviceTypes: on
+                        ? (obj.serviceTypes || []).filter(x => x !== s.id)
+                        : (obj.serviceTypes || []).concat(s.id),
+                    })
+                  }
+                  aria-pressed={on}
+                  className={cx(
+                    'rounded-md border px-2 py-1 text-2xs font-medium transition-colors',
+                    on ? 'border-transparent text-white' : 'border-ink-200 text-ink-600',
+                    focusRing
+                  )}
+                  style={on ? { background: s.color } : { color: s.color }}
+                >
+                  {s.label}
+                </button>
+              );
+            })}
+          </div>
+          {/* Role tags are what let the plan show SB/NBN/EAVE under the
+              badge, so they are edited here rather than buried. */}
+          {[
+            ['isSwitchboardConnection', 'Switchboard connection'],
+            ['isNbnConnection', 'NBN connection'],
+            ['isOverheadAttachment', 'Overhead attachment (eave)'],
+          ].map(([key, label]) => (
+            <Row key={key} label={label}>
+              <Toggle
+                label={label}
+                checked={!!obj[key]}
+                onChange={() => set({ [key]: !obj[key] })}
+              />
+            </Row>
+          ))}
+        </Section>
+      )}
+
+      {isRun && (
+        <Section
+          title="Run"
+          open={sections.electrical}
+          onToggle={() => toggleSection('electrical')}
+        >
+          {kind === 'conduit' && (
+            <>
+              <Row label="Category">
+                <Select
+                  value={obj.category || 'electrical'}
+                  onChange={e => {
+                    // Size ids do not exist across both tables, so changing
+                    // category must also move the size to that table's own.
+                    const table = conduitSizeTable(e.target.value);
+                    const keep = table.some(s => s.id === obj.sizeId);
+                    set({
+                      category: e.target.value,
+                      sizeId: keep ? obj.sizeId : table[Math.min(2, table.length - 1)].id,
+                    });
+                  }}
+                >
+                  <option value="electrical">Electrical</option>
+                  <option value="comms">Comms</option>
+                </Select>
+              </Row>
+              <Row label="Size">
+                <Select value={obj.sizeId} onChange={e => set({ sizeId: e.target.value })}>
+                  {conduitSizeTable(obj.category).map(s => (
+                    <option key={s.id} value={s.id}>
+                      {s.size}
+                    </option>
+                  ))}
+                </Select>
+              </Row>
+            </>
+          )}
+          {kind === 'overheadRun' && (
+            <Row label="Conductor">
+              <Select value={obj.sizeId} onChange={e => set({ sizeId: e.target.value })}>
+                {OVERHEAD_CONDUCTOR_SIZES.map(s => (
+                  <option key={s.id} value={s.id}>
+                    {s.label}
+                  </option>
+                ))}
+              </Select>
+            </Row>
+          )}
+          <Row label="Length">
+            <div className="text-sm tnum text-ink-700">
+              {plan.scale
+                ? (conduitLength(obj) / plan.scale).toFixed(1) + ' m'
+                : Math.round(conduitLength(obj)) + ' units'}
+            </div>
+          </Row>
+          <Row label="Bends">
+            <div className="text-sm tnum text-ink-700">{Math.max(0, obj.points.length - 2)}</div>
+          </Row>
+          <Row label="Connects">
+            <div className="truncate text-2xs text-ink-600">{runEnds(obj, kind === 'conduit')}</div>
+          </Row>
+          {/* A transition is only meaningful where a run meets a pole —
+              that is physically where the medium changes. */}
+          <Row label={kind === 'conduit' ? 'UGOH' : 'OHUG'}>
+            <Toggle
+              label="Transition"
+              checked={obj.transition === (kind === 'conduit' ? 'ugoh' : 'ohug')}
+              onChange={() =>
+                set({
+                  transition: obj.transition ? null : kind === 'conduit' ? 'ugoh' : 'ohug',
+                })
+              }
+            />
+          </Row>
+          <div className="px-3 pt-1 text-2xs leading-relaxed text-ink-400">
+            {kind === 'conduit'
+              ? 'Mark this run as going underground → overhead at a pole.'
+              : 'Mark this run as coming overhead → underground at a pole.'}
+          </div>
+        </Section>
+      )}
+
+      {(kind === 'pit' || kind === 'pole') && (
+        <Section title="Cost" open={sections.cost} onToggle={() => toggleSection('cost')} dense>
+          <Row label="Material">
+            <NumberInput
+              value={(obj.props && obj.props.material_cost) || 0}
+              step={1}
+              suffix="$"
+              onCommit={v => setCost('material_cost', v)}
+            />
+          </Row>
+          <Row label="Labour">
+            <NumberInput
+              value={(obj.props && obj.props.labour_hours) || 0}
+              step={0.25}
+              suffix="h"
+              onCommit={v => setCost('labour_hours', v)}
+            />
+          </Row>
+        </Section>
+      )}
+
+      <Section title="Actions" open={sections.actions} onToggle={() => toggleSection('actions')}>
+        <div className="px-3">
+          <Button
+            size="sm"
+            variant="danger"
+            className="w-full"
+            onClick={() => controller.deleteCivilSelection()}
+          >
+            Delete {CIVIL_TITLE[kind].toLowerCase()}
+          </Button>
+        </div>
+      </Section>
+    </>
+  );
+}
+
 // --- tool context -----------------------------------------------------
 
 function ToolContext({ controller, project }) {
@@ -883,6 +1276,15 @@ function ToolContext({ controller, project }) {
 const SEGMENT_TITLE = { cable: 'Cable', wall: 'Wall', dimension: 'Dimension' };
 
 export function inspectorTitle(controller) {
+  if (controller.isCivilMode) {
+    const s = controller.civilSelection || {};
+    if (s.pitId) return CIVIL_TITLE.pit;
+    if (s.buildingEntryId) return CIVIL_TITLE.buildingEntry;
+    if (s.poleId) return CIVIL_TITLE.pole;
+    if (s.conduitId) return CIVIL_TITLE.conduit;
+    if (s.overheadRunId) return CIVIL_TITLE.overheadRun;
+    return 'Site plan';
+  }
   const n = controller.selectedIds.size;
   if ((controller.tool === 'place' && controller.activeSymbolId) || controller.tool === 'measure')
     return 'Tool';
@@ -995,39 +1397,52 @@ export function Inspector({
   return (
     <div className="flex h-full flex-col">
       <div className="min-h-0 flex-1 overflow-y-auto">
-        {toolCtx && <ToolContext controller={controller} project={doc.state} />}
-        {!toolCtx && selected.length === 0 && segment && (
-          <SegmentProperties segment={segment} doc={doc} controller={controller} />
-        )}
-        {!toolCtx && selected.length === 0 && !segment && (
-          <DrawingProperties
+        {/* Civil mode inspects entirely different entities, so it takes
+            the whole panel rather than adding branches to each state. */}
+        {controller.isCivilMode ? (
+          <CivilProperties
             doc={doc}
             controller={controller}
             sections={sections}
             toggleSection={toggleSection}
-            onImportPlan={onImportPlan}
-            onCalibrate={onCalibrate}
-            onAddRoom={onAddRoom}
           />
-        )}
-        {!toolCtx && selected.length === 1 && (
-          <DeviceProperties
-            obj={selected[0]}
-            doc={doc}
-            controller={controller}
-            sections={sections}
-            toggleSection={toggleSection}
-            onStartLinking={onStartLinking}
-          />
-        )}
-        {!toolCtx && selected.length > 1 && (
-          <MultiProperties
-            objects={selected}
-            controller={controller}
-            project={doc.state}
-            sections={sections}
-            toggleSection={toggleSection}
-          />
+        ) : (
+          <>
+            {toolCtx && <ToolContext controller={controller} project={doc.state} />}
+            {!toolCtx && selected.length === 0 && segment && (
+              <SegmentProperties segment={segment} doc={doc} controller={controller} />
+            )}
+            {!toolCtx && selected.length === 0 && !segment && (
+              <DrawingProperties
+                doc={doc}
+                controller={controller}
+                sections={sections}
+                toggleSection={toggleSection}
+                onImportPlan={onImportPlan}
+                onCalibrate={onCalibrate}
+                onAddRoom={onAddRoom}
+              />
+            )}
+            {!toolCtx && selected.length === 1 && (
+              <DeviceProperties
+                obj={selected[0]}
+                doc={doc}
+                controller={controller}
+                sections={sections}
+                toggleSection={toggleSection}
+                onStartLinking={onStartLinking}
+              />
+            )}
+            {!toolCtx && selected.length > 1 && (
+              <MultiProperties
+                objects={selected}
+                controller={controller}
+                project={doc.state}
+                sections={sections}
+                toggleSection={toggleSection}
+              />
+            )}
+          </>
         )}
       </div>
     </div>

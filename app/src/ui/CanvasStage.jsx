@@ -13,6 +13,8 @@
 // ===================================================================
 
 import { renderScene, getPlanImage } from '../core/renderer.js';
+import { renderCivilScene } from '../core/civilRenderer.js';
+import { currentCivilPlan } from '../core/civil.js';
 import { boundsOf, formatDistance } from '../core/geometry.js';
 import { currentFloor } from '../core/document.js';
 
@@ -50,6 +52,36 @@ export function CanvasStage({
     // Resolve the plan image from cache; a cache miss kicks off decoding
     // and repaints when it lands, so the first frame after import isn't
     // blocked waiting on it.
+    // Civil mode draws an entirely different scene from an entirely
+    // different plan — the split production makes between render() and
+    // renderCivil(), kept here for the same reason.
+    if (c.isCivilMode) {
+      const plan = currentCivilPlan(d.state);
+      const civilImg = plan.planImage
+        ? getPlanImage(plan.planImage.src, () => requestPaintRef.current())
+        : null;
+      renderCivilScene(ctx, cssW, cssH, {
+        plan,
+        view: v,
+        planImg: civilImg,
+        symbolSize: d.state.symbolSize || 16,
+        selection: c.civilSelection,
+        conduitDraft: c.conduitDraft,
+        overheadDraft: c.overheadDraft,
+        draftHover: c.draftHover,
+        draftColor: c.draftColor,
+        tool: c.tool,
+        ghost: c.ghost,
+        activePitTypeId: c.activePitTypeId,
+        activePoleTypeId: c.activePoleTypeId,
+        activePoleOwnership: c.activePoleOwnership,
+        snap: c.snap,
+        measure: c.measure,
+        formatDistance,
+      });
+      return;
+    }
+
     // The document is a project; the canvas draws its ACTIVE FLOOR.
     const fl = currentFloor(d.state);
     const planImg = fl.planImage
