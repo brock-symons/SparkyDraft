@@ -110,6 +110,19 @@ tailwind.config = {
     *, *::before, *::after { animation-duration:0.01ms !important; transition-duration:0.01ms !important; }
   }
   [data-boot-error] { padding:24px; font:13px/1.6 Inter,sans-serif; color:#b91c1c; white-space:pre-wrap; }
+  /* Print / PDF export (Phase 9) — same visibility-swap trick production's
+     own @media print rule uses, so browser Print puts only the reviewed
+     pages on paper regardless of where #print-pages sits in the React
+     tree (a fragment, nested dialogs, etc. — this selector doesn't care). */
+  @media print {
+    body * { visibility: hidden; }
+    #print-pages, #print-pages * { visibility: visible; }
+    #print-pages { position: absolute; top: 0; left: 0; width: 100%; background: #fff; padding: 0; }
+    #print-toolbar { display: none; }
+    .print-page { box-shadow: none; border: none; border-radius: 0; page-break-after: always; }
+    .print-page:last-child { page-break-after: auto; }
+    @page { size: landscape; margin: 10mm; }
+  }
 </style>
 </head>
 <body class="bg-ink-100">
@@ -122,6 +135,10 @@ tailwind.config = {
      comes back undefined and the app runs local-storage-only, which is
      the documented fallback rather than a crash. -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<!-- jsPDF (Print/PDF export — Phase 9). Same CDN and pinned version as
+     the production app, so the two apps' exported PDFs come from the
+     same renderer rather than two different ones drifting apart. -->
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
 <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
 <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>

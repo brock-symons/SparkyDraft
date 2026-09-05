@@ -111,16 +111,17 @@ by the summary below, rather than relying on a chat transcript for intent.
 workspace. **`index.html` at the repo root is still the live product** and
 remains the source of truth for every feature.
 
-As of Phase 10 (2026-09-05) `app/` covers the drafting core (project
+As of Phase 9 (2026-09-05) `app/` covers the drafting core (project
 browser, canvas, place/select/move, layers, inspector, underlay,
 calibration, palette, context menu, local save/load) **plus** switch
 linking, circuits, panel schedule + load/demand, comms racks, quote +
-price list, civil/underground works, elevations + legend, and the whole
-cloud half — auth, cloud project sync, organisations, members, invites,
-sharing, per-project access and viewer mode. **Still missing: print /
-PDF / export** (Phase 9, not started) and the Phase 11 integration and
-security review. `MIGRATION_INVENTORY.md` §H is the authoritative parity
-matrix; `PLAN.md` tracks the phases.
+price list, civil/underground works, elevations + legend, print/PDF/
+export, and the whole cloud half — auth, cloud project sync,
+organisations, members, invites, sharing, per-project access and viewer
+mode. **Still missing:** the Phase 11 integration and security review,
+plus two long-standing partials (Layers, Inspector/properties) and the
+local-storage cutover decision (R4). `MIGRATION_INVENTORY.md` §H is the
+authoritative parity matrix; `PLAN.md` tracks the phases.
 
 - Business logic ported from `index.html` is checked mechanically, not by
   eye: `app/test/*-parity.mjs` extract functions from the LIVE

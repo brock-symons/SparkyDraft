@@ -23,6 +23,11 @@ import { computeCommsRuns, portForDevice, isCommsRack } from './comms.js';
 
 export const PAINT = {
   bg: '#0b0f14',
+  // Print/PDF export (Phase 9) captures onto white, not the live dark
+  // canvas — matches production's `state.printMode` background swap.
+  // A takeoff document is meant to be printed on paper; the dark CAD
+  // canvas convention is a live-editing affordance, not part of the page.
+  printBg: '#ffffff',
   gridMinor: 'rgba(255,255,255,0.045)',
   gridMajor: 'rgba(255,255,255,0.085)',
   originX: 'rgba(248,113,113,0.55)',
@@ -687,7 +692,7 @@ function drawPlacementGhost(ctx, view, ghost, sym, symbolSize) {
 export function renderScene(ctx, cssW, cssH, scene) {
   const { drawing, view } = scene;
 
-  ctx.fillStyle = PAINT.bg;
+  ctx.fillStyle = scene.printMode ? PAINT.printBg : PAINT.bg;
   ctx.fillRect(0, 0, cssW, cssH);
 
   // Plan first, then grid over it — the grid is a drafting aid and needs
@@ -695,8 +700,13 @@ export function renderScene(ctx, cssW, cssH, scene) {
   if (drawing.planImage) {
     drawPlanImage(ctx, view, drawing.planImage, scene.planImg);
   }
-  drawGrid(ctx, view, cssW, cssH, drawing);
-  drawOrigin(ctx, view, cssW, cssH, drawing);
+  // A design grid and the origin crosshair are live-editing aids with no
+  // place on a printed drawing — production's own print mode skips the
+  // grid outright (it has no origin marker at all to skip).
+  if (!scene.printMode) {
+    drawGrid(ctx, view, cssW, cssH, drawing);
+    drawOrigin(ctx, view, cssW, cssH, drawing);
+  }
 
   // Draw order is deliberate: walls are architecture the devices sit on,
   // cables run between devices and must read *under* them, and dimensions

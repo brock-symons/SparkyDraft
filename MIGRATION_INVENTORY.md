@@ -150,15 +150,26 @@ Status key: **✅ complete** · **◐ partial** · **✗ missing** · **⚙ need
 | Elevations | `renderElevationSelect()` L5391, `state.elevations[]` | `core/elevations.js` + Elevations dialog | ✅ |
 | Legend | `computeLegendEntries()` L5529 | `core/legend.js` + Layers panel | ✅ |
 
-### A7. Output
+### A7. Output — ported in Phase 9
 
 | Feature | Current | New | Status |
 |---|---|---|---|
-| Print view | `printView`, L5577+ | — | ✗ |
-| PDF export (jsPDF) | `downloadPdfExport()` | — | ✗ |
-| Save-as-PDF dialog | L5577+ block | — | ✗ |
-| Civil pages in export | `includeCivilInExport` | — | ✗ |
-| Download project copy (JSON) | `downloadProjectCopy()` L7646 | — | ✗ |
+| Print view | `printView`, L5577+ | `PrintExportDialog` (`main.jsx`) | ✅ |
+| PDF export (jsPDF) | `downloadPdfExport()` | `core/print.js` `drawPdfPage()` | ✅ (parity-tested) |
+| Save-as-PDF dialog | L5577+ block | Same dialog, "Save as PDF" button | ✅ |
+| Civil pages in export | `includeCivilInExport` | Toggle in the same dialog, default on | ✅ |
+| Download project copy (JSON) | `downloadProjectCopy()` L7646 | `export.projectJson` command | ✅ |
+
+Captured onto an OFFSCREEN canvas rather than production's live one —
+the redesign's canvas is owned by React (`CanvasStage.jsx`), and reusing
+it for a multi-page capture would mean fighting React for control of an
+element it re-renders on its own schedule. `core/print.js` builds the
+same `printPagesData` shape production assembles in `openPrintView()`,
+consumed by both the on-screen review and the PDF export so neither can
+drift from what the other shows. `renderScene`/`renderCivilScene` gained
+a `printMode` flag (white background, no grid/origin) rather than a
+parallel renderer, so the print capture and the live canvas can never
+draw the same drawing two different ways by accident.
 
 ### A8. Projects / persistence
 
@@ -426,7 +437,7 @@ still in flux would mean migrating stored cloud records twice.
 | Comms racks | Complete | Complete | None | High | Done | ✅ (parity-tested) |
 | Civil / underground | Complete | Complete | Print/PDF pages land with Phase 10 | High | Done | ✅ (parity-tested) |
 | Elevations | Complete | Complete | None | Medium | Done | ✅ (parity-tested) |
-| Print / PDF / export | Complete | Missing | Significant | Medium | Medium | Pending |
+| Print / PDF / export | Complete | Complete | None | Medium | Done | ✅ (parity-tested) |
 | Version history | Complete | Complete | None | Low | Done | ✅ |
 | Local persistence | Complete | Partial (own local namespace) | Local keys deliberately separate; cloud format now interoperable | **Critical** | High | Pending (local cutover, R4) |
 | Auth | Complete | Complete | None | **Critical** | Done | ✅ (signed-in pass outstanding, §I item 10) |
@@ -436,9 +447,10 @@ still in flux would mean migrating stored cloud records twice.
 | Command palette / context menu | Basic | Complete (better) | None | Low | Done | ✅ |
 | Responsive (3 models) | Partial | Complete | None | Low | Done | ✅ |
 
-**Scale of remaining work:** 21 of 23 areas complete. What is left is
-print/PDF/export (Phase 9) and the local-storage cutover decision (R4),
-plus the §23 integration and security review in Phase 11.
+**Scale of remaining work:** 20 of 23 areas complete. What is left is
+two long-standing Partials predating this phase (Layers — cables/labels
+not layer-gated; Inspector/properties), the local-storage cutover
+decision (R4), and the §23 integration and security review in Phase 11.
 
 ---
 

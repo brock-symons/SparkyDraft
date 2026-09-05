@@ -42,6 +42,16 @@ import {
 import { activeElevation, elevationLayout, elevationItemPoint } from './core/elevations.js';
 import { PAINT } from './core/renderer.js';
 import {
+  CAPTURE_W,
+  CAPTURE_H,
+  buildPrintPages,
+  drawPdfPage,
+  legendEntryColor,
+  legendEntryLabel,
+  fileSafeName,
+  jsonFileName,
+} from './core/print.js';
+import {
   listProjects,
   loadProject,
   saveProject,
@@ -61,6 +71,8 @@ import {
   TextInput,
   Select,
   FieldLabel,
+  Toggle,
+  Spinner,
   cx,
   focusRing,
 } from './ui/primitives.jsx';
@@ -186,6 +198,7 @@ function WorkspaceRoot({ projectId, initialProject, readOnly, sharedByName, onEx
   const [elevationsOpen, setElevationsOpen] = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
+  const [printExportOpen, setPrintExportOpen] = useState(false);
   // { title, text } while a text export is on screen.
   const [exportText, setExportText] = useState(null);
 
@@ -1002,6 +1015,22 @@ function WorkspaceRoot({ projectId, initialProject, readOnly, sharedByName, onEx
         run: c => c.openElevations(),
       },
       {
+        id: 'export.printPdf',
+        title: 'Print / PDF export',
+        group: 'Export',
+        icon: '🖨',
+        keywords: 'print pdf export save takeoff handoff document civil pages',
+        run: c => c.openPrintExport(),
+      },
+      {
+        id: 'export.projectJson',
+        title: 'Download project copy (JSON)',
+        group: 'Export',
+        icon: '⬇',
+        keywords: 'download json backup copy export project',
+        run: c => c.downloadProjectCopy(),
+      },
+      {
         id: 'account.open',
         title: 'Account',
         group: 'Account',
@@ -1171,6 +1200,20 @@ function WorkspaceRoot({ projectId, initialProject, readOnly, sharedByName, onEx
       openElevations: () => setElevationsOpen(true),
       openReportProblem: () => setReportOpen(true),
       openAccount: () => setAccountOpen(true),
+      openPrintExport: () => setPrintExportOpen(true),
+      downloadProjectCopy: () => {
+        const record = toCloudRecord(doc.state, allSymbols(doc.state));
+        const blob = new Blob([JSON.stringify(record)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = jsonFileName(doc.state.name);
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        pushToast('Downloaded a copy of "' + (doc.state.name || 'project') + '"');
+      },
       pushToast,
     }),
     [
@@ -1480,6 +1523,16 @@ function WorkspaceRoot({ projectId, initialProject, readOnly, sharedByName, onEx
           controller={controller}
           symbolFor={symbolFor}
           onClose={() => setElevationsOpen(false)}
+          pushToast={pushToast}
+        />
+      )}
+      {printExportOpen && (
+        <PrintExportDialog
+          doc={doc}
+          controller={controller}
+          symbolFor={symbolFor}
+          projectName={projectName}
+          onClose={() => setPrintExportOpen(false)}
           pushToast={pushToast}
         />
       )}
@@ -2401,6 +2454,205 @@ function ElevationsDialog({ doc, controller, symbolFor, onClose, pushToast }) {
         )}
       </div>
     </Dialog>
+  );
+}
+
+// --- print / PDF export (Phase 9) --------------------------------------
+//
+// A full-screen review, not the usual small `Dialog` — production's own
+// #printView is a distinct page-review surface, not a modal card, and an
+// A4-shaped preview needs the room. The `@media print` rule in
+// app/index.html hides everything else on the page (the same
+// visibility-swap trick production's CSS uses) so browser Print only
+// puts these pages on paper.
+
+function PrintPage({ page, projectName, dateStr }) {
+  const emptyLabel =
+    page.kind === 'civil'
+      ? 'Nothing placed on this civil plan yet.'
+      : 'Nothing placed on this floor yet.';
+  return (
+    <div className="print-page overflow-hidden rounded-lg border border-ink-200 bg-white shadow-sm">
+      <div className="flex items-start justify-between border-b border-ink-200 px-4 py-2.5">
+        <div className="text-sm font-semibold text-ink-800">
+          {projectName} — {page.floorName}
+          {page.kind === 'civil' ? ' (Civil)' : ''}
+        </div>
+        <div className="text-right text-2xs leading-relaxed text-ink-500">
+          {dateStr}
+          <br />
+          {page.calibrated ? 'Calibrated' : 'Not calibrated'}
+        </div>
+      </div>
+      <div className="flex gap-4 p-4">
+        <div
+          className="flex flex-1 items-center justify-center overflow-hidden rounded border border-ink-100 bg-ink-50"
+          style={{ aspectRatio: `${CAPTURE_W} / ${CAPTURE_H}` }}
+        >
+          {page.hasContent ? (
+            <img src={page.imgSrc} alt="" className="h-full w-full object-contain" />
+          ) : (
+            <span className="px-4 text-center text-xs text-ink-400">{emptyLabel}</span>
+          )}
+        </div>
+        <div className="w-48 shrink-0">
+          <h3 className="mb-1.5 border-b border-ink-100 pb-1 font-mono text-2xs uppercase tracking-wide text-ink-400">
+            Legend
+          </h3>
+          {page.entries.length ? (
+            <>
+              <div className="space-y-1">
+                {page.entries.map((e, i) => (
+                  <div key={i} className="flex items-center gap-1.5 text-xs text-ink-700">
+                    <span
+                      className="h-2.5 w-2.5 shrink-0 rounded-full"
+                      style={{ background: legendEntryColor(page.kind, e) }}
+                    />
+                    <span className="min-w-0 flex-1 truncate">
+                      {legendEntryLabel(page.kind, e)}
+                    </span>
+                    <span className="tnum shrink-0 text-ink-400">× {e.count}</span>
+                  </div>
+                ))}
+              </div>
+              <div className="mt-2 border-t border-ink-100 pt-1.5 text-right text-2xs font-semibold text-ink-700">
+                {page.total} {page.kind === 'civil' ? 'item' : 'device'}
+                {page.total === 1 ? '' : 's'} total
+              </div>
+            </>
+          ) : (
+            <p className="text-2xs text-ink-400">{emptyLabel}</p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PrintExportDialog({ doc, controller, symbolFor, projectName, onClose, pushToast }) {
+  // Not part of the project — production keeps this as a plain in-memory
+  // flag too (never written by buildProjectData()), a per-session review
+  // preference rather than something that travels with the job.
+  const [includeCivil, setIncludeCivil] = useState(true);
+  const [pages, setPages] = useState(null); // null while (re)building
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    let live = true;
+    setPages(null);
+    const categoryOf = o => {
+      const s = symbolFor(o.symbolId);
+      return s ? s.category : null;
+    };
+    buildPrintPages(
+      doc.state,
+      {
+        symbolFor,
+        isVisible: controller.visible,
+        isLayerHidden: controller.isLayerHidden,
+        categoryOf,
+      },
+      includeCivil
+    ).then(result => {
+      if (live) setPages(result);
+    });
+    return () => {
+      live = false;
+    };
+    // doc.state is read once per build, not tracked reactively — a print
+    // review is a snapshot of "now", the same way production only
+    // recaptures on open or on the civil-pages toggle, not on every edit
+    // while the dialog sits open.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [includeCivil]);
+
+  const dateStr = new Date().toLocaleDateString('en-AU');
+
+  async function handleSavePdf() {
+    if (!pages || !pages.length) {
+      pushToast('Nothing to export yet');
+      return;
+    }
+    setSaving(true);
+    try {
+      const { jsPDF } = window.jspdf;
+      const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+      pages.forEach((p, i) => {
+        if (i > 0) pdf.addPage();
+        drawPdfPage(pdf, p, projectName);
+      });
+      const safe = fileSafeName(projectName);
+      // Where supported (Chrome/Edge, HTTPS only), a real "Save As" dialog
+      // instead of it silently landing in Downloads — Firefox/Safari/
+      // mobile don't implement this API and fall through to the plain
+      // download below, exactly as production does.
+      if (window.showSaveFilePicker) {
+        try {
+          const handle = await window.showSaveFilePicker({
+            suggestedName: safe + '.pdf',
+            types: [{ description: 'PDF document', accept: { 'application/pdf': ['.pdf'] } }],
+          });
+          const writable = await handle.createWritable();
+          await writable.write(pdf.output('blob'));
+          await writable.close();
+          pushToast('Saved ' + safe + '.pdf');
+          return;
+        } catch (err) {
+          if (err && err.name === 'AbortError') return; // cancelled — not a failure
+          // any other failure (permissions, etc.) — fall through to the plain download
+        }
+      }
+      pdf.save(safe + '.pdf');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex flex-col bg-ink-100">
+      <div
+        id="print-toolbar"
+        className="flex h-12 shrink-0 items-center gap-3 border-b border-ink-200 bg-white px-4"
+      >
+        <span className="text-sm font-semibold text-ink-800">Print / PDF export</span>
+        <div className="flex-1" />
+        <span className="flex items-center gap-2 text-xs text-ink-600">
+          Include civil plan pages
+          <Toggle
+            label="Include civil plan pages"
+            checked={includeCivil}
+            onChange={() => setIncludeCivil(v => !v)}
+          />
+        </span>
+        <Button size="sm" onClick={() => window.print()} disabled={!pages}>
+          🖨 Print
+        </Button>
+        <Button size="sm" variant="primary" onClick={handleSavePdf} disabled={!pages || saving}>
+          {saving ? 'Saving…' : '⬇ Save as PDF'}
+        </Button>
+        <Button size="sm" onClick={onClose}>
+          ✕ Close
+        </Button>
+      </div>
+      <div id="print-pages" className="flex-1 overflow-y-auto p-6">
+        {!pages ? (
+          <div className="flex justify-center py-24">
+            <Spinner className="h-6 w-6 text-accent-500" />
+          </div>
+        ) : (
+          <div className="mx-auto flex max-w-5xl flex-col gap-6">
+            {pages.map((p, i) => (
+              <PrintPage
+                key={p.kind + ':' + i}
+                page={p}
+                projectName={projectName}
+                dateStr={dateStr}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 

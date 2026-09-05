@@ -12,7 +12,7 @@ versioned markdown next to the code.
 | | |
 |---|---|
 | Branch | `feature/cad-workspace-redesign` |
-| Status | Phases 0-8 + 10 complete · **stopped at the phase boundary, awaiting approval for Phase 9** |
+| Status | Phases 0-8, 9, 10 complete · **stopped at the phase boundary, awaiting approval for Phase 11** |
 | Merged to main | **No — and not without explicit owner review** |
 | Last updated | 2026-09-05 |
 
@@ -37,8 +37,14 @@ cloud project sync, organisations, members, invites, sharing, per-project
 access and viewer mode — with the cloud record format made interoperable
 with production's, so a project either app writes opens in the other.
 
-**Not done:** print/PDF export (Phase 9), the local-storage cutover
-decision (R4), and the Phase 11 integration + security review.
+**Also done (Phase 9):** print view, jsPDF export, save-as-PDF dialog,
+civil pages toggle, JSON project download — all parity-tested against
+production's actual capture/export output where that's meaningful (the
+legend data, labels, colours and filenames; not byte-for-byte image
+comparison, which no parity test in this migration attempts).
+
+**Not done:** the local-storage cutover decision (R4) and the Phase 11
+integration + security review.
 
 ---
 
@@ -246,11 +252,54 @@ regression pass across Phases 1–7 (circuits, quote, panel schedule,
 comms racks, civil materials, civil plan switching) with zero new
 console errors.
 
-### Phase 9 — Print / PDF / export
-Print view, jsPDF export, save-as-PDF dialog, civil pages toggle, JSON
-download. Last because it renders everything above. **Not started** —
-Phase 10 was taken first at the owner's direction; nothing in Phase 10
-depended on it.
+### Phase 9 — Print / PDF / export ✅ complete
+
+Taken after Phase 10 (which itself jumped ahead of this one at the
+owner's direction) — by this point every subsystem it renders (circuits,
+panel schedule, comms, quote, civil, elevations, legend) was already
+done, so there was nothing left for it to wait on.
+
+- [x] **Print view** (`PrintExportDialog` in `main.jsx`) — a full-screen
+      review, not the usual small `Dialog`, matching production's own
+      `#printView` being a distinct page-review surface rather than a
+      modal card. One page per floor, plus one per civil plan when the
+      toggle is on.
+- [x] **Capture pipeline** (`core/print.js`) — an OFFSCREEN canvas at
+      production's exact 1600×1131 resolution, using the SAME
+      `renderScene`/`renderCivilScene` the live canvas uses (now with a
+      `printMode` flag: white background, no grid/origin, every switch/
+      circuit/comms run and circuit label forced on) rather than a
+      parallel print-only renderer that could quietly drift from what the
+      live drawing shows. Current layer visibility IS still respected — a
+      hidden layer stays hidden on the printed page, exactly like
+      production.
+- [x] **PDF export** (`drawPdfPage()`) — jsPDF, same CDN and pinned
+      version as production. The legend is drawn as real vector text, not
+      a screenshot of the HTML preview, so it stays crisp at any zoom.
+      Same "Save As" file-picker fallback chain production uses
+      (`showSaveFilePicker` where supported, else a plain download).
+- [x] **Civil pages toggle** — on by default, rebuilds the page list
+      in-place, same as production re-running `openPrintView()`.
+- [x] **Download project copy (JSON)** — writes production's own record
+      shape (`core/cloudFormat.js`'s `toCloudRecord`), so a downloaded
+      backup opens correctly in either app.
+- [x] **Parity check** — `app/test/print-parity.mjs`, 238 comparisons:
+      `hexToRgb()` (a true standalone function, extracted the normal way)
+      plus the legend-row label/colour/abbreviation logic and both
+      filename sanitizers, hand-transcribed from index.html's inline
+      template-literal fragments (not standalone functions, so
+      `extractFunction` can't reach them) and diffed against the quoted
+      source lines in the test file itself.
+
+**Verified in the browser:** both a floor page (two devices, correct
+legend grouping including the gang suffix) and a civil page (a pit,
+correct legend) rendered with a white background and no grid; the civil
+toggle removing/restoring the civil page; "Save as PDF" completing with
+no thrown error and the button label resetting; the dialog closing
+cleanly back to an intact workspace; and a regression check that Quote
+still opens correctly afterward.
+
+### Phase 10 — Auth, Supabase, orgs, sharing ✅ complete
 
 ### Phase 10 — Auth, Supabase, orgs, sharing
 Auth gate, OTP verify, password reset, session handling, account sheet,
@@ -395,7 +444,7 @@ Two deliberate exclusions, in `.prettierignore` with reasons:
 
 ## Running the parity tests
 
-All six compare the ported core against the LIVE `index.html`,
+All seven compare the ported core against the LIVE `index.html`,
 extracting its functions by name at run time so they survive edits to
 that file:
 
@@ -406,6 +455,7 @@ node app/test/quote-parity.mjs
 node app/test/civil-parity.mjs
 node app/test/legend-parity.mjs
 node app/test/cloud-format-parity.mjs
+node app/test/print-parity.mjs
 ```
 
 Two more checks that are not parity comparisons — one is a security

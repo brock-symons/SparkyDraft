@@ -292,11 +292,11 @@ function drawGhost(ctx, view, scene, r) {
 export function renderCivilScene(ctx, cssW, cssH, scene) {
   const { plan, view } = scene;
 
-  ctx.fillStyle = PAINT.bg;
+  ctx.fillStyle = scene.printMode ? PAINT.printBg : PAINT.bg;
   ctx.fillRect(0, 0, cssW, cssH);
 
   if (plan.planImage) drawPlanImage(ctx, view, plan.planImage, scene.planImg);
-  if (plan.gridVisible !== false) {
+  if (plan.gridVisible !== false && !scene.printMode) {
     drawGrid(ctx, view, cssW, cssH, plan);
     drawOrigin(ctx, view, cssW, cssH, plan);
   }
