@@ -309,15 +309,6 @@ still opens correctly afterward.
 
 ### Phase 10 — Auth, Supabase, orgs, sharing ✅ complete
 
-### Phase 10 — Auth, Supabase, orgs, sharing
-Auth gate, OTP verify, password reset, session handling, account sheet,
-cloud project CRUD, organisations, members/roles, invitations, project
-sharing, per-project access, read-only viewer mode, report-a-problem.
-**Largest security surface.** Deliberately late: wiring cloud sync to a
-still-moving data model would mean migrating stored records twice.
-
-### Phase 10 — Auth, Supabase, orgs, sharing ✅ complete
-
 Taken ahead of Phase 9 at the owner's direction (5 Sep 2026). Nothing in
 it depended on print/PDF, and the data model it needed was already final.
 
