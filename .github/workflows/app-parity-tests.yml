@@ -1,0 +1,41 @@
+name: app/ parity tests
+
+# app/test/*.mjs extract functions from the live index.html at run time and
+# compare them against the ported app/src/core/ logic. They only prove
+# anything if they run on every change to either side — see PLAN.md
+# "Running the parity tests" and CLAUDE.md's app/ section.
+
+on:
+  pull_request:
+    paths:
+      - 'app/**'
+      - 'index.html'
+
+jobs:
+  parity:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Run parity tests
+        run: |
+          for f in app/test/panel-schedule-parity.mjs \
+                   app/test/comms-migration-parity.mjs \
+                   app/test/quote-parity.mjs \
+                   app/test/civil-parity.mjs \
+                   app/test/legend-parity.mjs \
+                   app/test/cloud-format-parity.mjs \
+                   app/test/print-parity.mjs \
+                   app/test/readonly-guard.mjs; do
+            echo "::group::node $f"
+            node "$f"
+            echo "::endgroup::"
+          done
+
+      # app/test/rls-probe.mjs talks to the live Supabase project and needs
+      # a real anon key — intentionally not run here. Run it manually
+      # (see PLAN.md) when RLS policies change.

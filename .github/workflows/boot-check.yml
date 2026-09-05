@@ -1,0 +1,56 @@
+name: Boot check
+
+# There is no build step and no test suite for index.html (the live app).
+# This is the minimum useful CI check: load it in headless Chromium and
+# fail if the page throws a console error while booting. See
+# audits/2026-09-03-full-repository-audit.md §6.1.
+
+on:
+  pull_request:
+    paths:
+      - 'index.html'
+  push:
+    branches: [main]
+    paths:
+      - 'index.html'
+
+jobs:
+  boot:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install Playwright (Chromium only)
+        run: npx --yes playwright@1.47.2 install --with-deps chromium
+
+      - name: Boot index.html headlessly and check for console errors
+        run: |
+          cat <<'EOF' > boot-check.mjs
+          import { chromium } from 'playwright';
+          import path from 'node:path';
+
+          const errors = [];
+          const browser = await chromium.launch();
+          const page = await browser.newPage();
+          page.on('pageerror', (err) => errors.push(String(err)));
+          page.on('console', (msg) => {
+            if (msg.type() === 'error') errors.push(msg.text());
+          });
+
+          const filePath = 'file://' + path.resolve('index.html');
+          await page.goto(filePath, { waitUntil: 'load', timeout: 30000 });
+          await page.waitForTimeout(2000);
+          await browser.close();
+
+          if (errors.length) {
+            console.error(`index.html threw ${errors.length} console error(s) on boot:`);
+            for (const e of errors) console.error(' -', e);
+            process.exit(1);
+          }
+          console.log('index.html booted with no console errors.');
+          EOF
+          node boot-check.mjs
