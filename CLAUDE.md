@@ -111,17 +111,18 @@ by the summary below, rather than relying on a chat transcript for intent.
 workspace. **`index.html` at the repo root is still the live product** and
 remains the source of truth for every feature.
 
-As of Phase 9 (2026-09-05) `app/` covers the drafting core (project
-browser, canvas, place/select/move, layers, inspector, underlay,
-calibration, palette, context menu, local save/load) **plus** switch
-linking, circuits, panel schedule + load/demand, comms racks, quote +
-price list, civil/underground works, elevations + legend, print/PDF/
-export, and the whole cloud half — auth, cloud project sync,
-organisations, members, invites, sharing, per-project access and viewer
-mode. **Still missing:** the Phase 11 integration and security review,
-plus two long-standing partials (Layers, Inspector/properties) and the
-local-storage cutover decision (R4). `MIGRATION_INVENTORY.md` §H is the
-authoritative parity matrix; `PLAN.md` tracks the phases.
+As of Phase 11 (2026-09-05) all planned migration phases are complete:
+the drafting core, switch linking, circuits, panel schedule + load/
+demand, comms racks, quote + price list, civil/underground works,
+elevations + legend, print/PDF/export, the whole cloud half (auth, sync,
+organisations, sharing, viewer mode), and the integration/security
+review + directive §35 product audit (filed at `PRODUCT_AUDIT.md`).
+**Still open:** two long-standing partials (Layers, Inspector/
+properties), the local-storage cutover decision (R4), a genuinely
+signed-in (non-stubbed) pass over the cloud features, and — the actual
+gate — the owner's explicit review of the physical cutover itself.
+`MIGRATION_INVENTORY.md` §H is the authoritative parity matrix; `PLAN.md`
+tracks the phases; `PRODUCT_AUDIT.md` is the §35 deliverable.
 
 - Business logic ported from `index.html` is checked mechanically, not by
   eye: `app/test/*-parity.mjs` extract functions from the LIVE

@@ -390,7 +390,7 @@ Everything → Print/PDF (renders whatever exists)
 | 8 | Elevations + legend | Report-style dialog, not a plan type — no drafting deps at all |
 | 9 | Print / PDF / export | Renders everything above |
 | 10 | Auth → Supabase → orgs → members/invites → sharing → access/read-only → cloud sync | Largest security surface; done once data model is final. **Done out of order, ahead of Phase 9, at the owner's direction (5 Sep 2026)** — nothing in it depends on print/PDF |
-| 11 | Full integration pass + security review + regression | §23 |
+| 11 | Full integration pass + security review + regression — ✅ complete, see PRODUCT_AUDIT.md | §23 |
 
 Auth (§7 Phase 8) stays late deliberately: wiring cloud sync to a data model
 still in flux would mean migrating stored cloud records twice.

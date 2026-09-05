@@ -12,7 +12,7 @@ versioned markdown next to the code.
 | | |
 |---|---|
 | Branch | `feature/cad-workspace-redesign` |
-| Status | Phases 0-8, 9, 10 complete · **stopped at the phase boundary, awaiting approval for Phase 11** |
+| Status | Phases 0-11 complete · **all planned phases done — cutover to `main` awaits the owner's explicit review (see Cutover gate below)** |
 | Merged to main | **No — and not without explicit owner review** |
 | Last updated | 2026-09-05 |
 
@@ -43,8 +43,16 @@ production's actual capture/export output where that's meaningful (the
 legend data, labels, colours and filenames; not byte-for-byte image
 comparison, which no parity test in this migration attempts).
 
-**Not done:** the local-storage cutover decision (R4) and the Phase 11
-integration + security review.
+**Also done (Phase 11):** full end-to-end workflow, undo/redo and
+persistence verified against real stored data, three responsive
+breakpoints tested live, RLS re-verified against the live project, one
+regression fix (picker device count), and the directive's §35 product
+audit filed at [PRODUCT_AUDIT.md](PRODUCT_AUDIT.md).
+
+**Not done:** the local-storage cutover decision (R4), a genuinely
+signed-in (non-stubbed) pass over the cloud features, and the physical
+cutover mechanics — all explicitly owner-only, per PRODUCT_AUDIT.md's
+closing summary.
 
 ---
 
@@ -379,10 +387,45 @@ against an in-memory Supabase double, because typing the owner's password
 into a login field and creating an account are both off-limits. See
 MIGRATION_INVENTORY.md §I item 10.
 
-### Phase 11 — Integration, security, regression
-Full workflow end-to-end (Project → Drawings → Components → Circuits →
-Panel Schedule → Quote → Export), security review, responsive/touch
-regression, then the directive's §35 product audit.
+### Phase 11 — Integration, security, regression ✅ complete
+
+Full workflow end-to-end, security review, responsive/touch regression,
+and the directive's §35 product audit. The audit itself is filed in full
+at [PRODUCT_AUDIT.md](PRODUCT_AUDIT.md) rather than summarised here —
+read it directly for the design/UX/competitor/technical review and the
+cutover-readiness summary.
+
+- [x] **Full workflow, one project** — drawing → 5 devices across
+      categories → circuit created and assigned via multi-select →
+      Panel Schedule → Quote → Civil mode → pit placed (auto-created
+      civil plan) → Civil Materials → Elevation created → Comms Rack
+      placed (24 ports, patch panel derived) → Comms Racks panel →
+      Print/PDF export (floor + civil pages, correct legends) → Save as
+      PDF. Zero console errors at any point.
+- [x] **Undo/redo** — verified as a real round trip against the
+      persisted record, not just a UI flip: undo removed a just-placed
+      device from `localStorage`, redo restored it.
+- [x] **Persistence** — full page reload (not SPA navigation) reopened a
+      6-device project with all 6 devices intact.
+- [x] **Responsive/touch** — three breakpoints tested live (375×812,
+      768×1024, 1280×800), each a genuinely different layout, not one
+      shrunk down. A device placed with a synthetic `pointerType:'touch'`
+      event confirmed the touch code path specifically, not just mouse.
+- [x] **Security review** — RLS re-verified against the live Supabase
+      project (`app/test/rls-probe.mjs`, still clean); the audit's
+      flagged unescaped-innerHTML pattern probed directly with
+      `<script>`/`<img onerror>` payloads in org/member names — both
+      rendered as inert text.
+- [x] **Regression fix found in passing** — the project picker's device
+      count read the pre-Phase-0 flat drawing shape and had shown "0
+      devices" for every real project since Phase 0. Fixed (`59851f4`).
+- [x] **§35 product audit** — PRODUCT_AUDIT.md, all ten sections (A–J).
+
+**Not done, and explicitly not this assistant's call:** a genuinely
+signed-in (non-stubbed) pass over the cloud features, screen-reader
+testing, load testing at production-scale object counts, and the
+physical cutover mechanics decision — see PRODUCT_AUDIT.md's closing
+summary against CLAUDE.md's five cutover conditions.
 
 ---
 
