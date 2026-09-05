@@ -8,7 +8,7 @@
 // discover shortcuts.
 // ===================================================================
 
-import { cx, Kbd } from './primitives.jsx';
+import { cx, Kbd, focusRing } from './primitives.jsx';
 import { formatShortcut } from '../core/commands.js';
 
 const { useState, useEffect, useRef, useMemo } = React;
@@ -122,9 +122,23 @@ export function CommandPalette({ open, onClose, registry, ctx }) {
             aria-label="Search commands"
             className="h-11 flex-1 bg-transparent text-base text-ink-800 outline-none placeholder:text-ink-400"
           />
-          <kbd className="rounded border border-ink-200 px-1.5 py-0.5 text-2xs text-ink-400">
+          {/* A real button, not a decorative label — it LOOKS like the
+              obvious way to dismiss the palette (a badge in the top-right
+              corner of a dialog reads as "the close control" regardless
+              of what it says), so it needs to actually work as one.
+              Escape and the backdrop click both already close the
+              palette; this was the one visible affordance that didn't. */}
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close command palette"
+            className={cx(
+              'rounded border border-ink-200 px-1.5 py-0.5 text-2xs text-ink-400 transition-colors hover:bg-ink-100 hover:text-ink-600',
+              focusRing
+            )}
+          >
             Esc
-          </kbd>
+          </button>
         </div>
 
         <div ref={listRef} className="max-h-[52vh] overflow-y-auto py-1.5">

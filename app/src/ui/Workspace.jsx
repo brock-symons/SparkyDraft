@@ -261,9 +261,18 @@ function ToolRail({ tools, controller, registry, ctx, panels, onTogglePanel, rea
             // Nothing to place on a project you can only view, so the
             // component library is not offered. Layers, circuits and
             // comms stay — they are how a viewer reads the drawing.
+            //
+            // Labelled by the ACTION, not the noun. This is the only way
+            // back into the library once a floor has any devices on it —
+            // the on-canvas "no devices yet" hint (which doubles as an
+            // entry point) disappears for good the moment the first
+            // device is placed, so an icon-only "Components" tooltip is
+            // easy to read as "a panel" rather than "how you add the
+            // next device," which is what someone is actually looking
+            // for at that point.
             ...(readOnly
               ? []
-              : [{ slot: 'library', label: 'Components', icon: '⊞', shortcut: 'P' }]),
+              : [{ slot: 'library', label: 'Place a device', icon: '⊞', shortcut: 'P' }]),
           ]
       ).map(b => (
         <IconButton
