@@ -50,7 +50,17 @@ export function listProjects() {
       id: key.slice(PREFIX.length),
       name: data.name || 'Untitled project',
       updatedAt: data.updatedAt || 0,
-      deviceCount: data.drawing && data.drawing.objects ? data.drawing.objects.length : 0,
+      // Phase 0 moved devices under floors[]; `drawing.objects` is the
+      // pre-Phase-0 flat shape and has been empty on every real record
+      // since, which is why the picker showed "0 devices" for everything.
+      // A record predating Phase 0 (still openable via
+      // migrateFlatDrawing()) has no `floors`, so that shape is still
+      // read as a fallback rather than assumed gone.
+      deviceCount: Array.isArray(data.drawing && data.drawing.floors)
+        ? data.drawing.floors.reduce((n, f) => n + ((f.objects && f.objects.length) || 0), 0)
+        : data.drawing && data.drawing.objects
+          ? data.drawing.objects.length
+          : 0,
     });
   }
   out.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
