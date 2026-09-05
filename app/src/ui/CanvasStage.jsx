@@ -1,0 +1,243 @@
+// ===================================================================
+// CANVAS STAGE  (directive §3, §27)
+//
+// The React ↔ canvas boundary. React owns the chrome; this component
+// owns pixels. Two performance rules make it behave under load:
+//
+//  1. Repaints are batched into one requestAnimationFrame. A drag fires
+//     pointermove far faster than the display refreshes, and painting
+//     per-event is how canvas apps start dropping frames.
+//  2. The scene is read from refs at paint time, not captured in React
+//     state. Dragging therefore does not re-render the React tree at
+//     all — only the canvas repaints.
+// ===================================================================
+
+import { renderScene, getPlanImage } from '../core/renderer.js';
+import { renderCivilScene } from '../core/civilRenderer.js';
+import { currentCivilPlan } from '../core/civil.js';
+import { boundsOf, formatDistance } from '../core/geometry.js';
+import { currentFloor } from '../core/document.js';
+
+const { useRef, useEffect, useCallback } = React;
+
+export function CanvasStage({
+  controller,
+  doc,
+  view,
+  symbolFor,
+  showLabels,
+  onViewportChange,
+  onContextMenu,
+  cursorClass,
+}) {
+  const canvasRef = useRef(null);
+  const wrapRef = useRef(null);
+  const frameRef = useRef(0);
+
+  // Live refs so paint() always sees current values without the effect
+  // re-subscribing (and without re-rendering React on every pointermove).
+  const live = useRef({ controller, doc, view, symbolFor, showLabels });
+  live.current = { controller, doc, view, symbolFor, showLabels };
+
+  const paint = useCallback(() => {
+    frameRef.current = 0;
+    const canvas = canvasRef.current;
+    const wrap = wrapRef.current;
+    if (!canvas || !wrap) return;
+    const { controller: c, doc: d, view: v, symbolFor: sf, showLabels: sl } = live.current;
+    const ctx = canvas.getContext('2d');
+    const cssW = wrap.clientWidth,
+      cssH = wrap.clientHeight;
+
+    // Resolve the plan image from cache; a cache miss kicks off decoding
+    // and repaints when it lands, so the first frame after import isn't
+    // blocked waiting on it.
+    // Civil mode draws an entirely different scene from an entirely
+    // different plan — the split production makes between render() and
+    // renderCivil(), kept here for the same reason.
+    if (c.isCivilMode) {
+      const plan = currentCivilPlan(d.state);
+      const civilImg = plan.planImage
+        ? getPlanImage(plan.planImage.src, () => requestPaintRef.current())
+        : null;
+      renderCivilScene(ctx, cssW, cssH, {
+        plan,
+        view: v,
+        planImg: civilImg,
+        symbolSize: d.state.symbolSize || 16,
+        selection: c.civilSelection,
+        conduitDraft: c.conduitDraft,
+        overheadDraft: c.overheadDraft,
+        draftHover: c.draftHover,
+        draftColor: c.draftColor,
+        tool: c.tool,
+        ghost: c.ghost,
+        activePitTypeId: c.activePitTypeId,
+        activePoleTypeId: c.activePoleTypeId,
+        activePoleOwnership: c.activePoleOwnership,
+        snap: c.snap,
+        measure: c.measure,
+        formatDistance,
+      });
+      return;
+    }
+
+    // The document is a project; the canvas draws its ACTIVE FLOOR.
+    const fl = currentFloor(d.state);
+    const planImg = fl.planImage
+      ? getPlanImage(fl.planImage.src, () => requestPaintRef.current())
+      : null;
+
+    renderScene(ctx, cssW, cssH, {
+      planImg,
+      drawing: fl,
+      view: v,
+      symbolFor: sf,
+      selectedIds: c.selectedIds,
+      hoverId: c.hoverId,
+      lockedIds: c.lockedIds(),
+      isVisible: c.visible,
+      isLayerHidden: c.isLayerHidden,
+      showSwitchRuns: c.showSwitchRuns,
+      // Circuits are project-level and can be fed from a board on
+      // another floor, so the run derivation needs the whole project,
+      // not just the floor being drawn.
+      project: d.state,
+      categoryOf: o => {
+        const s = sf(o.symbolId);
+        return s ? s.category : null;
+      },
+      isolatedCircuitId: c.isolatedCircuitId,
+      showCircuitLabels: c.showCircuitLabels,
+      snap: c.snap,
+      marquee: c.marquee,
+      measure: c.measure,
+      draft: c.draft,
+      cursorWorld: c.cursorWorld,
+      selectedSegment: c.selectedSegment,
+      symbolSize: d.state.symbolSize,
+      activeCableColor: c.activeCableSize && c.activeCableSize.color,
+      ghost: c.tool === 'place' ? c.ghost : null,
+      ghostSymbol: c.activeSymbolId ? sf(c.activeSymbolId) : null,
+      bounds: boundsOf(fl.objects.filter(o => c.selectedIds.has(o.id))),
+      showLabels: sl,
+      formatDistance,
+    });
+  }, []);
+
+  const requestPaint = useCallback(() => {
+    if (frameRef.current) return;
+    frameRef.current = requestAnimationFrame(paint);
+  }, [paint]);
+
+  // Stable indirection so paint() can request a follow-up repaint (image
+  // decode finishing) without paint and requestPaint depending on each
+  // other and re-creating every render.
+  const requestPaintRef = useRef(requestPaint);
+  requestPaintRef.current = requestPaint;
+
+  // Size the backing store to device pixels so lines stay crisp on
+  // retina/high-DPI screens instead of blurring.
+  const resize = useCallback(() => {
+    const canvas = canvasRef.current,
+      wrap = wrapRef.current;
+    if (!canvas || !wrap) return;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2.5);
+    const w = wrap.clientWidth,
+      h = wrap.clientHeight;
+    canvas.width = Math.max(1, Math.round(w * dpr));
+    canvas.height = Math.max(1, Math.round(h * dpr));
+    canvas.style.width = w + 'px';
+    canvas.style.height = h + 'px';
+    canvas.getContext('2d').setTransform(dpr, 0, 0, dpr, 0, 0);
+    onViewportChange && onViewportChange({ width: w, height: h });
+    paint();
+  }, [paint, onViewportChange]);
+
+  useEffect(() => {
+    resize();
+    const ro = new ResizeObserver(resize);
+    if (wrapRef.current) ro.observe(wrapRef.current);
+    return () => ro.disconnect();
+  }, [resize]);
+
+  // Repaint whenever the document or interaction state changes.
+  useEffect(() => {
+    const un1 = doc.subscribe(requestPaint);
+    return un1;
+  }, [doc, requestPaint]);
+
+  useEffect(() => {
+    requestPaint();
+  });
+
+  // Pointer events are bound natively (not via React props) so we can
+  // capture the pointer and keep receiving moves when the cursor leaves
+  // the canvas mid-drag — dragging a device off-panel and back should
+  // not drop the gesture.
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const rect = () => canvas.getBoundingClientRect();
+
+    const down = e => {
+      // Capture is an optimisation (keeps a drag alive when the cursor
+      // leaves the canvas), NOT a precondition. It can throw — an
+      // already-released pointer id, or a second touch the UA won't let
+      // us capture — and letting that propagate would abort the handler
+      // before the controller ever sees the event. That silently broke
+      // two-finger pinch, since the second finger's pointerdown never
+      // registered. Failing to capture must degrade, not cancel.
+      try {
+        canvas.setPointerCapture(e.pointerId);
+      } catch (_) {
+        /* non-fatal */
+      }
+      controller.onPointerDown(e, rect());
+      requestPaint();
+    };
+    const move = e => {
+      controller.onPointerMove(e, rect());
+      requestPaint();
+    };
+    const up = e => {
+      try {
+        canvas.releasePointerCapture(e.pointerId);
+      } catch (_) {}
+      controller.onPointerUp(e);
+      requestPaint();
+    };
+    const wheel = e => {
+      e.preventDefault();
+      controller.onWheel(e, rect());
+      requestPaint();
+    };
+    const context = e => {
+      e.preventDefault();
+      const info = controller.onContextMenu(e, rect());
+      requestPaint();
+      onContextMenu && onContextMenu({ x: e.clientX, y: e.clientY, onDevice: info.onDevice });
+    };
+
+    canvas.addEventListener('contextmenu', context);
+    canvas.addEventListener('pointerdown', down);
+    canvas.addEventListener('pointermove', move);
+    canvas.addEventListener('pointerup', up);
+    canvas.addEventListener('pointercancel', up);
+    canvas.addEventListener('wheel', wheel, { passive: false });
+    return () => {
+      canvas.removeEventListener('contextmenu', context);
+      canvas.removeEventListener('pointerdown', down);
+      canvas.removeEventListener('pointermove', move);
+      canvas.removeEventListener('pointerup', up);
+      canvas.removeEventListener('pointercancel', up);
+      canvas.removeEventListener('wheel', wheel);
+    };
+  }, [controller, requestPaint, onContextMenu]);
+
+  return (
+    <div ref={wrapRef} className="absolute inset-0 overflow-hidden bg-canvas">
+      <canvas ref={canvasRef} className={cursorClass} />
+    </div>
+  );
+}

@@ -97,6 +97,138 @@ section below whenever you do.
   holding Shift while placing keeps placement mode active instead of
   reverting to Select. Don't repurpose `R`/Shift in placement-adjacent code.
 
+## `app/` — the React CAD workspace redesign (branch work, NOT live)
+
+The full brief driving this work is filed verbatim at
+[REDESIGN_DIRECTIVE.md](REDESIGN_DIRECTIVE.md) — 35 numbered sections
+covering interaction philosophy, contextual UI, snapping/selection
+standards, responsive strategy, what may be changed independently (§31)
+vs. requires approval (§32), git safety (§33), and the final product-audit
+deliverable expected (§35). Consult it directly for anything not covered
+by the summary below, rather than relying on a chat transcript for intent.
+
+`app/` holds an in-progress React + Tailwind redesign of the drafting
+workspace. **`index.html` at the repo root is still the live product** and
+remains the source of truth for every feature.
+
+As of Phase 11 (2026-09-05) all planned migration phases are complete:
+the drafting core, switch linking, circuits, panel schedule + load/
+demand, comms racks, quote + price list, civil/underground works,
+elevations + legend, print/PDF/export, the whole cloud half (auth, sync,
+organisations, sharing, viewer mode), and the integration/security
+review + directive §35 product audit (filed at `PRODUCT_AUDIT.md`).
+**Still open:** two long-standing partials (Layers, Inspector/
+properties), the local-storage cutover decision (R4), a genuinely
+signed-in (non-stubbed) pass over the cloud features, and — the actual
+gate — the owner's explicit review of the physical cutover itself.
+`MIGRATION_INVENTORY.md` §H is the authoritative parity matrix; `PLAN.md`
+tracks the phases; `PRODUCT_AUDIT.md` is the §35 deliverable.
+
+- Business logic ported from `index.html` is checked mechanically, not by
+  eye: `app/test/*-parity.mjs` extract functions from the LIVE
+  `index.html` at run time and compare. Run them all before trusting a
+  change to `app/src/core/`.
+- **`app/src/core/cloudFormat.js` is load-bearing for the cutover.** The
+  Supabase `data` columns are shared with production, so the redesign
+  reads and writes PRODUCTION's record shape and converts at that one
+  boundary. Do not "simplify" it into writing the redesign's own shape —
+  that would silently rewrite existing customer projects into something
+  `index.html` renders wrong, the first time autosave fires.
+
+- `app/src/core/` is framework-free and DOM-free — catalog, geometry,
+  snapping, document+history, command registry, renderer, interaction
+  controller. Nothing here imports React.
+- `app/src/ui/` is React and owns chrome only. React does not re-render
+  during a drag; the controller mutates and the canvas repaints on one rAF.
+- `app/src/core/catalog.js` is extracted **verbatim** from the root
+  `index.html`. It drives quoting and load estimates, so re-extract rather
+  than hand-editing if the root catalog changes.
+- One command registry (`core/commands.js`) feeds the palette, keyboard
+  shortcuts, tooltips and the context menu. Add an action there once and it
+  appears everywhere — this exists specifically because the live app's
+  hand-maintained palette array drifted out of sync with its toolbar.
+- There is **no build step** (no Node on the build machine). `app/index.html`
+  contains a small in-browser ES-module loader that Babel-transforms JSX and
+  caches modules by URL. It is deliberately isolated and deletable in one
+  commit once Vite is introduced.
+
+### Target end-state (confirmed by the project owner, 2026-09-03)
+
+`app/` is not a permanent side branch or a design experiment — it is meant
+to **replace `index.html` as the live product**. Once every feature in
+`MIGRATION_INVENTORY.md`'s parity matrix is ported, verified, and `main` is
+updated to run `app/`, the root `index.html` app is retired. Plan and
+communicate with that end-state in mind, not as an indefinitely-parallel
+"redesign branch."
+
+That doesn't change how you get there — the migration inventory's phased
+order (§F) and risk register (§G) already reflect the right amount of
+caution and don't need re-litigating. It does mean the cutover itself needs
+an explicit gate, not just "the last feature got ported." Before `app/` is
+proposed as the replacement for `main`, confirm and state plainly in the
+PR:
+
+1. **Full parity**, per `MIGRATION_INVENTORY.md`'s own parity matrix (§H) —
+   not just the features, the *business logic behind them* (R2, R3, R7, R8
+   in the risk register — quote/demand formulas, RLS/permission behaviour,
+   derived patch-panel counts, circuit branching) checked against the old
+   app's actual output, not re-derived from memory.
+2. **Security parity or better**, specifically: the new app is being built
+   fresh, which means it can just as easily reintroduce the unescaped-
+   `innerHTML` XSS pattern the audit found in the current app
+   (`audits/2026-09-03-full-repository-audit.md`, §8.1) — any place org/
+   project/user-supplied text reaches the DOM in the new UI needs to go
+   through an escaping helper from the start, not bolted on after. RLS
+   behaviour (R3/R6/R14) gets verified against the live Supabase project,
+   not assumed from reading the policy files.
+3. **§35's product audit (per the directive) actually happened** and its
+   findings are closed or explicitly accepted by the owner, not just
+   produced.
+4. **The physical cutover mechanics are a real decision, not an implicit
+   one** — does `app/` get promoted to replace the repo root, or does
+   `main` start deploying `app/`'s build output while `index.html` moves
+   elsewhere for reference? Flag this for the owner rather than picking
+   one; it affects every existing link/bookmark/deploy config.
+5. Still applies regardless of how close to done this looks: **no push to
+   `main` without the project owner's explicit review of that specific
+   cutover**, same as every other merge (see Workflow notes below). A full
+   product swap is the single highest-stakes merge this repo will see —
+   treat the review bar accordingly, not as a formality.
+
+### Code style + AI-authorship policy
+
+The full version of this lives in `README.md` on `claude/repo-audit-redesign-hdfuir`
+(not yet merged to `main`) — restated here in full, not just linked, so it's
+actually visible on this branch rather than sitting unread on another one.
+Once that branch merges, treat README.md as the source of truth and this
+section as redundant.
+
+- The `core/` framework-free / `ui/`-owns-chrome split and the single
+  command registry, both already described above, are the house style now,
+  not just this redesign's internal convention — keep following them.
+- Business logic ported from `index.html` (quote totals, the load/demand
+  estimate, circuit routing, the cable-run estimate) gets extracted
+  **verbatim** and checked against the original's actual output, never
+  re-derived from memory. `MIGRATION_INVENTORY.md` §B already requires this
+  for the current port; it's the general rule for anything ported here on.
+- **Reformatting for readability goes through an actual formatter
+  (Prettier), never a freehand AI rewrite.** A formatter reprints from the
+  parsed syntax tree and is structurally incapable of changing behaviour;
+  an AI manually "cleaning up" dense single-line code for readability can
+  drift into small semantic changes without meaning to (a rename that
+  misses one call site, a ternary rewritten with different precedence). If
+  the dense single-line areas in the legacy `index.html` get reformatted,
+  do it as its own dedicated commit with zero functional changes mixed in,
+  so the diff is reviewable on its own.
+- An AI assistant may write and suggest code for a new feature on its own
+  initiative, but only once it's been run and traced through (not just
+  read) and shown not to regress, and only if it matches the surrounding
+  module's existing patterns rather than introducing a new one. Anything
+  that changes navigation, the document model, or security/permission
+  behaviour is not the assistant's call to make unilaterally — flag it for
+  the owner, the same way `MIGRATION_INVENTORY.md`'s "Items flagged for
+  owner review" already does for this port.
+
 ## Workflow notes
 
 - Never merge to `main` without the project owner's explicit review/approval

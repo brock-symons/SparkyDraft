@@ -1,0 +1,23 @@
+# The legacy single-file app is the live product and the fallback for the
+# migration. Reformatting it is a 9,000-line diff with no functional value
+# on this branch, and REDESIGN_DIRECTIVE.md §21 says not to modify the
+# existing implementation while it's serving as the fallback. If it ever
+# does get reformatted, CLAUDE.md requires that to be its own dedicated
+# commit with nothing else in it.
+index.html
+
+# Extracted VERBATIM from index.html's SYMBOL_LIBRARY / LAYER_DEFS /
+# CABLE_SIZES / PROTECTION_LIBRARY. CLAUDE.md's rule is to re-extract
+# rather than hand-edit when the root catalog changes — reformatting this
+# would make that re-extraction diff unreadable (every line changed by the
+# formatter, drowning the one price that actually moved). Its value comes
+# from being byte-comparable with the source it was lifted from.
+app/src/core/catalog.js
+
+# Same rule, same reason: the civil/underground libraries (pits, conduits,
+# comms conduits, building-entry services, poles, overhead conductors)
+# lifted verbatim from index.html.
+app/src/core/civilCatalog.js
+
+# Generated/vendored
+node_modules/
