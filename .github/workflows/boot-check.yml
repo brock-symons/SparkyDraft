@@ -9,10 +9,12 @@ on:
   pull_request:
     paths:
       - 'index.html'
+      - 'app/src/**'
   push:
     branches: [main]
     paths:
       - 'index.html'
+      - 'app/src/**'
 
 jobs:
   boot:
@@ -25,13 +27,26 @@ jobs:
           node-version: 20
 
       - name: Install Playwright (Chromium only)
-        run: npx --yes playwright@1.47.2 install --with-deps chromium
+        run: |
+          npm install --no-save playwright@1.47.2
+          npx playwright install --with-deps chromium
+
+      - name: Serve the repo root
+        # index.html's module loader uses fetch() to pull in app/src/*.jsx —
+        # browsers block that from a file:// page (CORS treats file:// as an
+        # opaque origin), so this has to be served like a real deployment
+        # would, not opened as a local file.
+        run: |
+          python3 -m http.server 8123 --bind 127.0.0.1 &
+          for i in $(seq 1 20); do
+            curl -sf http://127.0.0.1:8123/index.html >/dev/null && break
+            sleep 0.5
+          done
 
       - name: Boot index.html headlessly and check for console errors
         run: |
           cat <<'EOF' > boot-check.mjs
           import { chromium } from 'playwright';
-          import path from 'node:path';
 
           const errors = [];
           const browser = await chromium.launch();
@@ -41,8 +56,7 @@ jobs:
             if (msg.type() === 'error') errors.push(msg.text());
           });
 
-          const filePath = 'file://' + path.resolve('index.html');
-          await page.goto(filePath, { waitUntil: 'load', timeout: 30000 });
+          await page.goto('http://127.0.0.1:8123/index.html', { waitUntil: 'load', timeout: 30000 });
           await page.waitForTimeout(2000);
           await browser.close();
 

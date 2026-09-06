@@ -1,13 +1,14 @@
 // ===================================================================
-// PULLING FUNCTIONS OUT OF THE LIVE index.html
+// PULLING FUNCTIONS OUT OF THE ORIGINAL VANILLA-JS APP
 //
-// The parity tests compare the ported core against the CURRENT product,
-// not against a copy of it — a copy would drift and start agreeing with
-// the port for the wrong reason. So the functions are extracted from
-// index.html at run time.
+// Since the cutover (app/ promoted to the repo root), root index.html
+// IS this same app/src/ code, so comparing against it would just check
+// the code against itself. legacy-index.html is the original vanilla-JS
+// implementation these functions were ported from — that's still the
+// reference these parity tests exist to guard against drifting from.
 //
 // Extraction is by NAME with brace matching, never by line number, so
-// the tests keep working as index.html is edited.
+// the tests keep working as legacy-index.html is (rarely) touched.
 // ===================================================================
 
 import { readFileSync } from 'fs';
@@ -15,7 +16,7 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 
 const here = dirname(fileURLToPath(import.meta.url));
-export const productionSource = readFileSync(join(here, '..', '..', 'index.html'), 'utf8');
+export const productionSource = readFileSync(join(here, '..', '..', 'legacy-index.html'), 'utf8');
 
 /** One top-level `function name(...) { ... }`, braces balanced. */
 export function extractFunction(name, source = productionSource) {

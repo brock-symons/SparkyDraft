@@ -1,9 +1,17 @@
 # SparkyDraft
 
-Single-file vanilla-JS web app for electrical drafting, plus civil/underground
+A React + Tailwind web app for electrical drafting, plus civil/underground
 works planning, comms/data rack wiring, circuits, panel schedules, quoting,
-and PDF export. The entire app lives in `index.html` (~9,000 lines), no build
-step. Supabase provides auth, cloud project sync, and org sharing.
+and PDF export. Supabase provides auth, cloud project sync, and org sharing.
+
+**Cutover happened 2026-09-06.** Root `index.html` now loads `app/src/main.jsx`
+(the React rewrite) — it is no longer the ~9,000-line single-file vanilla-JS
+app. That original implementation is preserved at `legacy-index.html`, kept
+as the parity tests' ground truth and for reference, not as a second live
+app. Still no build step: `index.html` contains an in-browser Babel loader
+(see "The React app" section below) — and it must be served over `http://`,
+not opened as a local `file://` page, or the module loader's `fetch()` calls
+get blocked by CORS. See README.md's "Getting started."
 
 **This file is a living map, not a snapshot.** This repo gets substantial
 commits from other Claude Code sessions independent of whichever session is
@@ -13,187 +21,102 @@ and skim the diffs (cheap) rather than assuming this file or your own memory
 of the code is current. Update the "Last synced" line and the relevant
 section below whenever you do.
 
-**Last synced with origin/main at commit: `c930a57` (2026-09-05)**
+**Last synced with origin/main at commit: `bb52705` (2026-09-06)** — the
+commit right before this file's own cutover-record update landed.
 
-## Core architecture
+## Core architecture (the live React app)
 
-- `state` holds `floors[]` (electrical rough-in plans), `civilPlans[]` (a
-  parallel structure for underground/civil works), `circuits[]`, `layers[]`,
-  `customSymbols[]`.
-- `currentPlan()` returns `currentFloor()` or `currentCivilPlan()` depending
-  on `state.activePlanType`, toggled via the `#civilModeToggle` button
-  (`html.civil-mode` class mirrors this for CSS).
-- `SYMBOL_LIBRARY` is the master device/symbol catalog: `id`, `category`,
-  `defaultProps`, `color`, `abbr`. `sym.id==='patch_panel'` is excluded from
-  the placement grid (it's derived from a comms rack's port count, not a
-  placeable device) but stays in the library so price-list edits and quote
-  lookups still resolve it.
-- `storageAPI` is dual-mode persistence: `window.storage` when running
-  inside the Claude artifact sandbox, otherwise a `localStorage` fallback.
-  Keys are `project:<id>` plus a `last-open-project` pointer. Local save/load
-  works with no login at all — useful for testing persistence without
-  needing real credentials.
-- Supabase handles auth, cloud project sync, and multi-org sharing
-  (`activeOrgId` global; an org can have multiple members with an
-  accept/decline invite flow — see `supabase-organization-invite-accept.sql`).
-
-## Desktop vs. mobile layout
-
-- Dark/compact mobile is the base CSS. A separate bright "desktop" theme is
-  applied via the `html.force-desktop` class — **not** a media query. (It
-  used to be `@media (min-width:1400px)`; that was removed because a
-  width-based rule can't be overridden by an explicit user choice.)
-- The layout is chosen once, via a chooser shown right after sign-in
-  (`initLayoutPref`, `localStorage['sparkydraft_layout_pref']` =
-  `'desktop'|'mobile'`), and changed later only from the projects screen (🖥
-  button) — never from inside an open project.
-- **Critical invariant:** the plan canvas always paints itself dark
-  (`#0c1116`) regardless of theme — deliberate, light chrome around a dark
-  drawing surface, a common CAD convention. Any UI floating *over* the
-  canvas (tool hint, zoom badge, fit button, multi-select bar) must use the
-  theme-independent `--hud-*` tokens, never `--text`/`--panel` — those flip
-  to dark-on-light in the desktop theme and go invisible against the canvas.
-  This exact bug has already been found and fixed once; don't reintroduce it
-  when adding new canvas-overlay UI.
-- Desktop docks Layers (left) and Symbols/Props (right, mutually exclusive
-  via `html.props-active`) as permanent sidebars sized by the
-  `--layers-w`/`--symbols-w`/`--rail-w` CSS vars, plus a hot-task rail
-  (select/pan/place/measure/link/calibrate/layers) on the far left.
-- **Any JS that changes the docked-panel layout** (layout switch, dock
-  collapse/expand) **must dispatch a `resize` event** — fired immediately
-  and again ~260ms later (to survive the CSS `.2s` panel-width transition) —
-  or the `<canvas>` bitmap goes stale. Its pixel size is set imperatively
-  from `wrap.clientWidth/Height` in `resizeCanvas()`, not automatically by
-  CSS. This has already caused one real bug (dock-collapse never resizing
-  the canvas); the pattern to copy is in `initLayoutPref`'s `apply()`.
-
-## Feature subsystems (search by function-name prefix)
-
-- **Electrical rough-in** — the original/default mode. `render()`, and
-  `pointerdown`/`move`/`up` handlers on `#canvas`.
-- **Civil/underground works** (added after the desktop redesign, by another
-  session) — `renderCivil()`, `pointerdownCivil()`, `snapPointCivil()`,
-  `endPointerCivil()`. `state.civilPlans[]` holds `pits`, `conduits`,
-  `buildingEntries`, `poles`, `overheadRuns`, `dimensions` per plan — same
-  shape idea as `floors[]`. Has its own quote (`updateCivilQuote()`,
-  `computeAllCivilTotals()`) and legend/PDF export
-  (`computeCivilLegendEntries()`).
-- **Comms/data racks** — a separate "home run" wiring system from
-  electrical circuits. `symbolId==='comms_rack'`, ports live on
-  `obj.commsPorts[]`, managed via `renderCommsRacksSheet()`.
-- **Circuits** — `state.circuits[]`, branching power/hard-active runs.
-  `renderCircuits()` feeds the Panel Schedule (`renderPanelSchedule()`,
-  per-circuit cable-run estimates) and the Quote (`updateQuote()`, with a
-  quantity-summary toggle).
-- **Print/PDF export** — `openPrintView()` (on-screen preview) and
-  `downloadPdfExport()` (a real local PDF via jsPDF, loaded from CDN).
-- **Desktop-only conveniences** (from the redesign) — command palette
-  (Ctrl+K), right-click context menu, resizable docked panels, dock-collapse
-  toggles. The command palette's command list is hand-maintained
-  (`initCommandPalette`'s `commands` array) — it has already fallen behind
-  once when a new sheet/toolbar action was added elsewhere and not mirrored
-  there. Check it whenever you add a new top-level action.
-- **Placement hotkeys** — `R` resumes placing `state.lastPlacedSymbolId`;
-  holding Shift while placing keeps placement mode active instead of
-  reverting to Select. Don't repurpose `R`/Shift in placement-adjacent code.
-
-## `app/` — the React CAD workspace redesign (branch work, NOT live)
-
-The full brief driving this work is filed verbatim at
+The full brief that drove this app's build-out is filed verbatim at
 [REDESIGN_DIRECTIVE.md](REDESIGN_DIRECTIVE.md) — 35 numbered sections
 covering interaction philosophy, contextual UI, snapping/selection
 standards, responsive strategy, what may be changed independently (§31)
-vs. requires approval (§32), git safety (§33), and the final product-audit
-deliverable expected (§35). Consult it directly for anything not covered
-by the summary below, rather than relying on a chat transcript for intent.
+vs. requires approval (§32), and git safety (§33). Consult it directly for
+anything not covered by the summary below, rather than relying on a chat
+transcript for intent. `MIGRATION_INVENTORY.md` §H is the parity matrix it
+was built against; `PLAN.md` tracks how it got built; `PRODUCT_AUDIT.md` is
+its pre-cutover product review.
 
-`app/` holds an in-progress React + Tailwind redesign of the drafting
-workspace. **`index.html` at the repo root is still the live product** and
-remains the source of truth for every feature.
-
-As of Phase 11 (2026-09-05) all planned migration phases are complete:
-the drafting core, switch linking, circuits, panel schedule + load/
-demand, comms racks, quote + price list, civil/underground works,
-elevations + legend, print/PDF/export, the whole cloud half (auth, sync,
-organisations, sharing, viewer mode), and the integration/security
-review + directive §35 product audit (filed at `PRODUCT_AUDIT.md`).
-**Still open:** two long-standing partials (Layers, Inspector/
-properties), the local-storage cutover decision (R4), a genuinely
-signed-in (non-stubbed) pass over the cloud features, and — the actual
-gate — the owner's explicit review of the physical cutover itself.
-`MIGRATION_INVENTORY.md` §H is the authoritative parity matrix; `PLAN.md`
-tracks the phases; `PRODUCT_AUDIT.md` is the §35 deliverable.
-
-- Business logic ported from `index.html` is checked mechanically, not by
-  eye: `app/test/*-parity.mjs` extract functions from the LIVE
-  `index.html` at run time and compare. Run them all before trusting a
-  change to `app/src/core/`.
-- **`app/src/core/cloudFormat.js` is load-bearing for the cutover.** The
-  Supabase `data` columns are shared with production, so the redesign
-  reads and writes PRODUCTION's record shape and converts at that one
-  boundary. Do not "simplify" it into writing the redesign's own shape —
-  that would silently rewrite existing customer projects into something
-  `index.html` renders wrong, the first time autosave fires.
-
+- `index.html` at the repo root loads `app/src/main.jsx` through a small
+  in-browser Babel/ES-module loader — no build step, no Node needed to run
+  it, but it must be served over `http://` (see the top of this file and
+  README.md's "Getting started" — `file://` breaks it via CORS).
 - `app/src/core/` is framework-free and DOM-free — catalog, geometry,
   snapping, document+history, command registry, renderer, interaction
   controller. Nothing here imports React.
 - `app/src/ui/` is React and owns chrome only. React does not re-render
   during a drag; the controller mutates and the canvas repaints on one rAF.
-- `app/src/core/catalog.js` is extracted **verbatim** from the root
-  `index.html`. It drives quoting and load estimates, so re-extract rather
-  than hand-editing if the root catalog changes.
-- One command registry (`core/commands.js`) feeds the palette, keyboard
-  shortcuts, tooltips and the context menu. Add an action there once and it
-  appears everywhere — this exists specifically because the live app's
-  hand-maintained palette array drifted out of sync with its toolbar.
-- There is **no build step** (no Node on the build machine). `app/index.html`
-  contains a small in-browser ES-module loader that Babel-transforms JSX and
-  caches modules by URL. It is deliberately isolated and deletable in one
-  commit once Vite is introduced.
+- `app/src/core/catalog.js` was extracted **verbatim** from the original
+  vanilla-JS app (now `legacy-index.html`). It drives quoting and load
+  estimates — re-extract rather than hand-editing if it needs to change.
+- One command registry (`app/src/core/commands.js`) feeds the palette,
+  keyboard shortcuts, tooltips and the context menu — the predecessor app's
+  hand-maintained palette array drifted out of sync with its toolbar more
+  than once, which is exactly why this exists.
+- **`app/src/core/cloudFormat.js` is load-bearing.** The Supabase `data`
+  columns are shared with whatever a customer's existing project was saved
+  as under the old app, so this reads/writes that same record shape and
+  converts at that one boundary. Do not "simplify" it into a native shape —
+  that would silently corrupt existing saved projects the first time
+  autosave fires.
+- Business logic changes are checked mechanically, not by eye:
+  `app/test/*-parity.mjs` extract the equivalent functions out of
+  `legacy-index.html` at run time and compare. Run them all before trusting
+  a change to `app/src/core/`.
+- Known incomplete pieces, as of the 2026-09-06 cutover: the **Layers** and
+  **Inspector/properties** panels are both still partial builds, not
+  finished. Treat bugs found there as expected gaps, not regressions, until
+  someone does the work to finish them.
+- The cloud/auth path (sign-in, sync, org sharing) has only ever been
+  exercised with stubbed logins — nobody has done a walkthrough with a real
+  signed-in account against the live Supabase project. Don't assume it's
+  solid just because it's marked "complete" in `PLAN.md`.
 
-### Target end-state (confirmed by the project owner, 2026-09-03)
+## `legacy-index.html` — the original app, retired 2026-09-06
 
-`app/` is not a permanent side branch or a design experiment — it is meant
-to **replace `index.html` as the live product**. Once every feature in
-`MIGRATION_INVENTORY.md`'s parity matrix is ported, verified, and `main` is
-updated to run `app/`, the root `index.html` app is retired. Plan and
-communicate with that end-state in mind, not as an indefinitely-parallel
-"redesign branch."
+This was the live product until the cutover: a single ~9,000-line
+vanilla-JS file, one global `state`, hand-rolled DOM manipulation. It is
+kept for two reasons — the parity tests' ground truth (`app/test/*.mjs`
+extract functions from it by name), and as a reference/rollback copy — not
+as a second app anyone should add features to. Its own internals (`state`,
+`SYMBOL_LIBRARY`, `storageAPI`, the dark/mobile-vs-bright/desktop theme
+split via `html.force-desktop`, the `--hud-*` canvas-overlay token
+convention, `render()`/`renderCivil()`/etc.) are documented in its own
+git history and in `audits/2026-09-03-full-repository-audit.md` — not
+repeated here now that they don't describe the live app. Read that history
+directly if you need to understand something about how it worked, rather
+than porting a described-from-memory version of it.
 
-That doesn't change how you get there — the migration inventory's phased
-order (§F) and risk register (§G) already reflect the right amount of
-caution and don't need re-litigating. It does mean the cutover itself needs
-an explicit gate, not just "the last feature got ported." Before `app/` is
-proposed as the replacement for `main`, confirm and state plainly in the
-PR:
+## Cutover record
 
-1. **Full parity**, per `MIGRATION_INVENTORY.md`'s own parity matrix (§H) —
-   not just the features, the *business logic behind them* (R2, R3, R7, R8
-   in the risk register — quote/demand formulas, RLS/permission behaviour,
-   derived patch-panel counts, circuit branching) checked against the old
-   app's actual output, not re-derived from memory.
-2. **Security parity or better**, specifically: the new app is being built
-   fresh, which means it can just as easily reintroduce the unescaped-
-   `innerHTML` XSS pattern the audit found in the current app
-   (`audits/2026-09-03-full-repository-audit.md`, §8.1) — any place org/
-   project/user-supplied text reaches the DOM in the new UI needs to go
-   through an escaping helper from the start, not bolted on after. RLS
-   behaviour (R3/R6/R14) gets verified against the live Supabase project,
-   not assumed from reading the policy files.
-3. **§35's product audit (per the directive) actually happened** and its
-   findings are closed or explicitly accepted by the owner, not just
-   produced.
-4. **The physical cutover mechanics are a real decision, not an implicit
-   one** — does `app/` get promoted to replace the repo root, or does
-   `main` start deploying `app/`'s build output while `index.html` moves
-   elsewhere for reference? Flag this for the owner rather than picking
-   one; it affects every existing link/bookmark/deploy config.
-5. Still applies regardless of how close to done this looks: **no push to
-   `main` without the project owner's explicit review of that specific
-   cutover**, same as every other merge (see Workflow notes below). A full
-   product swap is the single highest-stakes merge this repo will see —
-   treat the review bar accordingly, not as a formality.
+Confirmed by the project owner and executed 2026-09-06. Per the gate this
+file used to describe before the cutover happened (kept below for the
+record of what was and wasn't actually checked at the time):
+
+1. **Full parity per `MIGRATION_INVENTORY.md`'s matrix** — the automated
+   `app/test/*-parity.mjs` suite existed and was passing pre-cutover; it
+   was **not** re-run as part of the cutover PR itself, and Layers/
+   Inspector are explicitly incomplete. Re-run the suite before trusting
+   it's still green.
+2. **Security parity** (the unescaped-`innerHTML` XSS pattern
+   `audits/2026-09-03-full-repository-audit.md` §8.1 found in the old app,
+   and RLS behaviour against the live Supabase project) — **not**
+   independently re-verified as part of the cutover. This is still open.
+3. **§35's product audit** (`PRODUCT_AUDIT.md`) was produced pre-cutover;
+   its findings were not re-confirmed closed at cutover time.
+4. **Physical cutover mechanics** — resolved as: `app/index.html`'s content
+   promoted to root `index.html` (with its one `src/main.jsx` reference
+   updated to `app/src/main.jsx`, since `app/src/` and `app/test/` stayed
+   where they were rather than also moving); the original app renamed to
+   `legacy-index.html` at the repo root rather than deleted or relocated
+   elsewhere.
+5. **Owner review** — the owner ran their own manual walkthrough pre-
+   cutover, found "a lot of stuff that needs adjusting" (their words, not
+   itemized here), and explicitly asked for the promotion regardless,
+   framing it as "we will now develop this version" rather than waiting on
+   1–3 above. That's a legitimate call for the owner to make; it means the
+   live app currently carries known, not-fully-verified risk on parity,
+   security, and two incomplete panels. Don't treat "it's live now" as
+   evidence those were actually checked.
 
 ### Code style + AI-authorship policy
 
