@@ -13,7 +13,7 @@ and skim the diffs (cheap) rather than assuming this file or your own memory
 of the code is current. Update the "Last synced" line and the relevant
 section below whenever you do.
 
-**Last synced with origin/main at commit: `da1ec6d` (2026-09-03)**
+**Last synced with origin/main at commit: `c930a57` (2026-09-05)**
 
 ## Core architecture
 
@@ -197,37 +197,34 @@ PR:
 
 ### Code style + AI-authorship policy
 
-The full version of this lives in `README.md` on `claude/repo-audit-redesign-hdfuir`
-(not yet merged to `main`) — restated here in full, not just linked, so it's
-actually visible on this branch rather than sitting unread on another one.
-Once that branch merges, treat README.md as the source of truth and this
-section as redundant.
+**`README.md` is the source of truth for this** (its "Code style for new
+work" and "AI-assisted development" sections) — it was merged to `main` in
+PR #14 (2026-09-05) after sitting unmerged on a side branch for two days.
+Read it there rather than expecting a restatement here; the short version:
+`core/` stays framework-free, `ui/` owns chrome only, ported business logic
+is extracted verbatim and checked against production's actual output (never
+re-derived from memory), and Prettier — not a freehand AI pass — is the only
+way dense legacy code gets reformatted.
 
-- The `core/` framework-free / `ui/`-owns-chrome split and the single
-  command registry, both already described above, are the house style now,
-  not just this redesign's internal convention — keep following them.
-- Business logic ported from `index.html` (quote totals, the load/demand
-  estimate, circuit routing, the cable-run estimate) gets extracted
-  **verbatim** and checked against the original's actual output, never
-  re-derived from memory. `MIGRATION_INVENTORY.md` §B already requires this
-  for the current port; it's the general rule for anything ported here on.
-- **Reformatting for readability goes through an actual formatter
-  (Prettier), never a freehand AI rewrite.** A formatter reprints from the
-  parsed syntax tree and is structurally incapable of changing behaviour;
-  an AI manually "cleaning up" dense single-line code for readability can
-  drift into small semantic changes without meaning to (a rename that
-  misses one call site, a ternary rewritten with different precedence). If
-  the dense single-line areas in the legacy `index.html` get reformatted,
-  do it as its own dedicated commit with zero functional changes mixed in,
-  so the diff is reviewable on its own.
-- An AI assistant may write and suggest code for a new feature on its own
-  initiative, but only once it's been run and traced through (not just
-  read) and shown not to regress, and only if it matches the surrounding
-  module's existing patterns rather than introducing a new one. Anything
-  that changes navigation, the document model, or security/permission
-  behaviour is not the assistant's call to make unilaterally — flag it for
-  the owner, the same way `MIGRATION_INVENTORY.md`'s "Items flagged for
-  owner review" already does for this port.
+## Repo / GitHub process
+
+- `main` has branch protection on (enabled 2026-09-05): PRs required, no
+  direct push, no force-push. Every change goes through a PR now — the
+  git history before this date has several commits that landed by direct
+  push instead, which is exactly what this closes off.
+- Two CI checks run automatically: `.github/workflows/boot-check.yml` loads
+  `index.html` headlessly and fails on any console error;
+  `.github/workflows/app-parity-tests.yml` runs `app/test/*.mjs` on any PR
+  touching `app/` or `index.html`. Neither existed before PR #14 — the
+  parity suite previously only ran when someone remembered to by hand.
+- `.github/PULL_REQUEST_TEMPLATE.md` and `.github/ISSUE_TEMPLATE/*` are in
+  place; `CONTRIBUTING.md` has the branch/commit/PR conventions in full.
+- `audits/2026-09-03-full-repository-audit.md` is the full repo audit
+  referenced elsewhere in this file and in `PLAN.md` — it now actually
+  exists on `main` (it was written back on 2026-09-03 but stranded on an
+  unmerged branch until PR #14).
+- Branches are kept clean: once a PR merges, delete its branch. As of
+  2026-09-05 the repo has exactly one branch, `main`.
 
 ## Workflow notes
 
