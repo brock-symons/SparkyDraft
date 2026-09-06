@@ -78,6 +78,10 @@ export function makePit(nextId, type, x, y) {
   return {
     id: 'PIT-' + String(nextId).padStart(3, '0'),
     typeId: type.id,
+    // Which service this pit belongs to (power vs comms) — independent
+    // of typeId, which is the pit's physical size/kind. Defaults to
+    // power since that's the more common case; editable afterward.
+    serviceType: 'power',
     x,
     y,
     label: '',

@@ -41,6 +41,7 @@ import { isCommsRack, patchPanelUnitsForRack, commsPortOptions } from '../core/c
 import { currentCivilPlan, conduitLength, conduitSizeTable } from '../core/civil.js';
 import {
   PIT_LIBRARY,
+  PIT_SERVICE_TYPES,
   POLE_LIBRARY,
   OVERHEAD_CONDUCTOR_SIZES,
   BUILDING_ENTRY_SERVICE_TYPES,
@@ -748,6 +749,11 @@ function MultiProperties({ objects, controller, sections, toggleSection, project
     return Array.from(by.entries()).sort((a, b) => b[1] - a[1]);
   }, [objects, project]);
 
+  // Blank when the selection spans more than one circuit (or a mix of
+  // assigned/unassigned) rather than guessing which one "wins".
+  const circuitIds = new Set(objects.map(o => o.circuit || ''));
+  const sharedCircuit = circuitIds.size === 1 ? [...circuitIds][0] : '';
+
   return (
     <>
       <div className="px-3 py-3">
@@ -761,6 +767,28 @@ function MultiProperties({ objects, controller, sections, toggleSection, project
         </div>
       </div>
       <Divider />
+
+      <Section title="Circuit" open={sections.circuit} onToggle={() => toggleSection('circuit')}>
+        <div className="px-3">
+          <Select
+            value={sharedCircuit}
+            onChange={e => controller.assignCircuit(objects.map(o => o.id), e.target.value)}
+          >
+            <option value="">
+              {circuitIds.size > 1 ? '— mixed —' : '— unassigned —'}
+            </option>
+            {(project.circuits || []).map(c => (
+              <option key={c.id} value={c.id}>
+                {c.id}
+                {c.description ? ' — ' + c.description : ''}
+              </option>
+            ))}
+          </Select>
+          <div className="mt-1.5 text-2xs text-ink-400">
+            Assigns all {objects.length} selected devices to one circuit.
+          </div>
+        </div>
+      </Section>
 
       <Section title="Align" open={sections.align} onToggle={() => toggleSection('align')}>
         <div className="px-3">
@@ -981,6 +1009,18 @@ function CivilProperties({ doc, controller, sections, toggleSection }) {
           <Row label="Type">
             <Select value={obj.typeId} onChange={e => set({ typeId: e.target.value })}>
               {PIT_LIBRARY.map(t => (
+                <option key={t.id} value={t.id}>
+                  {t.label}
+                </option>
+              ))}
+            </Select>
+          </Row>
+          <Row label="Service">
+            <Select
+              value={obj.serviceType || 'power'}
+              onChange={e => set({ serviceType: e.target.value })}
+            >
+              {PIT_SERVICE_TYPES.map(t => (
                 <option key={t.id} value={t.id}>
                   {t.label}
                 </option>

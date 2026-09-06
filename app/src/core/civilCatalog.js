@@ -1,14 +1,16 @@
 // ===================================================================
-// CIVIL / UNDERGROUND CATALOG  (migration Phase 7)
+// CIVIL / UNDERGROUND CATALOG
 //
-// Extracted VERBATIM from the root index.html, exactly as
-// catalog.js was for the electrical libraries. Costs, sizes, colours
-// and labour rates here are domain data owned by the existing product —
-// this file must stay a faithful copy, never an "improved" version.
-// Changing any value changes civil quoting output.
+// Originally extracted VERBATIM from the pre-cutover root index.html
+// during migration Phase 7, exactly as catalog.js was for the
+// electrical libraries. That app is now legacy-index.html — this file
+// IS the live product's civil catalog going forward, so real additions
+// (a new pole type, a new pit category) belong here directly.
 //
-// Sync check: if index.html's civil libraries change, RE-EXTRACT rather
-// than hand-patching here.
+// Costs, sizes, colours and labour rates feed civil quoting directly —
+// run `node app/test/civil-parity.mjs` after touching this file to
+// confirm the ported math still computes correctly against whatever
+// data is here now.
 // ===================================================================
 
 const PIT_LIBRARY = [
@@ -42,6 +44,13 @@ const COMMS_CONDUIT_SIZES = [
   { id:'nbn50', size:'50mm', color:'#0ea5e9', material_cost_per_m:3.6, labour_hours_per_m:0.065 },
   { id:'nbn63', size:'63mm', color:'#0284c7', material_cost_per_m:5.1, labour_hours_per_m:0.075 },
 ];
+// Which service a pit belongs to — separate from PIT_LIBRARY (which is
+// physical size/kind, e.g. a 450x450 pit can be either a power pit or a
+// comms pit on the same job).
+const PIT_SERVICE_TYPES = [
+  { id:'power', label:'Power', color:'#f97316' },
+  { id:'comms', label:'Comms', color:'#60a5fa' },
+];
 const BUILDING_ENTRY_SERVICE_TYPES = [
   { id:'power', label:'Power', color:'#f97316' },
   { id:'data', label:'Data / comms', color:'#4ade80' },
@@ -57,6 +66,8 @@ const POLE_LIBRARY = [
   { id:'pole_timber', label:'Timber pole', abbr:'PT', color:'#8b5e34', defaultProps:{ material_cost:420, labour_hours:4 } },
   { id:'pole_concrete', label:'Concrete pole', abbr:'PC', color:'#94a3b8', defaultProps:{ material_cost:680, labour_hours:5 } },
   { id:'pole_steel', label:'Steel pole', abbr:'PS', color:'#64748b', defaultProps:{ material_cost:750, labour_hours:5 } },
+  { id:'pole_light', label:'Light pole', abbr:'PLT', color:'#facc15', defaultProps:{ material_cost:950, labour_hours:5 } },
+  { id:'pole_camera', label:'Camera pole', abbr:'PCA', color:'#f472b6', defaultProps:{ material_cost:1100, labour_hours:5.5 } },
 ];
 // Aerial Bundled Cable sizes (typical AU overhead service/consumer-mains
 // conductor) — a distinct purple family, visually unmistakable from both
@@ -70,6 +81,7 @@ const OVERHEAD_CONDUCTOR_SIZES = [
 ];
 export {
   PIT_LIBRARY,
+  PIT_SERVICE_TYPES,
   CONDUIT_SIZES,
   COMMS_CONDUIT_SIZES,
   BUILDING_ENTRY_SERVICE_TYPES,

@@ -260,6 +260,7 @@ function WorkspaceRoot({ projectId, initialProject, readOnly, sharedByName, onEx
       electrical: true,
       switching: true,
       cost: false,
+      circuit: true,
       align: true,
       actions: true,
     }
