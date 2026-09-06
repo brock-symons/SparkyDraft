@@ -4,7 +4,13 @@ Sparky Draft is a mobile-first web app for drafting electrical switchboard and f
 
 ## Getting started
 
-Open `index.html` in a browser — it's a self-contained single-page app with no build step.
+`index.html` at the repo root is the live app — a React + Tailwind workspace whose actual source lives under `app/src/`. There's still no build step: the page loads `app/src/main.jsx` through a small in-browser Babel loader (see the comment in `index.html` for why).
+
+**It has to be served over `http://`, not opened as a local file.** The module loader uses `fetch()` to pull in each `.jsx`/`.js` file, and browsers block that from a bare `file://` page (a CORS restriction, not a bug specific to this app). Serve the repo root with anything simple — `python3 -m http.server`, `npx serve`, VS Code's Live Server extension — then open `http://localhost:<port>/index.html`. Opening the file directly will show "SparkyDraft failed to start."
+
+`legacy-index.html` is the original single-file vanilla-JS implementation this app replaced (2026-09-06 cutover) — kept for reference and as the parity tests' ground truth, not maintained as a second live app.
+
+**Known gaps as of the cutover:** the Layers and Inspector/properties panels are still partial, not full builds. The rest (drafting, circuits, panel schedule, quote, civil/underground works, comms racks, print/PDF, cloud sync/sharing) is parity-tested against `legacy-index.html`'s original logic — see "Running the parity tests" in `PLAN.md` — but the cloud/auth side has only been exercised with stubbed logins, never a real signed-in session against the live Supabase project.
 
 ## Database
 
