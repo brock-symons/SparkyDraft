@@ -332,7 +332,10 @@ export function ProjectPicker({
                   }
                   className={cx('flex min-w-0 flex-1 items-center gap-3 text-left', focusRing)}
                 >
-                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-ink-100 text-ink-400">
+                  <span
+                    aria-hidden="true"
+                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-ink-100 text-ink-400"
+                  >
                     {p.where === 'org' ? '👥' : p.where === 'cloud' ? '☁' : '▦'}
                   </span>
                   <span className="min-w-0 flex-1">
@@ -357,7 +360,7 @@ export function ProjectPicker({
                       <IconButton
                         label={`Manage who can edit ${p.name || 'drawing'}`}
                         size="sm"
-                        className="opacity-0 transition-opacity focus-visible:opacity-100 group-hover:opacity-100"
+                        className="opacity-0 transition-opacity focus-visible:opacity-100 group-hover:opacity-100 [@media(hover:none)]:opacity-100"
                         onClick={() => setManageAccess(p)}
                       >
                         🔑
@@ -367,7 +370,7 @@ export function ProjectPicker({
                       <IconButton
                         label={`Share ${p.name || 'drawing'} to ${cloud.currentOrg.name}`}
                         size="sm"
-                        className="opacity-0 transition-opacity focus-visible:opacity-100 group-hover:opacity-100"
+                        className="opacity-0 transition-opacity focus-visible:opacity-100 group-hover:opacity-100 [@media(hover:none)]:opacity-100"
                         onClick={() => onShare(p)}
                       >
                         👥
@@ -378,7 +381,7 @@ export function ProjectPicker({
                   <IconButton
                     label={`Delete ${p.name || 'drawing'}`}
                     size="sm"
-                    className="opacity-0 transition-opacity focus-visible:opacity-100 group-hover:opacity-100"
+                    className="opacity-0 transition-opacity focus-visible:opacity-100 group-hover:opacity-100 [@media(hover:none)]:opacity-100"
                     onClick={() => setConfirmDelete(p)}
                   >
                     ✕
