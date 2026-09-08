@@ -148,6 +148,11 @@ way dense legacy code gets reformatted.
   unmerged branch until PR #14).
 - Branches are kept clean: once a PR merges, delete its branch. As of
   2026-09-05 the repo has exactly one branch, `main`.
+- `package.json` + `eslint.config.js` (added 2026-09-08) are dev-tooling
+  only — they do NOT introduce a build step or runtime dependency for the
+  app itself. `npm install` then `npm run lint` checks `app/src` and
+  `app/test`; React's plugin version is hardcoded (`'18.3'`) rather than
+  `detect`, since React loads from a CDN in `index.html`, not npm.
 
 ## Workflow notes
 

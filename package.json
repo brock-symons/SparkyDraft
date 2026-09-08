@@ -1,0 +1,15 @@
+{
+  "name": "sparkydraft",
+  "private": true,
+  "description": "Dev tooling only. The app itself has no build step and no runtime dependencies here — see README.md and CLAUDE.md.",
+  "scripts": {
+    "lint": "eslint app/src app/test",
+    "test": "for f in app/test/*.mjs; do node \"$f\" || exit 1; done"
+  },
+  "devDependencies": {
+    "eslint": "^9.9.0",
+    "eslint-plugin-react": "^7.35.0",
+    "eslint-plugin-react-hooks": "^5.0.0",
+    "globals": "^15.9.0"
+  }
+}
