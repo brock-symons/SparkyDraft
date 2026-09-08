@@ -1,0 +1,24 @@
+# OS junk
+.DS_Store
+Thumbs.db
+
+# Editor/IDE
+.vscode/
+.idea/
+*.swp
+
+# Local env/secrets (this app currently hardcodes its public Supabase
+# anon key in app/src/core/cloud.js, but if that ever moves to a real
+# env-based config, keep the actual values out of git)
+.env
+.env.local
+.env.*.local
+
+# Node (not currently used by this no-build-step app, but harmless to
+# ignore in case that changes, or in case a contributor runs local
+# tooling like a linter/formatter via npx with a node_modules cache)
+node_modules/
+
+# Logs
+*.log
+npm-debug.log*

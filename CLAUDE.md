@@ -21,8 +21,10 @@ and skim the diffs (cheap) rather than assuming this file or your own memory
 of the code is current. Update the "Last synced" line and the relevant
 section below whenever you do.
 
-**Last synced with origin/main at commit: `bb52705` (2026-09-06)** — the
-commit right before this file's own cutover-record update landed.
+**Last synced with origin/main at commit: `20841f7` (2026-09-08)** — right
+after PR #18 (rail reorder, snap-off default, empty-plan hint wording) and
+PR #17 (protection library additions, poles, pit service type, viewer-only
+layer visibility, multi-circuit assignment) both merged.
 
 ## Core architecture (the live React app)
 
@@ -63,9 +65,19 @@ its pre-cutover product review.
   `legacy-index.html` at run time and compare. Run them all before trusting
   a change to `app/src/core/`.
 - Known incomplete pieces, as of the 2026-09-06 cutover: the **Layers** and
-  **Inspector/properties** panels are both still partial builds, not
-  finished. Treat bugs found there as expected gaps, not regressions, until
-  someone does the work to finish them.
+  **Inspector/properties** panels were both still partial builds. Since then
+  (PR #17/#18, 2026-09-08) Layers gained a read-only-viewer-safe visibility
+  toggle (`controller.toggleLayerVisibility`/`isLayerHidden` — a local,
+  non-persisted override when `doc.readOnly`) and Inspector gained
+  multi-select bulk circuit assignment and a pit "Service" (power/data) row.
+  Still treat other gaps in either panel as expected, not regressions, until
+  someone does the rest of the work.
+- Device symbols currently render as one identical shape per category
+  (a circle, differing only by colour and a 1-4 letter abbreviation) rather
+  than the AS 1102.111/IEC 60617 two-layer shape+lettering convention real
+  electrical drawings use — flagged this session as a real gap, not yet
+  actioned. See the "Symbol Distinguishability Research" doc/tab for detail
+  and ranked recommendations before touching `renderer.js`'s `drawDevice()`.
 - The cloud/auth path (sign-in, sync, org sharing) has only ever been
   exercised with stubbed logins — nobody has done a walkthrough with a real
   signed-in account against the live Supabase project. Don't assume it's
@@ -147,7 +159,10 @@ way dense legacy code gets reformatted.
   exists on `main` (it was written back on 2026-09-03 but stranded on an
   unmerged branch until PR #14).
 - Branches are kept clean: once a PR merges, delete its branch. As of
-  2026-09-05 the repo has exactly one branch, `main`.
+  2026-09-08 the repo has exactly one branch, `main` (3 stale merged remote
+  branches and 8 stale local branch references were cleaned up that day).
+- The repo has a `.gitignore` and a `LICENSE` (proprietary/All Rights
+  Reserved) as of 2026-09-08 — neither existed before then.
 
 ## Workflow notes
 
