@@ -298,7 +298,7 @@ export function LayersPanel({ doc, controller, counts }) {
   const project = doc.state;
   const locked = project.lockedLayers || [];
   const floor = currentFloor(project);
-  const symbolFor = id => resolveSymbol(project, id);
+  const symbolFor = useMemo(() => id => resolveSymbol(project, id), [project]);
 
   function toggle(list, id, label) {
     doc.commit(label, dd => {
@@ -313,7 +313,7 @@ export function LayersPanel({ doc, controller, counts }) {
   // they annotate, rather than as palette-only commands with no visible
   // state — see the section comment above computeLegendEntries for why
   // the legend itself belongs here.
-  const legend = useMemo(() => computeLegendEntries(floor, symbolFor), [floor, project]);
+  const legend = useMemo(() => computeLegendEntries(floor, symbolFor), [floor, symbolFor]);
   const total = legend.reduce((s, e) => s + e.count, 0);
 
   // No title bar here — the dock/sheet that hosts this panel renders it

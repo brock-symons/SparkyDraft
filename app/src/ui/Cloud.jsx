@@ -663,8 +663,14 @@ function OrgsTab({ pushToast }) {
   const [confirmRemove, setConfirmRemove] = useState(null);
   const org = cloud.currentOrg;
   const isAdmin = cloud.orgRole === 'admin';
+  // Reset the edit field only when the org's id or name actually changes,
+  // not on every re-render that hands back a new `org` object reference —
+  // otherwise an in-progress rename would get clobbered on unrelated cloud
+  // state updates.
+  const orgId = org ? org.id : null;
+  const orgName = org ? org.name : null;
 
-  useEffect(() => setEditName(org ? org.name : ''), [org && org.id, org && org.name]);
+  useEffect(() => setEditName(orgName || ''), [orgId, orgName]);
 
   async function create(name) {
     if (!name.trim()) return pushToast('Enter an organisation name');

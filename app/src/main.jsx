@@ -149,7 +149,7 @@ function WorkspaceRoot({ projectId, initialProject, readOnly, sharedByName, onEx
   // --- view (kept in a ref: panning must not re-render React) --------
   const viewRef = useRef({ zoom: 1, offsetX: 0, offsetY: 0 });
   const viewportRef = useRef({ width: 0, height: 0 });
-  const [viewTick, setViewTick] = useState(0);
+  const [, setViewTick] = useState(0);
   const getView = useCallback(() => viewRef.current, []);
   const setView = useCallback(v => {
     viewRef.current = v;
@@ -1334,7 +1334,7 @@ function WorkspaceRoot({ projectId, initialProject, readOnly, sharedByName, onEx
       if (s) counts[s.category] = (counts[s.category] || 0) + 1;
     }
     return counts;
-  }, [doc.state]);
+  }, [doc.state, symbolFor]);
 
   const leftPanel =
     panels.left === 'layers' ? (
@@ -1470,7 +1470,6 @@ function WorkspaceRoot({ projectId, initialProject, readOnly, sharedByName, onEx
       {civilMaterialsOpen && (
         <CivilMaterialsDialog
           doc={doc}
-          symbolFor={symbolFor}
           onClose={() => setCivilMaterialsOpen(false)}
           onExport={(plan, schedule, legend) =>
             setExportText({
@@ -1902,7 +1901,7 @@ function cxRow(i) {
  * Every figure comes from core/civil.js, ported verbatim and checked
  * against the current app by app/test/civil-parity.mjs.
  */
-function CivilMaterialsDialog({ doc, symbolFor, onClose, onExport }) {
+function CivilMaterialsDialog({ doc, onClose, onExport }) {
   const project = doc.state;
   const plan = currentCivilPlan(project);
   const { rateLabour } = quoteSettings(project);
@@ -3066,7 +3065,7 @@ function PanelScheduleDialog({ doc, controller, symbolFor, onClose, onExport }) 
         )}
 
         <p className="mt-2 text-2xs leading-relaxed text-ink-400">
-          Connected load uses each device's typical load from the device library (editable per
+          Connected load uses each device&rsquo;s typical load from the device library (editable per
           device and per type). Demand load applies a simplified diversity estimate for early
           planning only — always verify against AS/NZS 3000 and your own professional judgement
           before relying on it for a real installation.

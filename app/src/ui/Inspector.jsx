@@ -27,7 +27,6 @@ import {
   Toggle,
   Button,
   IconButton,
-  EmptyState,
   FieldLabel,
   Divider,
   cx,
@@ -54,7 +53,7 @@ import {
   bankDisplayName,
 } from '../core/switching.js';
 
-const { useState, useMemo } = React;
+const { useMemo } = React;
 
 function SymbolChip({ sym, size = 'md' }) {
   if (!sym) return null;
@@ -96,7 +95,7 @@ function DrawingProperties({
       by[cat] = (by[cat] || 0) + 1;
     }
     return by;
-  }, [d.objects]);
+  }, [d.objects, doc.state]);
 
   return (
     <>
@@ -402,7 +401,6 @@ function SwitchingSection({ obj, doc, controller, sections, toggleSection, onSta
   }
 
   const groups = groupsForSwitch(floor, obj.id);
-  const defaults = (resolveSymbol(project, obj.symbolId) || {}).defaultProps || {};
 
   return (
     <Section
@@ -901,7 +899,7 @@ function civilSelected(plan, selection) {
 }
 
 /** "PIT-003 → BE-001" style summary of what a run connects. */
-function runEnds(run, isConduit) {
+function runEnds(run) {
   const end = prefix =>
     run[prefix + 'PitId'] || run[prefix + 'PoleId'] || run[prefix + 'BuildingEntryId'] || null;
   const from = end('from');
@@ -1199,7 +1197,7 @@ function CivilProperties({ doc, controller, sections, toggleSection }) {
             <div className="text-sm tnum text-ink-700">{Math.max(0, obj.points.length - 2)}</div>
           </Row>
           <Row label="Connects">
-            <div className="truncate text-2xs text-ink-600">{runEnds(obj, kind === 'conduit')}</div>
+            <div className="truncate text-2xs text-ink-600">{runEnds(obj)}</div>
           </Row>
           {/* A transition is only meaningful where a run meets a pole —
               that is physically where the medium changes. */}

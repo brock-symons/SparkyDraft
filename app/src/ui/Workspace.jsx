@@ -27,7 +27,7 @@ import { SaveState } from '../core/persistence.js';
 import { formatDistance } from '../core/geometry.js';
 import { currentFloor } from '../core/document.js';
 
-const { useState, useRef, useEffect, useCallback } = React;
+const { useRef, useEffect } = React;
 
 // --- save state (§17) -------------------------------------------------
 // Reflects real persistence outcomes. There is no timer-driven "Saved!"
@@ -163,7 +163,7 @@ function Sheet({ open, title, onClose, children }) {
 // Answers "where am I / what's selected / what will snapping do" without
 // the user having to ask.
 
-function StatusBar({ controller, doc, view }) {
+function StatusBar({ controller, view }) {
   // Reads whichever plan is on screen: a site plan has its own scale and
   // snap setting, and showing the floor plan's while drawing civil would
   // be worse than showing nothing.
@@ -226,7 +226,7 @@ function contentSummary(controller, plan) {
 
 // --- tool rail --------------------------------------------------------
 
-function ToolRail({ tools, controller, registry, ctx, panels, onTogglePanel, readOnly }) {
+function ToolRail({ tools, controller, panels, onTogglePanel, readOnly }) {
   return (
     <div className="hidden w-11 shrink-0 flex-col items-center gap-0.5 border-r border-ink-200 bg-white py-2 sm:flex">
       {tools.map(t =>
@@ -834,8 +834,6 @@ export function Workspace({
         <ToolRail
           tools={activeTools}
           controller={controller}
-          registry={registry}
-          ctx={ctx}
           panels={panels}
           onTogglePanel={onTogglePanel}
           readOnly={readOnly}
@@ -887,7 +885,7 @@ export function Workspace({
         )}
       </div>
 
-      <StatusBar controller={controller} doc={doc} view={view} />
+      <StatusBar controller={controller} view={view} />
       <MobileBar
         tools={activeTools}
         panels={panels}
