@@ -38,7 +38,7 @@ export function makeCivilPlan(name) {
     scale: null,
     view: { zoom: 1, offsetX: 0, offsetY: 0 },
     gridSpacingMM: 1000,
-    snapEnabled: true,
+    snapEnabled: false,
     gridOriginX: 0,
     gridOriginY: 0,
     gridVisible: true,

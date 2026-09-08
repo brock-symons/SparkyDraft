@@ -107,6 +107,7 @@ const PROTECTION_LIBRARY = [
   { id:'mcb20', label:'20A MCB', cost:15, amps:20 },
   { id:'rcbo16', label:'16A RCBO', cost:32, amps:16 },
   { id:'rcbo20', label:'20A RCBO', cost:35, amps:20 },
+  { id:'rcbo25', label:'25A RCBO', cost:38, amps:25 },
   { id:'rcbo32', label:'32A RCBO', cost:42, amps:32 },
   { id:'rcbo40', label:'40A RCBO', cost:48, amps:40 },
   { id:'rcd', label:'RCD (safety switch)', cost:55, amps:null },

@@ -255,9 +255,6 @@ function ToolRail({ tools, controller, registry, ctx, panels, onTogglePanel, rea
             { slot: 'civilPlans', label: 'Site plans', icon: '▤' },
           ]
         : [
-            { slot: 'comms', label: 'Comms racks', icon: '⌸' },
-            { slot: 'circuits', label: 'Circuits', icon: '◎', shortcut: 'Shift+C' },
-            { slot: 'layers', label: 'Layers', icon: '▤', shortcut: 'L' },
             // Nothing to place on a project you can only view, so the
             // component library is not offered. Layers, circuits and
             // comms stay — they are how a viewer reads the drawing.
@@ -273,6 +270,9 @@ function ToolRail({ tools, controller, registry, ctx, panels, onTogglePanel, rea
             ...(readOnly
               ? []
               : [{ slot: 'library', label: 'Place a device', icon: '⊞', shortcut: 'P' }]),
+            { slot: 'circuits', label: 'Circuits', icon: '◎', shortcut: 'Shift+C' },
+            { slot: 'comms', label: 'Comms racks', icon: '⌸' },
+            { slot: 'layers', label: 'Layers', icon: '▤', shortcut: 'L' },
           ]
       ).map(b => (
         <IconButton
@@ -507,7 +507,7 @@ function EmptyCanvasHint({ onOpenLibrary, hasPlan, readOnly }) {
   return (
     <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center">
       <div className="pointer-events-auto max-w-[300px] rounded-xl border border-white/10 bg-ink-900/70 px-5 py-4 text-center backdrop-blur">
-        <div className="text-sm font-medium text-white/90">Empty drawing</div>
+        <div className="text-sm font-medium text-white/90">Import floor plan</div>
         <div className="mt-1 text-2xs leading-relaxed text-white/50">
           Import a floor plan to trace over, or place devices straight onto the grid.
         </div>
