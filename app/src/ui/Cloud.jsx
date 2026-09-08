@@ -947,35 +947,34 @@ export function ProjectAccessDialog({ projectId, projectName, onClose, pushToast
                 {isOwner && <RoleTag>OWNER</RoleTag>}
                 {isAdmin && <RoleTag tone="amber">ADMIN</RoleTag>}
                 <span className="text-2xs text-ink-400">Can edit</span>
-                <span className={alwaysEditor ? 'pointer-events-none opacity-40' : ''}>
-                  <Toggle
-                    label={`Can edit — ${m.user_name || m.user_id}`}
-                    checked={!!isEditor}
-                    onChange={async () => {
-                      if (alwaysEditor) return;
-                      const nowOn = !isEditor;
+                <Toggle
+                  label={`Can edit — ${m.user_name || m.user_id}`}
+                  checked={!!isEditor}
+                  disabled={alwaysEditor}
+                  onChange={async () => {
+                    if (alwaysEditor) return;
+                    const nowOn = !isEditor;
+                    setEditorIds(prev => {
+                      const next = new Set(prev);
+                      if (nowOn) next.add(m.user_id);
+                      else next.delete(m.user_id);
+                      return next;
+                    });
+                    const res = await setProjectAccessRole(projectId, m.user_id, nowOn);
+                    if (!res.ok) {
+                      // Put the switch back — leaving it showing a
+                      // permission that was never granted is the one
+                      // failure mode this screen must not have.
                       setEditorIds(prev => {
                         const next = new Set(prev);
-                        if (nowOn) next.add(m.user_id);
-                        else next.delete(m.user_id);
+                        if (nowOn) next.delete(m.user_id);
+                        else next.add(m.user_id);
                         return next;
                       });
-                      const res = await setProjectAccessRole(projectId, m.user_id, nowOn);
-                      if (!res.ok) {
-                        // Put the switch back — leaving it showing a
-                        // permission that was never granted is the one
-                        // failure mode this screen must not have.
-                        setEditorIds(prev => {
-                          const next = new Set(prev);
-                          if (nowOn) next.delete(m.user_id);
-                          else next.add(m.user_id);
-                          return next;
-                        });
-                        pushToast(res.error);
-                      } else pushToast(res.notice);
-                    }}
-                  />
-                </span>
+                      pushToast(res.error);
+                    } else pushToast(res.notice);
+                  }}
+                />
               </div>
             );
           })}
