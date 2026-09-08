@@ -14,9 +14,8 @@ Thumbs.db
 .env.local
 .env.*.local
 
-# Node (not currently used by this no-build-step app, but harmless to
-# ignore in case that changes, or in case a contributor runs local
-# tooling like a linter/formatter via npx with a node_modules cache)
+# Node (used for dev tooling only — ESLint — the app itself has no
+# build step and no npm runtime dependency)
 node_modules/
 
 # Logs

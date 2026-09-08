@@ -86,6 +86,9 @@ Original single-file vanilla-JS app. One global `state`, ~240 top-level function
 
 - **.gitignore** — new, this session. Standard OS/editor/env noise plus `node_modules/` (harmless pre-emptive add — repo currently has no build step / no npm deps).
 - **LICENSE** — new, this session. Proprietary/All Rights Reserved, per explicit owner choice (not open source) — copyright to Brock Symons.
+- **package.json** — new, this session, dev-tooling-only (`"private": true`). Does NOT introduce a build step or runtime deps for the app itself — only lists `eslint`/`eslint-plugin-react`/`eslint-plugin-react-hooks`/`globals` as devDependencies. `npm run lint` and `npm test` (re-runs the parity suite) are the two scripts.
+- **eslint.config.js** — new, this session. Flat config (ESLint 9). Two blocks: `app/src/**/*.{js,jsx}` (browser globals, JSX, React-hooks rules, `react-in-jsx-scope`/`prop-types` off since this app has no JSX-runtime import and no prop-types convention) and `app/test/**/*.mjs` (node globals). `react.settings.version` is hardcoded to `'18.3'`, not `'detect'` — React loads from a CDN, not npm.
+- First lint run (2026-09-08): 1 error (`react/no-unescaped-entities` in `main.jsx:3069`), 29 warnings (unused vars, a few `react-hooks/exhaustive-deps`) — left unfixed for owner triage, since mechanically "fixing" a hook dependency list can change render behaviour.
 
 ## This session's own changes (for context, not yet in CLAUDE.md's own log)
 

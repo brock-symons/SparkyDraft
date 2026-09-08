@@ -163,6 +163,11 @@ way dense legacy code gets reformatted.
   branches and 8 stale local branch references were cleaned up that day).
 - The repo has a `.gitignore` and a `LICENSE` (proprietary/All Rights
   Reserved) as of 2026-09-08 — neither existed before then.
+- `package.json` + `eslint.config.js` (added 2026-09-08) are dev-tooling
+  only — they do NOT introduce a build step or runtime dependency for the
+  app itself. `npm install` then `npm run lint` checks `app/src` and
+  `app/test`; React's plugin version is hardcoded (`'18.3'`) rather than
+  `detect`, since React loads from a CDN in `index.html`, not npm.
 
 ## Workflow notes
 
