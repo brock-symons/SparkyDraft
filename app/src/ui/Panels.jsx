@@ -296,7 +296,6 @@ export function LayersPanel({ doc, controller, counts }) {
   // hides it on every floor at once, matching production. Only the device
   // count is floor-scoped.
   const project = doc.state;
-  const hidden = project.hiddenLayers || [];
   const locked = project.lockedLayers || [];
   const floor = currentFloor(project);
   const symbolFor = id => resolveSymbol(project, id);
@@ -323,7 +322,14 @@ export function LayersPanel({ doc, controller, counts }) {
     <div className="flex h-full flex-col">
       <div className="min-h-0 flex-1 overflow-y-auto py-1">
         {LAYER_DEFS.map(layer => {
-          const isHidden = hidden.includes(layer.id);
+          // Routed through the controller, not the raw project array —
+          // a read-only viewer's hide/show choice lives in a LOCAL
+          // override there (see toggleLayerVisibility in controller.js)
+          // rather than in the shared document, since a viewer can't
+          // doc.commit at all. Editors are unaffected: the controller
+          // falls straight through to the project's own hiddenLayers for
+          // them, so this reads identically to before for that case.
+          const isHidden = controller.isLayerHidden(layer.id);
           const isLocked = locked.includes(layer.id);
           const n = counts[layer.id] || 0;
           return (
@@ -358,9 +364,7 @@ export function LayersPanel({ doc, controller, counts }) {
               <Toggle
                 label={isHidden ? `Show ${layer.name}` : `Hide ${layer.name}`}
                 checked={!isHidden}
-                onChange={() =>
-                  toggle('hiddenLayers', layer.id, isHidden ? 'Show layer' : 'Hide layer')
-                }
+                onChange={() => controller.toggleLayerVisibility(layer.id)}
               />
             </div>
           );

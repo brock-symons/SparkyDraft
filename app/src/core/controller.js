@@ -142,11 +142,44 @@ export function createController({ doc, getView, setView, getViewport, onChange,
     return currentFloor(doc.state);
   }
 
+  // A viewer of a shared project can't edit the document at all (see
+  // doc.commit's readOnly guard) — but choosing which layers to look at
+  // is reading the drawing, not changing it, the same distinction the
+  // Layers panel already draws between hiding and locking. So read-only
+  // visibility toggles go into a LOCAL override instead of doc.commit:
+  // seeded from the project's actual settings the moment a viewer first
+  // touches one, never written back to the document, never persisted,
+  // and never visible to anyone else looking at the same shared project.
+  // Editors are untouched — they still go straight through doc.commit,
+  // same as before this existed.
+  let localHiddenLayers = null; // null until a viewer's first toggle; then a Set
+
+  function effectiveHiddenLayers() {
+    return localHiddenLayers ? Array.from(localHiddenLayers) : project().hiddenLayers || [];
+  }
+
   function isLayerHidden(layerId) {
-    return (project().hiddenLayers || []).includes(layerId);
+    return effectiveHiddenLayers().includes(layerId);
   }
   function isLayerLocked(layerId) {
     return (project().lockedLayers || []).includes(layerId);
+  }
+
+  function toggleLayerVisibility(layerId) {
+    if (doc.readOnly) {
+      if (!localHiddenLayers) localHiddenLayers = new Set(project().hiddenLayers || []);
+      if (localHiddenLayers.has(layerId)) localHiddenLayers.delete(layerId);
+      else localHiddenLayers.add(layerId);
+      notify();
+      return;
+    }
+    const hiding = !isLayerHidden(layerId);
+    doc.commit(hiding ? 'Hide layer' : 'Show layer', d => {
+      const arr = d.hiddenLayers || (d.hiddenLayers = []);
+      const i = arr.indexOf(layerId);
+      if (i >= 0) arr.splice(i, 1);
+      else arr.push(layerId);
+    });
   }
   function symbolCategoryOf(obj, symbolFor) {
     const s = symbolFor(obj.symbolId);
@@ -2192,6 +2225,7 @@ export function createController({ doc, getView, setView, getViewport, onChange,
     // actions
     setSymbolResolver,
     setTool,
+    toggleLayerVisibility,
     setActiveSymbol,
     setCableSize,
     setSegmentCableSize,

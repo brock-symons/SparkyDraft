@@ -1,14 +1,16 @@
 // ===================================================================
-// CIVIL / UNDERGROUND CATALOG  (migration Phase 7)
+// CIVIL / UNDERGROUND CATALOG
 //
-// Extracted VERBATIM from the root index.html, exactly as
-// catalog.js was for the electrical libraries. Costs, sizes, colours
-// and labour rates here are domain data owned by the existing product —
-// this file must stay a faithful copy, never an "improved" version.
-// Changing any value changes civil quoting output.
+// Originally extracted VERBATIM from the pre-cutover root index.html
+// during migration Phase 7, exactly as catalog.js was for the
+// electrical libraries. That app is now legacy-index.html — this file
+// IS the live product's civil catalog going forward, so real additions
+// (a new pole type, a new pit category) belong here directly.
 //
-// Sync check: if index.html's civil libraries change, RE-EXTRACT rather
-// than hand-patching here.
+// Costs, sizes, colours and labour rates feed civil quoting directly —
+// run `node app/test/civil-parity.mjs` after touching this file to
+// confirm the ported math still computes correctly against whatever
+// data is here now.
 // ===================================================================
 
 const PIT_LIBRARY = [
@@ -49,6 +51,18 @@ const BUILDING_ENTRY_SERVICE_TYPES = [
   { id:'water', label:'Water', color:'#38bdf8' },
   { id:'gas', label:'Gas', color:'#facc15' },
 ];
+// Which service a pit belongs to — power vs comms — deliberately reuses
+// BUILDING_ENTRY_SERVICE_TYPES's own 'power' and 'data' categories
+// rather than a second, bespoke power/comms pair: a pit and a building
+// entry serving the same underground run should agree on what to call
+// it (same id, same label, same colour), not describe it two different
+// ways depending on which object you clicked. 'data' — not the
+// separate 'comms'/Telco entry above — is the intended match: it's the
+// general "data/comms" category, which is what an underground comms
+// pit actually carries.
+const PIT_SERVICE_TYPES = BUILDING_ENTRY_SERVICE_TYPES.filter(
+  t => t.id === 'power' || t.id === 'data'
+);
 // Private poles only — a "network pole" (Ausgrid/Endeavour/etc-owned) is
 // a placeholder attachment POINT, not a fully-specified object like these,
 // so it's placed via the same tool/array (see civilPoleCardClick) but
@@ -70,6 +84,7 @@ const OVERHEAD_CONDUCTOR_SIZES = [
 ];
 export {
   PIT_LIBRARY,
+  PIT_SERVICE_TYPES,
   CONDUIT_SIZES,
   COMMS_CONDUIT_SIZES,
   BUILDING_ENTRY_SERVICE_TYPES,
