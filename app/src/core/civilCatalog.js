@@ -71,6 +71,8 @@ const POLE_LIBRARY = [
   { id:'pole_timber', label:'Timber pole', abbr:'PT', color:'#8b5e34', defaultProps:{ material_cost:420, labour_hours:4 } },
   { id:'pole_concrete', label:'Concrete pole', abbr:'PC', color:'#94a3b8', defaultProps:{ material_cost:680, labour_hours:5 } },
   { id:'pole_steel', label:'Steel pole', abbr:'PS', color:'#64748b', defaultProps:{ material_cost:750, labour_hours:5 } },
+  { id:'pole_light', label:'Light pole', abbr:'PLT', color:'#facc15', defaultProps:{ material_cost:950, labour_hours:5 } },
+  { id:'pole_camera', label:'Camera pole', abbr:'PCA', color:'#f472b6', defaultProps:{ material_cost:1100, labour_hours:5.5 } },
 ];
 // Aerial Bundled Cable sizes (typical AU overhead service/consumer-mains
 // conductor) — a distinct purple family, visually unmistakable from both

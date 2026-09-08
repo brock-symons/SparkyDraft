@@ -108,6 +108,8 @@ const CABLE_SIZES = [
 ];
 
 const PROTECTION_LIBRARY = [
+  { id:'mcb10', label:'10A MCB', cost:14, amps:10 },
+  { id:'rcbo10', label:'10A RCBO', cost:30, amps:10 },
   { id:'mcb16', label:'16A MCB', cost:14, amps:16 },
   { id:'mcb20', label:'20A MCB', cost:15, amps:20 },
   { id:'mcb25', label:'25A MCB', cost:16, amps:25 },
