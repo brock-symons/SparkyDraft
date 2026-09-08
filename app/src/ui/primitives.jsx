@@ -373,7 +373,11 @@ export function Divider({ vertical, className }) {
 export function EmptyState({ icon, title, hint, action }) {
   return (
     <div className="flex flex-col items-center justify-center px-6 py-10 text-center">
-      {icon && <div className="mb-2.5 text-2xl text-ink-300">{icon}</div>}
+      {icon && (
+        <div aria-hidden="true" className="mb-2.5 text-2xl text-ink-300">
+          {icon}
+        </div>
+      )}
       <div className="text-sm font-medium text-ink-600">{title}</div>
       {hint && (
         <div className="mt-1 max-w-[240px] text-xs leading-relaxed text-ink-400">{hint}</div>
@@ -438,18 +442,26 @@ export function Dialog({ open, onClose, title, children, footer, width = 'max-w-
   useEffect(() => {
     if (!open) return;
     const onKey = e => {
+      // Both Escape and Tab are gated on THIS dialog being the nearest
+      // dialog ancestor of the focused element — not just "is this dialog
+      // open" and not merely `ref.contains(activeElement)`, since a
+      // confirmation Dialog stacked over another (e.g. AccountDialog's
+      // "Log out?" over the Account dialog itself, or OrgDialog's "Remove
+      // member?" over Organisations) is rendered as a DOM descendant of
+      // the outer one, not a portal sibling — so the outer ref ALSO
+      // "contains" the inner dialog's focused element, and both dialogs
+      // would otherwise react to the same Escape/Tab press. `.closest()`
+      // picks the innermost (topmost, actually-focused) one uniquely.
+      const closestDialog =
+        document.activeElement && document.activeElement.closest('[role="dialog"]');
+      const focused = closestDialog === ref.current;
       if (e.key === 'Escape') {
+        if (!focused) return;
         e.stopPropagation();
         onClose();
         return;
       }
-      // Only trap Tab when focus is actually inside THIS dialog — checking
-      // `contains` rather than just "is open" is what makes this safe when
-      // two Dialogs are mounted at once (e.g. AccountDialog's "Log out?"
-      // confirmation stacked over the Account dialog itself): the outer
-      // one's listener runs first but no-ops since focus has moved into
-      // the inner one, so the inner one is free to handle it correctly.
-      if (e.key !== 'Tab' || !ref.current || !ref.current.contains(document.activeElement)) return;
+      if (e.key !== 'Tab' || !focused) return;
       const focusable = ref.current.querySelectorAll(
         'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])'
       );
@@ -465,13 +477,16 @@ export function Dialog({ open, onClose, title, children, footer, width = 'max-w-
       }
     };
     document.addEventListener('keydown', onKey, true);
-    const t = setTimeout(() => {
-      const first = ref.current && ref.current.querySelector('input,button,select,textarea');
-      first && first.focus();
-    }, 20);
+    // Focused synchronously in this same effect, not via setTimeout: a
+    // delayed focus-set left a real window — however brief — where a
+    // freshly-opened (possibly stacked) dialog didn't yet contain the
+    // active element, so a fast Escape/Tab right after opening it could
+    // still act on whatever was focused before it opened instead of the
+    // new dialog itself.
+    const first = ref.current && ref.current.querySelector('input,button,select,textarea');
+    first && first.focus();
     return () => {
       document.removeEventListener('keydown', onKey, true);
-      clearTimeout(t);
     };
   }, [open, onClose]);
 

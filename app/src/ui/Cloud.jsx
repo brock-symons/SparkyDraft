@@ -131,10 +131,15 @@ export function AuthGate({ onSignedIn }) {
   if (mode !== 'newpassword' && cloud.user) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-100 p-4">
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="Sign in to SparkyDraft"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-ink-100 p-4"
+    >
       <div className="w-full max-w-sm rounded-xl bg-white p-6 shadow-pop">
         <div className="mb-5 flex items-center gap-2">
-          <span className="h-2.5 w-2.5 rounded-full bg-accent-500" />
+          <span aria-hidden="true" className="h-2.5 w-2.5 rounded-full bg-accent-500" />
           <span className="text-base font-semibold text-ink-800">SparkyDraft</span>
         </div>
         {!cloudCredentialsSet ? (
@@ -527,7 +532,8 @@ export function InviteBanner({ invites, onAccept, onDecline }) {
           className="mx-auto flex w-full max-w-3xl flex-wrap items-center gap-2 px-4 py-2 text-xs text-ink-700"
         >
           <span className="flex-1">
-            🔔 <span className="font-semibold">{inv.invited_by_name}</span> invited you to join{' '}
+            <span aria-hidden="true">🔔</span>{' '}
+            <span className="font-semibold">{inv.invited_by_name}</span> invited you to join{' '}
             <span className="font-semibold">{inv.org_name}</span>
           </span>
           <Button size="sm" variant="primary" onClick={() => onAccept(inv)}>
@@ -574,13 +580,15 @@ export function OrgDialog({ open, onClose, pushToast }) {
         </div>
       ) : (
         <>
-          <div className="mb-4 flex gap-1.5">
+          <div className="mb-4 flex gap-1.5" role="tablist">
             {[
-              ['invites', '📨 Invites', invites.length],
-              ['orgs', '🏢 My organisations', cloud.myOrgs.length],
-            ].map(([id, label, count]) => (
+              ['invites', '📨', 'Invites', invites.length],
+              ['orgs', '🏢', 'My organisations', cloud.myOrgs.length],
+            ].map(([id, icon, label, count]) => (
               <button
                 key={id}
+                role="tab"
+                aria-selected={tab === id}
                 onClick={() => setTab(id)}
                 className={cx(
                   'rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors',
@@ -588,7 +596,7 @@ export function OrgDialog({ open, onClose, pushToast }) {
                   focusRing
                 )}
               >
-                {label}
+                <span aria-hidden="true">{icon}</span> {label}
                 {count ? ` (${count})` : ''}
               </button>
             ))}
@@ -879,7 +887,11 @@ function RoleTag({ tone, children }) {
     <span
       className={cx(
         'shrink-0 rounded px-1 py-0.5 text-2xs font-semibold',
-        tone === 'amber' ? 'bg-amber-100 text-amber-700' : 'bg-accent-100 text-accent-700'
+        // amber-100/amber-700 computed to ~4.51:1 — technically passing but
+        // with no real margin, unlike the rest of this ramp's deliberately
+        // audited combos. amber-50/amber-800 (already used and verified
+        // safe in ReadOnlyBanner, ~6.83:1) gives real headroom instead.
+        tone === 'amber' ? 'bg-amber-50 text-amber-800' : 'bg-accent-100 text-accent-700'
       )}
     >
       {children}
