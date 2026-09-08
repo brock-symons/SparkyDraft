@@ -38,7 +38,7 @@ export function makeCivilPlan(name) {
     scale: null,
     view: { zoom: 1, offsetX: 0, offsetY: 0 },
     gridSpacingMM: 1000,
-    snapEnabled: true,
+    snapEnabled: false,
     gridOriginX: 0,
     gridOriginY: 0,
     gridVisible: true,
@@ -78,9 +78,10 @@ export function makePit(nextId, type, x, y) {
   return {
     id: 'PIT-' + String(nextId).padStart(3, '0'),
     typeId: type.id,
-    // Which service this pit belongs to (power vs comms) — independent
-    // of typeId, which is the pit's physical size/kind. Defaults to
-    // power since that's the more common case; editable afterward.
+    // Which service this pit belongs to (power vs data/comms) —
+    // independent of typeId, which is the pit's physical size/kind.
+    // Defaults to power since that's the more common case; editable
+    // afterward from the inspector.
     serviceType: 'power',
     x,
     y,

@@ -252,7 +252,7 @@ export function makeFloor(name) {
     bankNames: {}, // 'switchId::group' → display name (Phase 2)
     view: { zoom: 1, offsetX: 0, offsetY: 0 },
     gridSpacingMM: 100,
-    snapEnabled: true,
+    snapEnabled: false,
     gridOriginX: 0,
     gridOriginY: 0,
     gridVisible: true,

@@ -44,13 +44,6 @@ const COMMS_CONDUIT_SIZES = [
   { id:'nbn50', size:'50mm', color:'#0ea5e9', material_cost_per_m:3.6, labour_hours_per_m:0.065 },
   { id:'nbn63', size:'63mm', color:'#0284c7', material_cost_per_m:5.1, labour_hours_per_m:0.075 },
 ];
-// Which service a pit belongs to — separate from PIT_LIBRARY (which is
-// physical size/kind, e.g. a 450x450 pit can be either a power pit or a
-// comms pit on the same job).
-const PIT_SERVICE_TYPES = [
-  { id:'power', label:'Power', color:'#f97316' },
-  { id:'comms', label:'Comms', color:'#60a5fa' },
-];
 const BUILDING_ENTRY_SERVICE_TYPES = [
   { id:'power', label:'Power', color:'#f97316' },
   { id:'data', label:'Data / comms', color:'#4ade80' },
@@ -58,6 +51,18 @@ const BUILDING_ENTRY_SERVICE_TYPES = [
   { id:'water', label:'Water', color:'#38bdf8' },
   { id:'gas', label:'Gas', color:'#facc15' },
 ];
+// Which service a pit belongs to — power vs comms — deliberately reuses
+// BUILDING_ENTRY_SERVICE_TYPES's own 'power' and 'data' categories
+// rather than a second, bespoke power/comms pair: a pit and a building
+// entry serving the same underground run should agree on what to call
+// it (same id, same label, same colour), not describe it two different
+// ways depending on which object you clicked. 'data' — not the
+// separate 'comms'/Telco entry above — is the intended match: it's the
+// general "data/comms" category, which is what an underground comms
+// pit actually carries.
+const PIT_SERVICE_TYPES = BUILDING_ENTRY_SERVICE_TYPES.filter(
+  t => t.id === 'power' || t.id === 'data'
+);
 // Private poles only — a "network pole" (Ausgrid/Endeavour/etc-owned) is
 // a placeholder attachment POINT, not a fully-specified object like these,
 // so it's placed via the same tool/array (see civilPoleCardClick) but

@@ -772,11 +772,14 @@ function MultiProperties({ objects, controller, sections, toggleSection, project
         <div className="px-3">
           <Select
             value={sharedCircuit}
-            onChange={e => controller.assignCircuit(objects.map(o => o.id), e.target.value)}
+            onChange={e =>
+              controller.assignCircuit(
+                objects.map(o => o.id),
+                e.target.value
+              )
+            }
           >
-            <option value="">
-              {circuitIds.size > 1 ? '— mixed —' : '— unassigned —'}
-            </option>
+            <option value="">{circuitIds.size > 1 ? '— mixed —' : '— unassigned —'}</option>
             {(project.circuits || []).map(c => (
               <option key={c.id} value={c.id}>
                 {c.id}
@@ -1015,6 +1018,9 @@ function CivilProperties({ doc, controller, sections, toggleSection }) {
               ))}
             </Select>
           </Row>
+          {/* Which service this pit belongs to — separate from Type
+              above, which is the pit's physical size/kind. A 300×300
+              pit can carry either power or comms on the same job. */}
           <Row label="Service">
             <Select
               value={obj.serviceType || 'power'}
