@@ -1,17 +1,22 @@
 // ===================================================================
 // DOMAIN CATALOG
 //
-// Extracted VERBATIM from the production index.html (SYMBOL_LIBRARY,
-// LAYER_DEFS, CABLE_SIZES, PROTECTION_LIBRARY) so the redesign works
-// against the real electrical catalog rather than a re-typed
-// approximation. Costs, labour hours, watts, cable sizes and protection
-// ratings are domain data owned by the existing product — this file must
-// stay a faithful copy, never an "improved" version. Changing any of
-// these values changes quoting/load-estimate output, which is explicitly
-// out of scope for a UI redesign.
+// Originally extracted VERBATIM from the pre-cutover production
+// index.html (SYMBOL_LIBRARY, LAYER_DEFS, CABLE_SIZES,
+// PROTECTION_LIBRARY) so the redesign worked against the real
+// electrical catalog rather than a re-typed approximation during the
+// migration. That app is now legacy-index.html — this file IS the live
+// product's catalog going forward, so real data changes (a new
+// protection rating, a new symbol) belong here directly.
 //
-// Sync check: if index.html's catalog changes, re-extract rather than
-// hand-patching here.
+// What still doesn't change casually: costs, labour hours, watts, cable
+// sizes and protection ratings feed quoting and the load estimate
+// directly, so any edit changes what a customer sees on a quote. Run
+// `node app/test/quote-parity.mjs` and `panel-schedule-parity.mjs` after
+// touching this file — they check the ported math still computes
+// correctly against whatever data is here, not that the data matches
+// legacy-index.html byte-for-byte (that comparison's job ended at the
+// cutover).
 // ===================================================================
 
 const SYMBOL_LIBRARY = [
@@ -105,8 +110,10 @@ const CABLE_SIZES = [
 const PROTECTION_LIBRARY = [
   { id:'mcb16', label:'16A MCB', cost:14, amps:16 },
   { id:'mcb20', label:'20A MCB', cost:15, amps:20 },
+  { id:'mcb25', label:'25A MCB', cost:16, amps:25 },
   { id:'rcbo16', label:'16A RCBO', cost:32, amps:16 },
   { id:'rcbo20', label:'20A RCBO', cost:35, amps:20 },
+  { id:'rcbo25', label:'25A RCBO', cost:38, amps:25 },
   { id:'rcbo32', label:'32A RCBO', cost:42, amps:32 },
   { id:'rcbo40', label:'40A RCBO', cost:48, amps:40 },
   { id:'rcd', label:'RCD (safety switch)', cost:55, amps:null },

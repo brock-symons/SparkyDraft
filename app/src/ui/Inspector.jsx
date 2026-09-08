@@ -41,6 +41,7 @@ import { isCommsRack, patchPanelUnitsForRack, commsPortOptions } from '../core/c
 import { currentCivilPlan, conduitLength, conduitSizeTable } from '../core/civil.js';
 import {
   PIT_LIBRARY,
+  PIT_SERVICE_TYPES,
   POLE_LIBRARY,
   OVERHEAD_CONDUCTOR_SIZES,
   BUILDING_ENTRY_SERVICE_TYPES,
@@ -981,6 +982,21 @@ function CivilProperties({ doc, controller, sections, toggleSection }) {
           <Row label="Type">
             <Select value={obj.typeId} onChange={e => set({ typeId: e.target.value })}>
               {PIT_LIBRARY.map(t => (
+                <option key={t.id} value={t.id}>
+                  {t.label}
+                </option>
+              ))}
+            </Select>
+          </Row>
+          {/* Which service this pit belongs to — separate from Type
+              above, which is the pit's physical size/kind. A 300×300
+              pit can carry either power or comms on the same job. */}
+          <Row label="Service">
+            <Select
+              value={obj.serviceType || 'power'}
+              onChange={e => set({ serviceType: e.target.value })}
+            >
+              {PIT_SERVICE_TYPES.map(t => (
                 <option key={t.id} value={t.id}>
                   {t.label}
                 </option>
