@@ -1,13 +1,13 @@
-const react = require('eslint-plugin-react');
-const reactHooks = require('eslint-plugin-react-hooks');
-const globals = require('globals');
+import react from 'eslint-plugin-react';
+import reactHooks from 'eslint-plugin-react-hooks';
+import globals from 'globals';
 
 // This app has no build step (see CLAUDE.md / README.md) — files load
 // straight into the browser via an in-browser Babel loader, and never
 // `import React` even though they use JSX (React comes in as a global
 // from the loader). ESLint here is dev-time-only tooling: it never runs
 // as part of loading or shipping the app, only as a manual/CI check.
-module.exports = [
+export default [
   {
     ignores: ['legacy-index.html', 'index.html', 'node_modules/**'],
   },

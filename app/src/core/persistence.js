@@ -18,7 +18,6 @@
 // ===================================================================
 
 const PREFIX = 'sparkydraft_cad:project:';
-const INDEX_KEY = 'sparkydraft_cad:index';
 
 export const SaveState = {
   SAVED: 'saved',
@@ -30,7 +29,7 @@ export const SaveState = {
 function safeParse(raw, fallback) {
   try {
     return raw ? JSON.parse(raw) : fallback;
-  } catch (e) {
+  } catch {
     return fallback;
   }
 }
@@ -101,7 +100,7 @@ export function deleteProject(id) {
   try {
     localStorage.removeItem(PREFIX + id);
     return { ok: true };
-  } catch (e) {
+  } catch {
     return { ok: false, error: 'Could not delete.' };
   }
 }
@@ -122,7 +121,7 @@ export function loadWorkspaceUI() {
 export function saveWorkspaceUI(ui) {
   try {
     localStorage.setItem(UI_KEY, JSON.stringify(ui));
-  } catch (e) {
+  } catch {
     /* non-critical */
   }
 }

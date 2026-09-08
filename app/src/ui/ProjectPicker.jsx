@@ -112,8 +112,12 @@ export function ProjectPicker({
     checkPendingInvitesOnce().then(list => list && setInvites(list));
   }, [signedIn]);
 
+  // Depends on the org's id, not the `cloud.currentOrg` object identity —
+  // otherwise an unrelated cloud snapshot update would re-trigger the
+  // network fetch even though the active org hasn't actually changed.
+  const currentOrgId = cloud.currentOrg && cloud.currentOrg.id;
   useEffect(() => {
-    if (tab !== 'org' || !cloud.currentOrg) return;
+    if (tab !== 'org' || !currentOrgId) return;
     let live = true;
     setLoading(true);
     listOrgProjects().then(res => {
@@ -125,7 +129,7 @@ export function ProjectPicker({
       } else setOrgError(res.error);
     });
     return () => (live = false);
-  }, [tab, cloud.currentOrg && cloud.currentOrg.id]);
+  }, [tab, currentOrgId]);
 
   // Falling back to the personal tab when the active org goes away (left
   // it, or it was renamed out from under a stale snapshot) — an org tab

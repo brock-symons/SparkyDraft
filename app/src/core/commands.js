@@ -55,7 +55,7 @@ export function createCommandRegistry() {
     return all().filter(c => {
       try {
         return c.when(ctx);
-      } catch (e) {
+      } catch {
         return false;
       }
     });

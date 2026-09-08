@@ -190,7 +190,7 @@ export function CanvasStage({
       // registered. Failing to capture must degrade, not cancel.
       try {
         canvas.setPointerCapture(e.pointerId);
-      } catch (_) {
+      } catch {
         /* non-fatal */
       }
       controller.onPointerDown(e, rect());
@@ -203,7 +203,9 @@ export function CanvasStage({
     const up = e => {
       try {
         canvas.releasePointerCapture(e.pointerId);
-      } catch (_) {}
+      } catch {
+        /* non-fatal */
+      }
       controller.onPointerUp(e);
       requestPaint();
     };

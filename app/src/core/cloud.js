@@ -508,7 +508,7 @@ export async function listCloudProjects() {
       .order('updated_at', { ascending: false });
     if (error) return [];
     return data || [];
-  } catch (err) {
+  } catch {
     return [];
   }
 }
@@ -593,7 +593,7 @@ export async function deleteCloudCopyOf(id) {
   if (!snapshot.user || !cloudConfigured) return;
   try {
     await supabaseClient.from('projects').delete().eq('id', id).eq('user_id', snapshot.user.id);
-  } catch (_) {
+  } catch {
     /* the local delete already succeeded; this is best-effort cleanup */
   }
 }
@@ -665,7 +665,7 @@ export async function resolveOrgProjectRole(projectId, sharedBy, orgId) {
       .maybeSingle();
     if (error) throw error;
     return (data && data.role) || 'viewer';
-  } catch (_) {
+  } catch {
     // Failing closed: an unreadable grant means view-only, never edit.
     return 'viewer';
   }
