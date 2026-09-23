@@ -58,16 +58,31 @@ function loadImage(src) {
  * Same fit-to-content math as the live Fit button and production's
  * fitViewToContent()/fitViewToContentCivil(), at the fixed capture
  * resolution instead of the viewport's actual size.
+ *
+ * One deliberate departure from production: `planImage.scale` (the
+ * Inspector's "Size" control) doesn't exist in production at all — it's
+ * a feature this redesign added — so production's original function
+ * never needed to account for it and this port, copied from that
+ * function, initially didn't either. Every other place that treats a
+ * plan image as having a world-space size (drawPlanImage() in
+ * renderer.js, fit() in main.jsx) multiplies by scale; this is the one
+ * spot that didn't, so a resized plan exported at the wrong zoom —
+ * cropped/oversized on the page instead of matching what the live
+ * canvas actually shows. Fixed here to match those, not reverted to
+ * match production, since production simply never had this case.
  */
 function fitView(bounds, planImage) {
   if (planImage) {
-    const sX = (CAPTURE_W - MARGIN * 2) / planImage.width;
-    const sY = (CAPTURE_H - MARGIN * 2) / planImage.height;
+    const s = planImage.scale || 1;
+    const w = planImage.width * s;
+    const h = planImage.height * s;
+    const sX = (CAPTURE_W - MARGIN * 2) / w;
+    const sY = (CAPTURE_H - MARGIN * 2) / h;
     const zoom = Math.min(sX, sY, 4);
     return {
       zoom,
-      offsetX: (CAPTURE_W - planImage.width * zoom) / 2,
-      offsetY: (CAPTURE_H - planImage.height * zoom) / 2,
+      offsetX: (CAPTURE_W - w * zoom) / 2,
+      offsetY: (CAPTURE_H - h * zoom) / 2,
     };
   }
   return viewForBounds(bounds, CAPTURE_W, CAPTURE_H, MARGIN, 4);
