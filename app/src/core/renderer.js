@@ -66,12 +66,22 @@ export function drawPlanImage(ctx, view, plan, img) {
   if (!img || !plan) return;
   const s = plan.scale || 1;
   const tl = worldToScreen(view, plan.x || 0, plan.y || 0);
+  const w = img.width * s * view.zoom;
+  const h = img.height * s * view.zoom;
   ctx.save();
+  // An opaque white backing behind the plan, always full-strength
+  // regardless of the opacity slider below. Without it, the canvas's own
+  // near-black background (PAINT.bg) shows through a translucent plan
+  // image, so a plan with a white background reads as grey instead of
+  // white — this is what actually fixes that, not a colour correction
+  // on the image itself.
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(tl.x, tl.y, w, h);
   ctx.globalAlpha = plan.opacity == null ? 0.85 : plan.opacity;
   // Smoothing off when magnified past 1:1 — a scanned plan's linework
   // stays legible sharp, and turns to mush interpolated.
   ctx.imageSmoothingEnabled = view.zoom * s < 1.5;
-  ctx.drawImage(img, tl.x, tl.y, img.width * s * view.zoom, img.height * s * view.zoom);
+  ctx.drawImage(img, tl.x, tl.y, w, h);
   ctx.restore();
 }
 
@@ -481,7 +491,11 @@ function drawDevice(ctx, view, obj, sym, opts) {
 
   ctx.beginPath();
   ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
-  ctx.fillStyle = color + '2e';
+  // '2e' (~18% opacity) was too faint to read reliably, especially over
+  // a light floor-plan photo rather than the plain dark grid it was
+  // tuned against — '66' (~40%) keeps the same soft-fill/solid-stroke
+  // look but is actually visible against either background.
+  ctx.fillStyle = color + '66';
   ctx.fill();
   ctx.lineWidth = opts.selected ? 2.4 : 1.5;
   ctx.strokeStyle = opts.selected ? PAINT.selection : color;

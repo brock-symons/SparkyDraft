@@ -529,16 +529,50 @@ function WorkspaceRoot({ projectId, initialProject, readOnly, sharedByName, onEx
         const probe = new Image();
         probe.onerror = () => pushToast('That image could not be opened', 'error');
         probe.onload = () => {
+          // Auto-enhance: a phone photo of a printed plan is almost
+          // always a bit flat straight out of the camera, so give it a
+          // mild contrast/brightness/saturation lift on an offscreen
+          // canvas rather than importing it as shot. Falls back to the
+          // untouched upload if canvas filters aren't supported.
+          const off = document.createElement('canvas');
+          off.width = probe.width;
+          off.height = probe.height;
+          const octx = off.getContext('2d');
+          let processedSrc = src;
+          try {
+            octx.filter = 'contrast(1.15) brightness(1.08) saturate(1.05)';
+            octx.drawImage(probe, 0, 0);
+            processedSrc = off.toDataURL(
+              /^image\/(jpeg|webp)$/.test(file.type) ? file.type : 'image/png',
+              0.92
+            );
+          } catch {
+            // Filter unsupported, or a taint error on a weird source —
+            // don't let enhancement failure block the import.
+          }
+
+          // Pixel dimensions ARE the plan's initial world-space size (at
+          // scale 1, 1px = 1mm), so a small/low-res photo — a screenshot,
+          // a quick snap rather than a proper scan — would otherwise
+          // import at a few hundred millimetres across, smaller than a
+          // single device symbol. Scale small images up so the long edge
+          // lands around 12 m, a plausible small-building footprint;
+          // anything already 1500px+ on its long edge is usually a sane
+          // scale already and is left alone. This is a starting point,
+          // not a substitute for calibration.
+          const longEdge = Math.max(probe.width, probe.height);
+          const initialScale = longEdge < 1500 ? Math.min(40, 12000 / longEdge) : 1;
+
           doc.commit('Import floor plan', d => {
             // Centre the plan on the origin so it lands somewhere sensible
             // rather than off in a corner the user has to hunt for.
             currentPlan(d).planImage = {
-              src,
+              src: processedSrc,
               width: probe.width,
               height: probe.height,
-              x: -probe.width / 2,
-              y: -probe.height / 2,
-              scale: 1,
+              x: -(probe.width * initialScale) / 2,
+              y: -(probe.height * initialScale) / 2,
+              scale: initialScale,
               opacity: 0.85,
             };
           });
