@@ -551,18 +551,18 @@ function WorkspaceRoot({ projectId, initialProject, readOnly, sharedByName, onEx
             // don't let enhancement failure block the import.
           }
 
-          // Pixel dimensions ARE the plan's initial world-space size (at
-          // scale 1, 1px = 1mm), so a small/low-res photo — a screenshot,
-          // a quick snap rather than a proper scan — would otherwise
-          // import at a few hundred millimetres across, smaller than a
-          // single device symbol. Scale small images up so the long edge
-          // lands around 12 m, a plausible small-building footprint;
-          // anything already 1500px+ on its long edge is usually a sane
-          // scale already and is left alone. This is a starting point,
-          // not a substitute for calibration.
-          const longEdge = Math.max(probe.width, probe.height);
-          const initialScale = longEdge < 1500 ? Math.min(40, 12000 / longEdge) : 1;
-
+          // Deliberately NOT scaling small photos up here (an earlier
+          // version of this code did, and made small photos render
+          // blurry/blocky — see the reverting commit). Pixel dimensions
+          // ARE the plan's world-space size at scale 1, so stretching a
+          // low-res photo's stored scale to make it "bigger" doesn't add
+          // real detail, it just forces the renderer's sharpness cutoff
+          // (imageSmoothingEnabled in drawPlanImage) off almost
+          // immediately, upscaling visible pixels instead. fit(), below,
+          // already zooms the VIEW to fill the screen with whatever was
+          // imported — small or large — with zero quality cost, which is
+          // the right place to solve "the photo looks too small on
+          // import," not the stored image scale.
           doc.commit('Import floor plan', d => {
             // Centre the plan on the origin so it lands somewhere sensible
             // rather than off in a corner the user has to hunt for.
@@ -570,9 +570,9 @@ function WorkspaceRoot({ projectId, initialProject, readOnly, sharedByName, onEx
               src: processedSrc,
               width: probe.width,
               height: probe.height,
-              x: -(probe.width * initialScale) / 2,
-              y: -(probe.height * initialScale) / 2,
-              scale: initialScale,
+              x: -probe.width / 2,
+              y: -probe.height / 2,
+              scale: 1,
               opacity: 0.85,
             };
           });

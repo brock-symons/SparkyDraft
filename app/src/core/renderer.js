@@ -491,22 +491,34 @@ function drawDevice(ctx, view, obj, sym, opts) {
 
   ctx.beginPath();
   ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
-  // '2e' (~18% opacity) was too faint to read reliably, especially over
-  // a light floor-plan photo rather than the plain dark grid it was
-  // tuned against — '66' (~40%) keeps the same soft-fill/solid-stroke
-  // look but is actually visible against either background.
-  ctx.fillStyle = color + '66';
+  // A near-opaque fill ('e6' ~90%) rather than a translucent tint —
+  // translucency ('2e', then '66') was tuned to look "soft" against the
+  // plain dark grid it was designed on, but proved unreadable against a
+  // floor plan photo, whatever its opacity, because it never had
+  // reliable contrast against an unpredictable background. A device
+  // marker that's actually solid does.
+  ctx.fillStyle = color + 'e6';
   ctx.fill();
   ctx.lineWidth = opts.selected ? 2.4 : 1.5;
   ctx.strokeStyle = opts.selected ? PAINT.selection : color;
   ctx.stroke();
 
   if (r >= 9) {
-    ctx.fillStyle = color;
-    ctx.font = `600 ${Math.max(8, r * 0.66)}px Inter, ui-sans-serif, system-ui, sans-serif`;
+    const label = sym ? sym.abbr : '?';
+    const fontSize = Math.max(8, r * 0.66);
+    ctx.font = `600 ${fontSize}px Inter, ui-sans-serif, system-ui, sans-serif`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(sym ? sym.abbr : '?', p.x, p.y + 0.5);
+    // A white outline behind the abbreviation guarantees it reads
+    // against the device's own fill regardless of the symbol's colour —
+    // same-colour text on a same-colour fill was the actual reason the
+    // letter was unreadable, not just the fill's opacity.
+    ctx.lineJoin = 'round';
+    ctx.lineWidth = Math.max(2, fontSize * 0.22);
+    ctx.strokeStyle = 'rgba(255,255,255,0.95)';
+    ctx.strokeText(label, p.x, p.y + 0.5);
+    ctx.fillStyle = color;
+    ctx.fillText(label, p.x, p.y + 0.5);
   }
 
   // Hover reads as a soft halo; selection as a hard dashed ring. Keeping
